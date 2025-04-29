@@ -13,5 +13,10 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
+        "API Reference" => [
+            "Operator Spaces" => "api/qSpace.md",
+            "qExpressions" => "api/qExpressions.md",
+            "Defaults" => "api/defaults.md"
+        ]
     ],
 )
