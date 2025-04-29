@@ -558,7 +558,7 @@ end
 # handle one qSum
 function neq_qsum(s::qSum, index::Int=1)::qEQ
     if s.neq
-        error("neq: this qSum already has neq=true")
+        return qEQ([s], s.expr.statespace)   # skip
     end
     n = length(s.element_indexes) # is at least 1
     if n < index

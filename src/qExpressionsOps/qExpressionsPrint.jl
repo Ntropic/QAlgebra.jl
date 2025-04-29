@@ -1,7 +1,9 @@
 using Printf
 using LaTeXStrings
+import Base: string
 
-export qeq_to_string
+export string, latex_string
+
 
 function var_exponents2string(var_exponents::Vector{Int}, qspace::StateSpace; do_latex::Bool=false)::String
     monomial::String = ""
@@ -191,7 +193,11 @@ function qexpr_to_string(t::qTerm, statespace::StateSpace; do_latex::Bool=false,
     return final_str
 end
 function sum_symbol_str(s::qSum; do_latex::Bool=false)
-    s_index_str = join(s.indexes, ",")
+    if do_latex
+        s_index_str = join(s.indexes, ",")
+    else
+        s_index_str = join(s.indexes, "")
+    end
     n = length(s.indexes)
     equal_sign = "="
     if !s.neq
@@ -211,7 +217,7 @@ function sum_symbol_str(s::qSum; do_latex::Bool=false)
             if do_latex
                 return "\\sum_{($s_index_str)}^{\\neq}"  # \\in \\mathcal{C}_N^{$n}
             else
-                return "∑" * str2sub("(" * s_index_str * ") ∊ c")
+                return "∑" * str2sub("(" * s_index_str * ")")
             end
         end
     end
@@ -434,8 +440,7 @@ end
 
 
 function diff_qEQ2string(q::diff_qEQ; do_latex::Bool=false, grouped::Bool=true)::String
-    right_hand_side = qeq_to_string_grouped(q.right_hand_side, do_latex=do_latex, do_sigma=q.do_sigma, braket=q.braket)
-
+    right_hand_side = qeq_to_string(q.right_hand_side, do_latex=do_latex, do_sigma=q.do_sigma, braket=q.braket, grouped=grouped)
     left_hand_side_op_str = qeq_to_string_ungrouped(qEQ([q.left_hand_side], q.statespace), do_latex=do_latex, do_sigma=q.do_sigma, braket=q.braket)
     left_hand_side_op_str = lstrip(left_hand_side_op_str, '+')
     if do_latex
@@ -451,4 +456,25 @@ function show(io::IO, q::diff_qEQ)
 end
 function show(io::IO, ::MIME"text/latex", q::diff_qEQ)
     print(io, latexstring(diff_qEQ2string(q, do_latex=true)))
+end
+
+#### String ##########################################################################################################################
+function string(eq::qEQ)::String
+    return qeq_to_string(eq, do_latex=false, do_sigma=false)
+end
+function string(eq::qSum)::String
+    return qexpr_to_string(eq, eq.statespace, do_latex=false, do_sigma=false)
+end
+function string(eq::diff_qEQ)::String
+    return diff_qEQ2string(eq, do_latex=false)
+end
+#### LaTeXString #####################################################################################################################
+function latex_string(eq::qEQ)::String
+    return qeq_to_string(eq, do_latex=true, do_sigma=false)
+end
+function latex_string(eq::qSum)::String
+    return qexpr_to_string(eq, eq.statespace, do_latex=true, do_sigma=false)
+end
+function latex_string(eq::diff_qEQ)::String
+    return diff_qEQ2string(eq, do_latex=true)
 end

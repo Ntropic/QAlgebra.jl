@@ -48,5 +48,6 @@ include("qExpressions.jl")
 using .qExpressions
 export qExpr, qTerm, qEQ, qSum, diff_qEQ, term, simplify, base_operators, Sum, ∑, flatten, neq, d_dt, is_numeric
 export Dag, Commutator
+export string, latex_string
 
 end # module qAlgebra
