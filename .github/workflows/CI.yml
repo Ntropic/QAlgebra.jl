@@ -37,10 +37,7 @@ jobs:
       - uses: julia-actions/cache@v2
 
       - name: Develop ComplexRationals dependency  # <-- Add this block temporarily
-        run: |
-          using Pkg
-          Pkg.add(url="https://github.com/Ntropic/ComplexRationals.jl")  # TODO: REMOVE this line once ComplexRationals.jl is registered
-          Pkg.instantiate()  # TODO: REMOVE this line once ComplexRationals.jl is registered
+        run: julia --project -e 'using Pkg; Pkg.develop(PackageSpec(url="https://github.com/Ntropic/ComplexRationals.jl")); Pkg.instantiate()'
 
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
