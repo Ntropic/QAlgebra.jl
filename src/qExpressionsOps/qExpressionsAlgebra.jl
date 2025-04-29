@@ -73,18 +73,12 @@ function -(S1::qSum, S2::qSum)::qEQ
 end
 
 """
-    Dag(t::qTerm, ss::StateSpace) -> qTerm
-
-Returns the Hermitian conjugate (dagger) of a qTerm using the given state space `qspace`.
-
-It does the following:
-  - Conjugates the coefficient.
-  - Leaves the variable exponents unchanged.
-  - Reverses the ordering of the operator indices (since (AB)† = B†A†),
-    and for each operator index, calls the corresponding subspace’s `op_dag` function.
+    Dag(t::qTerm, qspace::StateSpace) -> qTerm
+    Dag(t::qEQ) -> qEQ
+    Dag(t::qSum) -> qSum
     
-It is assumed that the operator indices in `t.op_indices` were collected in order by iterating
-over `qspace.subspaces` and, for each subspace, over the tuple (statespace_inds, keys).
+Returns the Hermitian conjugate (dagger) of a qTerm, qEQ or qSum.
+Overloads the adjoint function, which can be called via `t′`.
 """
 function Dag(t::qTerm, qspace::StateSpace)::qEQ
     new_coeff = conj(t.coeff)
@@ -239,6 +233,8 @@ end
 # --- Define the commutator for qEQ ---
 """
     Commutator(Q1::qEQ, Q2::qEQ) -> qEQ
+    Commutator(Q::qEQ, t::qSum) -> qEQ
+    Commutator(t::qSum, Q::qEQ) -> qEQ
 
 Computes the commutator [Q1, Q2] = Q1 * Q2 - Q2 * Q1.
 Both qEQ's must share the same statespace.

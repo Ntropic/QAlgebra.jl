@@ -1,26 +1,57 @@
 module qExpressions
 using ..qSpace
 using ..StringUtils
-using ..CRational
+using ..ComplexRational
 import Base: show, adjoint, iterate, length, eltype, +, -, sort, *, ^, product, iszero, copy
 
 export qExpr, qTerm, qEQ, qSum, diff_qEQ, term, simplify, base_operators, Sum, ∑, flatten, neq, d_dt
 
+""" 
+    qExpr
+
+The abstract type `qExpr` is the base type for all quantum expressions in this module.
+"""
 abstract type qExpr end
 
 Is = Union{Int,Vector{Int}}
-# The qTerm struct holds one term of your equations.
+
+"""
+    qTerm
+
+A `qTerm` represents a single term in a quantum expression. It contains:
+    - `coeff`: The coefficient of the term, which can be a number (e.g., `Int`, `Float64`, `Rational`, etc.).
+    - `var_exponents`: A vector of integers representing the exponents of the state variables, defined in a StateSpace.
+    - `op_indices`: A vector of indices representing the operators in the term, which are also defined in a StateSpace.
+"""
 mutable struct qTerm <: qExpr
     coeff::Number                   # Coefficient (supports Complex, Rational, Int, etc.)
     var_exponents::Vector{Int}      # Exponents for each state variable (order matching StateSpace.variables).
     op_indices::Vector{Is}
 end
 
+"""
+    qEQ
+
+A `qEQ` represents a quantum equation, consisting of a Vector of quantum Expressions representing the additive terms of the equation.
+It also contains a reference to the state space in which the equation is defined.
+"""
 mutable struct qEQ
     terms::Vector{qExpr}         # Vector of terms
     statespace::StateSpace
 end
 
+""" 
+    qSum
+
+A `qSum` represents the summation of a quantum Equation over indexes in a quantum expression.
+It contains:
+    - `expr`: The expression being summed over, which is a `qEQ` object.
+    - `indexes`: A vector of strings representing the summation indexes (e.g., "i").
+    - `subsystem_index`: The index of the subspace in which the indexes live. 
+    - `element_indexes`: A vector of integers representing the position of the indexes in that subspace.
+    - `neq`: A boolean indicating whether different indexes in the sum can refer to the same element in the subspace. 
+            For example, the indexes i,j,k can refer to different elements in a much larger bath of elements. 
+"""
 mutable struct qSum <: qExpr
     expr::qEQ       # The expression being summed over.
     indexes::Vector{String}   # The summation index (e.g. "i").
@@ -29,6 +60,17 @@ mutable struct qSum <: qExpr
     neq::Bool
 end
 
+""" 
+    diff_qEQ
+
+A `diff_qEQ` represents a differential equation d/dt <LHS> = <RHS>, where LHS is the expectation value of a qTerm and similarly the RHS is the expectation value of a qEQ.
+It contains: 
+    - `left_hand_side`: The left-hand side of the equation, which is a `qTerm` object.
+    - `right_hand_side`: The right-hand side of the equation, which is a `qEQ` object.
+    - `statespace`: The state space in which the equation is defined.
+    - `braket`: (default=true) A boolean indicating whether to use braket notation for the terms, to indicate the expectation value.
+    - `do_sigma`: (default=true) A boolean indicating whether to use $\sigma_x$ notation or $x$ notation for the terms.
+"""
 mutable struct diff_qEQ
     left_hand_side::qTerm
     right_hand_side::qEQ
@@ -39,16 +81,11 @@ mutable struct diff_qEQ
         new(left_hand_side, neq(right_hand_side), statespace, braket, do_sigma)
     end
 end
+
 """
-    Sum(index::Union{String,Symbol}, N::String, expr::qEQ) -> qSum
+    Sum(index::Union{String,Symbol,Vector{String},Vector{Symbol}}, expr::qEQ; neq::Bool=false) -> qSum
 
-Constructs a qSum object representing a summation over the parameter given by `index`
-(from 1 to `N`) on the qEQ expression `expr`. The function extracts the state space from
-`expr` and searches through its subspaces. When it finds a subspace whose allowed keys contain
-the string matching `index`, it uses that subspace's index (as the `subsystem_index`) and the
-position of that key (as the `element_index`) in the subspace to create the qSum.
-
-If no matching key is found, an error is thrown.
+Constructor of a `qSum` struct. Defines the indexes to sum over, the expressions for which to apply the sum and optionally whether the sum is only over non equal indexes. 
 """
 function Sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::qEQ; neq::Bool=false)::qEQ
     index_strs = [string(index) for index in indexes]
@@ -89,6 +126,11 @@ end
 function Sum(index::Union{String,Symbol}, expr::qEQ; neq::Bool=false)::qEQ
     return Sum([index], expr, neq=neq)
 end
+""" 
+    ∑(index::Union{String,Symbol}, expr::qEQ; neq::Bool=false) -> qSum
+
+Alternative way to call the `Sum` constructor. Sum(index, expr; neq) = ∑(index, expr; neq).
+"""
 ∑(index::Union{String,Symbol}, expr::qEQ; neq::Bool=false) = Sum(index, expr, neq=neq)
 ∑(indexes::Union{Vector{String},Vector{Symbol}}, expr::qEQ; neq::Bool=false) = Sum(indexes, expr, neq=neq)
 
@@ -224,14 +266,10 @@ function combine_term(s1::qSum, s2::qSum)::qSum
 end
 """
     simplify(q::qEQ) -> qEQ
+    simplify(q::qSum) -> qSum
+    simplify(q::diff_qEQ) -> diff_qEQ
 
-Simplify a qEQ by grouping like terms. The function:
-  1. Returns an empty qEQ if no terms are present.
-  2. Otherwise, makes a copy of the sorted terms (using `qterm_sort_key`),
-     then iterates through them, combining adjacent like terms (terms with
-     identical var_exponents and op_indices) by adding their coefficients.
-  3. Finally, removes any terms whose coefficient is zero.
-Returns a new, simplified qEQ.
+Simplify a qEQ, qSum or diff_qEQ by sorting terms and ading up terms that are equal (up to a coefficient). 
 """
 function simplify(q::qEQ)::qEQ
     # If there are no terms, return an empty qEQ.
@@ -289,11 +327,15 @@ include("qExpressionsOps/qExpressionsPrint.jl")
 
 
 """
-    base_operators(letter::Char, ss::StateSpace) -> Union{Int,Vector{Int}}
+    base_operators(letter::String, qspace::StateSpace) -> Union{Int,Vector{Int}}
+or 
+    base_operators(ss:StateSpace) -> Tuple{Dict{String,qEQ},Dict{String,qEQ}}
 
-Searches the subspaces in the given state space `ss` for one whose key starts with `letter`
-and returns the corresponding `neutral_element` from that subspace's operator set.
-Throws an error if no match is found.
+Returns variables and/or operators in the state space `ss`.
+Specifc variables/operators can be selected by passing a string `letter`.
+If no `letter` is passed, the function returns a tuple of two dictionaries:
+- The first dictionary contains the variables in the state space, with their corresponding qEQ objects.
+- The second dictionary contains the operators in the state space, with their corresponding qEQ objects.
 """
 function base_operators(letter::String, qspace::StateSpace)
     my_ops::Vector{qEQ} = []
@@ -391,8 +433,7 @@ end
 """
 flatten(qeq::qEQ) -> qEQ
 
-Walk every term in `qeq`.  Plain `qTerm`’s are kept; each `qSum`
-is replaced by all of the one-level sums returned by `flatten_qSum`.
+Flattens nested Sums in quantum Equations (qEQ).
 """
 function flatten(qeq::qEQ)::qEQ
     new_terms = qExpr[]
@@ -488,8 +529,8 @@ end
 """
     neq(qeq::qEQ) -> qEQ
 
-Transform sums into neq sums, where all indexes are different from each other.
-Plain qTerms pass through unchanged.
+Transform sums into neq sums, where all indexes are different from each other, and returns a flattened qEQ with neq sums. 
+Considers all cases of the sums, simplifying the cases in which indexes are the same, which then reduces the order of the sum (i.e. a sum_{j} x_i y_j => sum_{j} x_i y_j + im*z_i, where we used x_i*y_i=im*z_i).
 """
 function neq(qeq::qEQ)::qEQ
     # flatten first 
@@ -591,7 +632,7 @@ end
 # Import the base addition operator.
 
 """
-    d_dt(ss::StateSpace, expr)
+    d_dt(qspace::StateSpace, expr)
 
 Evaluate the time derivative of an expression `expr` in the context of the given state space `ss`.
 

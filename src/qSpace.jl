@@ -2,7 +2,7 @@ module qSpace
 
 using ..StringUtils
 
-export OperatorSet, SubSpace, Parameter, StateSpace, cleanup_terms
+export OperatorSet, SubSpace, Parameter, StateSpace
 
 "OperatorSet stores the operator labels and a transformation function.  
 The field `ops` is a vector of Chars (e.g. ['x','y','z','I']). The field `transform` is a function that takes two operator indices (Int) and returns a vector of products. Each product is given as a tuple (coefficient::ComplexF64, new_index::Int)."
@@ -57,7 +57,7 @@ struct SubSpace
     fermion::Bool
 end
 # Define the custom show for SubSpace.
-function Base.show(io::IO, ss::SubSpace)
+function Base.show(io::IO, qspace::SubSpace)
     # Print the subspace key and allowed keys.
     print(io, "SubSpace ", ss.keys, ": ")
     # Use the OperatorSet's show for the op_set field.
@@ -118,10 +118,9 @@ global GLOBAL_STATE_SPACE = nothing
     StateSpace(args...; kwargs...)
 
 Constructs a combined Hilbert and Parameter space. The Hilbert space consists of different subspaces, themselves composed of different operator sets. The Parameter space defines the variables, that are needed to describe equations on the Hilbert space.
-    - **args**: A variable number of symbols or strings representing the state variables. Can contain "pre_sub" to reference time dependence via sub=t or reference to a spin continuum via it's key
+    - **args**: A variable number of symbols or strings representing the state variables. Can refer to indexes of subsystems via for underscore notation, i.e., "alpha_i" or declare time dependence via for example "alpha(t)".
     - **kwargs**: Each keyword is interpreted as a subspace label. The values are either Operator Sets or Tuples with an integer and an OperatorSet. The integer is the number of indexes generated for the subspace.
 
-    Continue Here! 
 """
 struct StateSpace
     # Parameter fields:
@@ -307,17 +306,7 @@ end
 #I = base_operators("I", qs)
 #alpha, beta = base_operators("vars", qs)
 
-include("OperatorSets/Qubit_Pauli.jl")
-include("OperatorSets/Qubit_PM.jl")
-include("OperatorSets/Ladder.jl")
-
 Is = Union{Int,Vector{Int}}
-"""
-    cleanup_terms(terms::Vector{Tuple{<:Number, Vector{Is}}}; tol=1e-12)
-
-Sorts terms by index vector, sums duplicate coefficients, removes near-zero values.
-`Is` can be `Int` or `Vector{Int}` (or any comparable structure).
-"""
 function cleanup_terms(terms::Vector{Tuple{T,S}}; tol::Real=1e-12)::Vector{Tuple{T,S}} where {T<:Number,S}
 
     sort!(terms, by=x -> x[2])  # Sort by the index vector
@@ -340,5 +329,10 @@ function cleanup_terms(terms::Vector{Tuple{T,S}}; tol::Real=1e-12)::Vector{Tuple
 
     return cleaned
 end
+
+
+include("OperatorSets/Qubit_Pauli.jl")
+include("OperatorSets/Qubit_PM.jl")
+include("OperatorSets/Ladder.jl")
 
 end # module 

@@ -36,14 +36,13 @@ end
 export set_float_digits, set_exp_digits
 
 include("StringUtils.jl")
-using .StringUtils
+#using .StringUtils
 #export subscript_indexes, superscript_indexes, var_substitution, var_substitution_latex, str2sub, str2sup, separate_terms, expstr_separate
 
 include("qSpace.jl")
 using .qSpace
 export OperatorSet, SubSpace, Parameter, StateSpace
 export QubitPauli, QubitPM, Ladder
-export cleanup_terms   # remove later from exports
 
 include("qExpressions.jl")
 using .qExpressions
