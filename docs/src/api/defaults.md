@@ -8,3 +8,4 @@ These defaults are persistent across sessions using `Preferences.jl`.
 ```@docs
 set_float_digits
 set_exp_digits
+```
