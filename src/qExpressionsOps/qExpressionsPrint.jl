@@ -386,7 +386,6 @@ function brace(grouped_term::Tuple{Number,Vector{Int},Vector{qExpr}}, statespace
         else
             return term_string
         end
-        return curr_qterm_str
     else # need to brace 
         if length(qexprs) > 0
             term_string = strip(join([qexpr_to_string(t, statespace, do_latex=do_latex, do_sigma=do_sigma, braket=braket) for t in qexprs]))

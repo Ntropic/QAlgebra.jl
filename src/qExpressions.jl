@@ -1,7 +1,7 @@
 module qExpressions
 using ..qSpace
 using ..StringUtils
-using ..ComplexRational
+using ComplexRationals
 import Base: show, adjoint, iterate, length, eltype, +, -, sort, *, ^, product, iszero, copy
 
 export qExpr, qTerm, qEQ, qSum, diff_qEQ, term, simplify, base_operators, Sum, ∑, flatten, neq, d_dt
@@ -60,7 +60,7 @@ mutable struct qSum <: qExpr
     neq::Bool
 end
 
-""" 
+raw""" 
     diff_qEQ
 
 A `diff_qEQ` represents a differential equation d/dt <LHS> = <RHS>, where LHS is the expectation value of a qTerm and similarly the RHS is the expectation value of a qEQ.
@@ -336,6 +336,8 @@ Specifc variables/operators can be selected by passing a string `letter`.
 If no `letter` is passed, the function returns a tuple of two dictionaries:
 - The first dictionary contains the variables in the state space, with their corresponding qEQ objects.
 - The second dictionary contains the operators in the state space, with their corresponding qEQ objects.
+
+If you pass "vars", it will return a tuple with elements for each variable
 """
 function base_operators(letter::String, qspace::StateSpace)
     my_ops::Vector{qEQ} = []

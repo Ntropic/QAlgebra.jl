@@ -4,9 +4,8 @@ using ..StringUtils
 
 export OperatorSet, SubSpace, Parameter, StateSpace
 
-"OperatorSet stores the operator labels and a transformation function.  
-The field `ops` is a vector of Chars (e.g. ['x','y','z','I']). The field `transform` is a function that takes two operator indices (Int) and returns a vector of products. Each product is given as a tuple (coefficient::ComplexF64, new_index::Int)."
-""" 
+Is = Union{Int,Vector{Int}}
+"""
     OperatorSet(name::String, fermion::Bool, len::Int, neutral_element::Union{Int,Vector{Int}}, base_ops::Union{Vector{Int},Vector{Vector{Int}}}, ops::Vector{String}, op_product::Function, op_dag::Function, strs2ind::Function, op2str::Function, op2latex::Function)
 
 OperatorSets define the algebraic structure of a quantum system, defining ways to multiply and conjugate operators within the space, how to print them (both for plain and latex formatting), how to extract operators from strings.
@@ -59,9 +58,9 @@ end
 # Define the custom show for SubSpace.
 function Base.show(io::IO, qspace::SubSpace)
     # Print the subspace key and allowed keys.
-    print(io, "SubSpace ", ss.keys, ": ")
+    print(io, "SubSpace ", qspace.keys, ": ")
     # Use the OperatorSet's show for the op_set field.
-    show(io, ss.op_set)
+    show(io, qspace.op_set)
 end
 
 """ 
@@ -120,7 +119,6 @@ global GLOBAL_STATE_SPACE = nothing
 Constructs a combined Hilbert and Parameter space. The Hilbert space consists of different subspaces, themselves composed of different operator sets. The Parameter space defines the variables, that are needed to describe equations on the Hilbert space.
     - **args**: A variable number of symbols or strings representing the state variables. Can refer to indexes of subsystems via for underscore notation, i.e., "alpha_i" or declare time dependence via for example "alpha(t)".
     - **kwargs**: Each keyword is interpreted as a subspace label. The values are either Operator Sets or Tuples with an integer and an OperatorSet. The integer is the number of indexes generated for the subspace.
-
 """
 struct StateSpace
     # Parameter fields:
@@ -135,7 +133,7 @@ struct StateSpace
     subspaces::Vector{SubSpace}
     fermionic_keys::Vector{String}
     bosonic_keys::Vector{String}
-    simplify::Bool
+    neutral_op::Vector{Is}
 
     function StateSpace(args...; make_global::Bool=true, kwargs...)
         subspaces = Vector{SubSpace}()
@@ -283,7 +281,8 @@ struct StateSpace
         for p in vars
             push!(vars_str, p.var_name)
         end
-        qss = new(vars, vars_str, vars_cont, how_many_by_continuum, where_by_continuum, where_by_time, where_const, subspaces, fermionic_keys, bosonic_keys)
+        neutral_op = [s.op_set.neutral_element for s in subspaces for key in s.keys]
+        qss = new(vars, vars_str, vars_cont, how_many_by_continuum, where_by_continuum, where_by_time, where_const, subspaces, fermionic_keys, bosonic_keys, neutral_op)
         if make_global
             global GLOBAL_STATE_SPACE = qss
         end
@@ -291,12 +290,12 @@ struct StateSpace
     end
 end
 # Define the custom show for StateSpace.
-function Base.show(io::IO, s::StateSpace)
+function Base.show(io::IO, qspace::StateSpace)
     # First line: StateSpace and its variables.
-    var_str = join([p.var_str for p in s.vars], ", ")
+    var_str = join([p.var_str for p in qspace.vars], ", ")
     println(io, "StateSpace: [" * var_str * "]")
     # Then print each subspace on its own line.
-    for ss in s.subspaces
+    for ss in qspace.subspaces
         println(io, "   - ", string(ss))
     end
 end

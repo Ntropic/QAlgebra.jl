@@ -1,6 +1,6 @@
 export Ladder
 
-"""
+raw"""
     Ladder() -> OperatorSet
 
 Creates the OperatorSet for a bosonic mode using creation and annihilation operators (Ladder operators: $a^\dagger$, $a$).

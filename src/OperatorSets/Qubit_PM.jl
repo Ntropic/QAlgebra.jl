@@ -24,7 +24,7 @@ const PM_HOW_MANY = Int[1 2 1 1; # p
     1 1 1 1; # z
     1 1 1 1] # I
 
-""" 
+raw""" 
     QubitPM() -> OperatorSet
 
 Creates the OperatorSet for a qubit using Raising and Lowering operators ($\sigma_+$, $\sigma_-$, $\sigma_z$, $\sigma_I$).

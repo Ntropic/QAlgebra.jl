@@ -1,4 +1,80 @@
-export Dag, Commutator
+export Dag, Commutator, is_numeric
+
+function is_numeric(t::qTerm, qspace::StateSpace)::Bool
+    if qspace.neutral_op == t.op_indices && all(t.var_exponents .== 0)
+        return true
+    end
+    return false
+end
+function is_numeric(expr::qEQ)::Bool
+    expr_s = simplify(expr)
+    terms = expr_s.terms
+
+    if isempty(terms)
+        return true  # No terms = numeric 0
+    elseif length(terms) == 1
+        t = terms[1]
+        if t isa qTerm
+            return is_numeric(t, expr_s.statespace)
+        else
+            return false
+        end
+    else
+        return false
+    end
+end
+function is_numeric(s::qSum)::Bool
+    return false
+end
+
+import Base: ==
+function isapprox_num(x, y; atol=1e-12)
+    return isapprox(x, y, atol=atol)
+end
+
+function ==(a::qTerm, b::qTerm)
+    return isapprox_num(a.coeff, b.coeff) &&
+           a.var_exponents == b.var_exponents &&
+           a.op_indices == b.op_indices
+end
+function ==(a::qEQ, b::qEQ)
+    simple_a = simplify(a)
+    simple_b = simplify(b)
+    if length(simple_a) != length(simple_b)
+        return false
+    end
+    if simple_a.statespace != simple_b.statespace
+        return false
+    end
+    return all([ai == bi for (ai, bi) in zip(simple_a, simple_b)])
+end
+function ==(a::qSum, b::qSum)
+    if a.element_indexes != b.element_indexes
+        return false
+    end
+    if a.subsystem_index != b.subsystem_index
+        return false
+    end
+    if a.neq != b.neq
+        return false
+    end
+    return a.expr == b.expr
+end
+function ==(expr::qEQ, n::Number)
+    simple_expr = simplify(expr)
+    if is_numeric(simple_expr)
+        if length(simple_expr.terms) == 0
+            return isapprox_num(0, n)
+        else
+            return isapprox_num(simple_expr.terms[1].coeff, n)
+        end
+    end
+    return false
+end
+function ==(n::Number, expr::qEQ)
+    return expr == n  # Symmetric
+end
+
 
 ### Basic Operations: 
 function -(t::qTerm)::qTerm
@@ -71,6 +147,7 @@ function -(S1::qSum, S2::qSum)::qEQ
     S2_minus = -S2
     return S1 + S2_minus
 end
+
 
 """
     Dag(t::qTerm, qspace::StateSpace) -> qTerm
@@ -206,21 +283,21 @@ end
 function *(num::Number, S::qSum)::qSum
     return qSum(S.expr * num, S.indexes, S.subsystem_index, S.element_indexes, S.neq)
 end
-function *(S::qSum, Q::qEQ)::qEQ
+function *(S::qSum, Q::qEQ)::qSum
     if S.expr.statespace != Q.statespace
         error("Cannot multiply qSum and qEQ from different statespaces.")
     end
     new_terms = S.expr * Q
     return qEQ([qSum(new_terms, S.indexes, S.subsystem_index, S.element_indexes)], Q.statespace)
 end
-function *(Q::qEQ, S::qSum)::qEQ
+function *(Q::qEQ, S::qSum)::qSum
     if S.expr.statespace != Q.statespace
         error("Cannot multiply qSum and qEQ from different statespaces.")
     end
     new_terms = Q * S.expr
     return qSum(new_terms, S.indexes, S.subsystem_index, S.element_indexes)
 end
-function *(Q::qSum, S::qSum)::qEQ
+function *(Q::qSum, S::qSum)::qSum
     if Q.expr.statespace != S.expr.statespace
         error("Cannot multiply qSum and qEQ from different statespaces.")
     end
@@ -243,11 +320,14 @@ function Commutator(Q1::qEQ, Q2::qEQ)::qEQ
     # qEQ multiplication is already defined.
     return Q1 * Q2 - Q2 * Q1
 end
-function Commutator(Q::qEQ, t::qSum)::qEQ
+function Commutator(Q::qEQ, t::qSum)::qSum
     return Q * t - t * Q
 end
-function Commutator(t::qSum, Q::qEQ)::qEQ
+function Commutator(t::qSum, Q::qEQ)::qSum
     return t * Q - Q * t
+end
+function Commutator(Q::qSum, t::qSum)::qSum
+    return Q * t - t * Q
 end
 
 function Commutator(t1::qTerm, t2::qTerm, statespace::StateSpace)::qEQ

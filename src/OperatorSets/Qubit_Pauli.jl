@@ -12,8 +12,7 @@ const PAULI_COEFF_TABLE = [
     im -im 1 1;
     1 1 1 1]
 
-"QubitPauli returns an OperatorSet for qubit (Pauli) operators."
-"""
+raw"""
     QubitPauli() -> OperatorSet
 
 Creates the OperatorSet for a qubit using Pauli operators ($\sigma_x$, $\sigma_y$, $\sigma_z$, $\sigma_I$).
