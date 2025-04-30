@@ -60,16 +60,21 @@ mutable struct qSum <: qExpr
     neq::Bool
 end
 
-raw""" 
+"""
     diff_qEQ
 
-A `diff_qEQ` represents a differential equation d/dt <LHS> = <RHS>, where LHS is the expectation value of a qTerm and similarly the RHS is the expectation value of a qEQ.
-It contains: 
-    - `left_hand_side`: The left-hand side of the equation, which is a `qTerm` object.
-    - `right_hand_side`: The right-hand side of the equation, which is a `qEQ` object.
-    - `statespace`: The state space in which the equation is defined.
-    - `braket`: (default=true) A boolean indicating whether to use braket notation for the terms, to indicate the expectation value.
-    - `do_sigma`: (default=true) A boolean indicating whether to use $\sigma_x$ notation or $x$ notation for the terms.
+A `diff_qEQ` represents a differential equation of the form:
+
+    d/dt ⟨Op⟩ = RHS
+
+It represents time evolution of operator expectation values, and wraps the symbolic structure of such an equation.
+
+# Fields
+- `left_hand_side::qTerm`: The LHS operator being differentiated.
+- `right_hand_side::qEQ`: The RHS symbolic expression.
+- `statespace::StateSpace`: The StateSpace in which the equation is defined.
+- `braket::Bool`: Whether to use braket notation ⟨⋯⟩ (default = `true`).
+- `do_sigma::Bool`: Whether to display Pauli operators as `σₓ`, etc. (default = `true`).
 """
 mutable struct diff_qEQ
     left_hand_side::qTerm
@@ -77,9 +82,18 @@ mutable struct diff_qEQ
     statespace::StateSpace
     braket::Bool
     do_sigma::Bool
-    function diff_qEQ(left_hand_side::qTerm, right_hand_side::qEQ, statespace::StateSpace; braket::Bool=true, do_sigma::Bool=true)
-        new(left_hand_side, neq(right_hand_side), statespace, braket, do_sigma)
-    end
+end
+
+"""
+    diff_qEQ(lhs::qTerm, rhs::qEQ, statespace::StateSpace; braket=true, do_sigma=true)
+
+Construct a [`diff_qEQ`](@ref) that represents the time derivative of ⟨lhs⟩ = rhs.
+
+Automatically applies `neq()` to the RHS to expand sums over distinct indices.
+"""
+function diff_qEQ(left_hand_side::qTerm, right_hand_side::qEQ, statespace::StateSpace; braket::Bool=true, do_sigma::Bool=true)
+    new_rhs = neq(right_hand_side)
+    return diff_qEQ(left_hand_side, new_rhs, statespace, braket, do_sigma)
 end
 
 """
