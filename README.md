@@ -63,17 +63,5 @@ neq_sum = neq_sum(qsum) # this also flattens the sum
 diff_eq = d_dt(zi, alpha*expr+sum) # this simplifies, flattens and neq's the qEQ
 ```
 
-To exemplify the pretty printing and LaTeX rendering, we can display an expression via
-```julia
-display(diff_eq)
-```
-Which will return the LaTeX expression 
-$$
-\frac{\text{d} \phantom{t}}{\text{d}t}\!\,\braket{\hat{\sigma}_{z}^{(i)}} = \sum_{j}^{\neq} \left(\alpha\,\braket{\hat{\sigma}_{y}^{(i)}\hat{\sigma}_{y}^{(j)}}+2\alpha^2\beta(t)\,\left(\,\braket{\hat{\sigma}_{x}^{(i)}}+\,\braket{\hat{\sigma}_{x}^{(j)}}\right)\right)+\sum_{(j,k)}^{\neq} \alpha^2\beta(t)\,\braket{\hat{\sigma}_{x}^{(i)}\hat{\sigma}_{x}^{(j)}\hat{\sigma}_{x}^{(k)}}+\sum_{k}^{\neq} \alpha^2\beta(t)\,\braket{\hat{\sigma}_{x}^{(k)}}+\alpha\,+i\alpha^2\,\left(2\,\braket{\hat{\sigma}_{x}^{(i)}}+\,\braket{\hat{\sigma}_{z}^{(i)}\hat{b}^\dagger}\right)
-$$
-If the IO does not support LaTeX rendering, the expression can be printed as
-
-d(⟨zᵢ⟩) / dt = ∑ⱼ (α⟨yᵢyⱼ⟩+2×α²β(t)(⟨xᵢ⟩+⟨xⱼ⟩))+∑₍ⱼₖ₎ α²β(t)⟨xᵢxⱼxₖ⟩+∑ₖ α²β(t)⟨xₖ⟩+α+iα²(2⟨xᵢ⟩+⟨zᵢb†⟩)
-
 ## Author 
 - [Michael Schilling](https://github.com/Ntropic)
