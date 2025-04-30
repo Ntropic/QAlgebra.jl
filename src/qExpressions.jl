@@ -462,6 +462,7 @@ Emit up to one “parent” sum over the `base_terms` (if non-empty), then
 for each nested sum `n` emit a new `qSum` whose index-list is
 `vcat(s.indexes, n.indexes)`.  Any duplicate index names will error.
 """
+# No docstring here
 function flatten_qSum(s::qSum)::qEQ
     # first, fully flatten the body
     inner = flatten(s.expr)

@@ -215,6 +215,7 @@ Multiplies two qTerm’s from the same statespace:
     each combination yields a new qTerm with its coefficient multiplied by the product of the factors,
     and with op_indices given by the corresponding indexes.
 """
+# no docstring for this function
 function multiply_qterm(t1::qTerm, t2::qTerm, statespace::StateSpace)::Vector{qTerm}
     # Multiply coefficients and add variable exponents.
     new_coeff_base = t1.coeff * t2.coeff

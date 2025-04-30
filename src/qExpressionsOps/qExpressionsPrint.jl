@@ -255,6 +255,7 @@ and return the one that, when used as a divisor for all coefficients, produces t
 If there is a tie, the candidate with the lowest total absolute deviation from 1 among the
 non‑1 factors is chosen.
 """
+# no docstring here
 function best_common_factor(coeffs::AbstractVector{<:Number})
     # Remove zeros (if any).
     coeffs_nonzero = filter(c -> !iszero(c), coeffs)
@@ -287,6 +288,7 @@ factor among the coefficients using `best_common_factor`. Returns a tuple:
 - common: the chosen common factor.
 - new_terms: the qTerm's updated with their coefficient divided by the common factor.
 """
+# no docstring here
 function find_and_apply_common_factor(qterms::Vector{qTerm}; remove_exponents::Bool=false)
     # implicitly assume each qExpr is a qTerm
     # Remove any terms with a zero coefficient.
