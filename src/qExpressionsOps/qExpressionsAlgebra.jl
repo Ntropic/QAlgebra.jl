@@ -194,13 +194,6 @@ function Dag(t::qSum, qspace::StateSpace)::qSum
     return qSum(Dag(t.expr), t.indexes, t.subsystem_index, t.element_indexes, t.neq)
 end
 
-"""
-    adjoint(t::qTerm) -> qTerm
-
-Overloads the adjoint operator (t′) for a qTerm, using the global state space stored in GLOBAL_STATE_SPACE.
-Make sure GLOBAL_STATE_SPACE is set to an appropriate StateSpace.
-"""
-adjoint(t::qTerm) = Dag(t, GLOBAL_STATE_SPACE)
 adjoint(Q::qEQ) = Dag(Q)
 adjoint(Q::qSum) = Dag(Q)
 
