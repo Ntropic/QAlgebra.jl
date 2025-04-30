@@ -1,5 +1,12 @@
 export Dag, Commutator, is_numeric
 
+""" 
+    is_numeric(t::qTerm, qspace::StateSpace) -> Bool
+    is_numeric(expr::qEQ) -> Bool
+    is_numeric(s::qSum) -> Bool
+
+Returns true if only the coefficient of the term(s) is non-zero.
+"""
 function is_numeric(t::qTerm, qspace::StateSpace)::Bool
     if qspace.neutral_op == t.op_indices && all(t.var_exponents .== 0)
         return true

@@ -461,6 +461,13 @@ function show(io::IO, ::MIME"text/latex", q::diff_qEQ)
 end
 
 #### String ##########################################################################################################################
+""" 
+    string(eq::qEQ) -> String
+    string(eq::qSum) -> String
+    string(eq::diff_qEQ) -> String
+
+Returns a string representation of the qEQ, qSum, or diff_qEQ object. The string is formatted in a human-readable way, but without LaTeX formatting.
+"""
 function string(eq::qEQ)::String
     return qeq_to_string(eq, do_latex=false, do_sigma=false)
 end
@@ -471,6 +478,13 @@ function string(eq::diff_qEQ)::String
     return diff_qEQ2string(eq, do_latex=false)
 end
 #### LaTeXString #####################################################################################################################
+""" 
+    latex_string(eq::qEQ) -> String
+    latex_string(eq::qSum) -> String
+    latex_string(eq::diff_qEQ) -> String
+
+Returns a LaTeX string representation of the qEQ, qSum, or diff_qEQ object. 
+"""
 function latex_string(eq::qEQ)::String
     return qeq_to_string(eq, do_latex=true, do_sigma=false)
 end
