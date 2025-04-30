@@ -54,7 +54,7 @@ jobs:
       - uses: julia-actions/cache@v2
       - name: Configure doc environment
         run: |
-          julia --project=docs -e "using Pkg; Pkg.Registry.update(); Pkg.develop(PackageSpec(url=\"https://github.com/Ntropic/ComplexRationals.jl\")); Pkg.develop(PackageSpec(path=\"..\")); Pkg.instantiate()"
+          julia --project=docs -e "using Pkg; Pkg.Registry.update(); Pkg.develop(PackageSpec(url=\"https://github.com/Ntropic/ComplexRationals.jl\")); Pkg.develop(PackageSpec(path=\".\")); Pkg.instantiate()"
       - name: Build Docs
         run: |
           julia --project=docs -e "using Documenter; include(\"docs/make.jl\")"
