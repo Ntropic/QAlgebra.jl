@@ -11,7 +11,9 @@ export qExpr, qTerm, qEQ, qSum, diff_qEQ, term, simplify, base_operators, Sum, �
 
 The abstract type `qExpr` is the base type for all quantum expressions in this module.
 """
-abstract type qExpr end
+abstract type qExpr end  # most general
+abstract type qAtom <: qExpr end # elementary operator definitions 
+abstract type qComposite <: qExpr end  # products and sums of operator definitions
 
 Is = Union{Int,Vector{Int}}
 
@@ -22,11 +24,26 @@ A `qTerm` represents a single term in a quantum expression. It contains:
     - `coeff`: The coefficient of the term, which can be a number (e.g., `Int`, `Float64`, `Rational`, etc.).
     - `var_exponents`: A vector of integers representing the exponents of the state variables, defined in a StateSpace.
     - `op_indices`: A vector of indices representing the operators in the term, which are also defined in a StateSpace.
+    - `abstract`: A vector of integers representing the indexes of abstract operators in the term. 
 """
-mutable struct qTerm <: qExpr
-    coeff::Number                   # Coefficient (supports Complex, Rational, Int, etc.)
-    var_exponents::Vector{Int}      # Exponents for each state variable (order matching StateSpace.variables).
+mutable struct qTerm <: qAtom
     op_indices::Vector{Is}
+end
+
+"""
+    qAbstract(indices::Vector{Int})
+
+A purely‐symbolic abstract operator
+    - key_index: The index of the abstract_key in the state space.
+    - sub_index: The index of the suboperator in the state_space 
+    - exponent: The exponent of the operator.
+    - dag: A boolean indicating whether the operator is daggered (default = `false`).
+"""
+mutable struct qAbstract <: qAtom
+    key_index::Int
+    sub_index::Int
+    exponent::Int
+    dag::Bool
 end
 
 """
@@ -36,8 +53,23 @@ A `qEQ` represents a quantum equation, consisting of a Vector of quantum Express
 It also contains a reference to the state space in which the equation is defined.
 """
 mutable struct qEQ
-    terms::Vector{qExpr}         # Vector of terms
+    terms::Vector{qComposite}         # Vector of terms
     statespace::StateSpace
+end
+
+""" 
+    qProd
+
+A product of qAtom expressions, i.e. qTerms or qAbstract.
+It contains:
+    - `coeff`: The coefficient of the product, which can be a number (e.g., `Int`, `Float64`, `Rational`, etc.).
+    - `var_exponents`: A vector of integers representing the exponents of the state variables, defined in a StateSpace.
+    - `expr`: A vector of qAtoms (qTerms or qAbstract) that are multiplied together.
+"""
+mutable struct qProd <: qComposite
+    coeff::Number                   # Coefficient (supports Complex, Rational, Int, etc.)
+    var_exponents::Vector{Int}      # Exponents for each state variable (order matching StateSpace.variables).
+    expr::Vector{qAtom}            # Vector of qAtoms (qTerms or qAbstract).
 end
 
 """ 
@@ -52,7 +84,7 @@ It contains:
     - `neq`: A boolean indicating whether different indexes in the sum can refer to the same element in the subspace. 
             For example, the indexes i,j,k can refer to different elements in a much larger bath of elements. 
 """
-mutable struct qSum <: qExpr
+mutable struct qSum <: qComposite
     expr::qEQ       # The expression being summed over.
     indexes::Vector{String}   # The summation index (e.g. "i").
     subsystem_index::Int  # The subspace index where the summation index was found.
@@ -77,7 +109,7 @@ It represents time evolution of operator expectation values, and wraps the symbo
 - `do_sigma::Bool`: Whether to display Pauli operators as `σₓ`, etc. (default = `true`).
 """
 mutable struct diff_qEQ
-    left_hand_side::qTerm
+    left_hand_side::qProd
     right_hand_side::qEQ
     statespace::StateSpace
     braket::Bool
@@ -91,7 +123,7 @@ Construct a [`diff_qEQ`](@ref) that represents the time derivative of ⟨lhs⟩ 
 
 Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
-function diff_qEQ(left_hand_side::qTerm, right_hand_side::qEQ, statespace::StateSpace; braket::Bool=true, do_sigma::Bool=true)
+function diff_qEQ(left_hand_side::qProd, right_hand_side::qEQ, statespace::StateSpace; braket::Bool=true, do_sigma::Bool=true)
     new_rhs = neq(right_hand_side)
     return diff_qEQ(left_hand_side, new_rhs, statespace, braket, do_sigma)
 end
@@ -157,13 +189,18 @@ end
 # Optionally, define length and eltype.
 length(q::qEQ) = length(q.terms)
 length(q::qSum) = length(q.expr.terms)
-eltype(::Type{qEQ}) = qTerm
 iszero(q::qTerm) = iszero(q.coeff)
 iszero(q::qEQ) = length(q.terms) == 0 || all(iszero, q.terms)
 iszero(q::qSum) = iszero(q.expr)
 
 function copy(q::qTerm)::qTerm
-    return qTerm(copy(q.coeff), copy(q.var_exponents), copy(q.op_indices))
+    return qTerm(copy(q.op_indices))
+end
+function copy(q::qAbstract)::qAbstract
+    return qAbstract(q.key_index, q.sub_index, q.exponent, q.dag)
+end
+function copy(q::qProd)::qProd
+    return qProd(copy(q.coeff), copy(q.var_exponents), copy(q.expr))
 end
 function copy(q::qSum)::qSum
     return qSum(copy(q.expr), q.indexes, q.subsystem_index, q.element_indexes, q.neq)
@@ -172,7 +209,7 @@ function copy(q::qEQ)::qEQ
     return qEQ(copy(q.terms), q.statespace)
 end
 
-function var_exponents(q::qTerm)::Vector{Int}
+function var_exponents(q::qProd)::Vector{Int}
     return q.var_exponents
 end
 function var_exponents(q::qSum)::Vector{Int}
@@ -199,11 +236,14 @@ Generate a quantum term (qTerm) from the StateSpace `q`. The state description i
 - Tokens of the form `var^exp` (e.g. `"a^2"`) set the exponent for a state variable.
 - Other tokens are assumed to be keys that match one of the allowed subspace keys (i.e. elements in each SubSpace.keys).
 - If no coefficient is given, the default coefficient is 1.
+- Daggers are given by ', and need to preceed a possible exponent
+"""
 """
 function term(qspace::StateSpace, coeff::Number, operator_str::String="")::qEQ
     # Initialize exponents for each state variable.
     var_exponents = zeros(Int, length(qspace.vars))
     res_strings = separate_terms(operator_str, qspace.vars_str, qspace.fermionic_keys, qspace.bosonic_keys)
+    n_abstract_keys = length(qspace.abstract_keys)
     for var_ind in 1:length(var_exponents)
         curr_res_str = res_strings[1][var_ind]
         var_exponents[var_ind] = sum([expstr_separate(curr_res_str[res])[2] for res in 1:length(curr_res_str)])
@@ -212,7 +252,6 @@ function term(qspace::StateSpace, coeff::Number, operator_str::String="")::qEQ
     for space in qspace.subspaces
         append!(subspace_str2inds, get_op_inds(space, res_strings))
     end
-
     # Construct terms for each combination of subspace_str2inds
     terms::Vector{qTerm} = qTerm[]
     for combo in Iterators.product(subspace_str2inds...)
@@ -230,11 +269,11 @@ end
 function term(qspace::StateSpace, operator_str::String)
     return term(qspace, one(1), operator_str)
 end
-
+"""
 include("qExpressionsOps/qExpressionsAlgebra.jl")
 
 # Use your custom_sort_key for coefficients.
-function qExpr_sort_key(term::qTerm)
+function qExpr_sort_key(term::qProd)
     # Here we convert var_exponents (a Vector{Int}) to a tuple so that it compares lexicographically.
     return (tuple(term.var_exponents...), tuple(term.op_indices...), custom_sort_key(term.coeff), tuple(0, Int[], 0))
 end
@@ -257,7 +296,7 @@ function sort(qeq::qEQ)
     sorted_terms = sort(qeq.terms)
     return qEQ(sorted_terms, qeq.statespace)
 end
-function sort(qterms::Vector{qExpr})
+function sort(qterms::Vector{qComposite})
     sorted_terms = sort(qterms, by=qExpr_sort_key)
     return sorted_terms
 end
@@ -265,15 +304,15 @@ end
 function same_term_type(t1, t2)
     return false
 end
-function same_term_type(t1::qTerm, t2::qTerm)::Bool
+function same_term_type(t1::qProd, t2::qProd)::Bool
     return t1.var_exponents == t2.var_exponents && t1.op_indices == t2.op_indices
 end
 function same_term_type(s1::qSum, s2::qSum)::Bool
     return s1.subsystem_index == s2.subsystem_index && s1.element_indexes == s2.element_indexes
 end
 
-function combine_term(t1::qTerm, t2::qTerm)::qTerm
-    return qTerm(t1.coeff + t2.coeff, t1.var_exponents, t1.op_indices)
+function combine_term(t1::qProd, t2::qProd)::qTerm
+    return qTerm(t1.coeff + t2.coeff, t1.var_exponents, t1.expr)
 end
 function combine_term(s1::qSum, s2::qSum)::qSum
     return qSum(s1.expr + s2.expr, s1.indexes, s1.subsystem_index, s1.element_indexes, s1.neq)
@@ -288,14 +327,14 @@ Simplify a qEQ, qSum or diff_qEQ by sorting terms and ading up terms that are eq
 function simplify(q::qEQ)::qEQ
     # If there are no terms, return an empty qEQ.
     if isempty(q.terms)
-        return qEQ(qExpr[], q.statespace)
+        return qEQ(qComposite[], q.statespace)
     end
 
     # First, sort qEQ without modifying the original.
     sorted_q = sort(q)
     sorted_terms = copy(sorted_q.terms)
 
-    combined_terms = qExpr[]
+    combined_terms = qComposite[]
     i = 1
     curr_term = sorted_terms[1]
     curr_i = 1
@@ -416,6 +455,7 @@ function base_operators(qspace::StateSpace)::Tuple{Dict{String,qEQ},Dict{String,
     # return 2 dicctionaries, one with the vars and one with the operators 
     var_dict::Dict{String,qEQ} = Dict()
     op_dict::Dict{String,qEQ} = Dict()
+    #abstract_dict::Dict{String,qEQ} = Dict()
     neutral_operator = [s.op_set.neutral_element for s in qspace.subspaces for key in s.keys]
     var_exponents = zeros(Int, length(qspace.vars))
     curr_coeff = 1

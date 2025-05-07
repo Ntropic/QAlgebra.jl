@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Ntropic/qAlgebra.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/Ntropic/qAlgebra.jl/actions/workflows/CI.yml)
 [![Julia](https://img.shields.io/badge/Julia-1.10%2B-blue.svg)](https://julialang.org/)
-[![Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://Ntropic.github.io/qAlgebra.jl/stable)
+[![Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://Ntropic.github.io/qAlgebra.jl)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
 

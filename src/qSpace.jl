@@ -119,8 +119,10 @@ global GLOBAL_STATE_SPACE = nothing
 Constructs a combined Hilbert and Parameter space. The Hilbert space consists of different subspaces, themselves composed of different operator sets. The Parameter space defines the variables, that are needed to describe equations on the Hilbert space.
     - **args**: A variable number of symbols or strings representing the state variables. Can refer to indexes of subsystems via for underscore notation, i.e., "alpha_i" or declare time dependence via for example "alpha(t)".
     - **kwargs**: Each keyword is interpreted as a subspace label. The values are either Operator Sets or Tuples with an integer and an OperatorSet. The integer is the number of indexes generated for the subspace.
+    - **abstract**: A string or vector of strings representing the abstract operator keys. 
+    - **make_global**: If true, the StateSpace is stored in the global variable `GLOBAL_STATE_SPACE`.
 """
-struct StateSpace
+mutable struct StateSpace
     # Parameter fields:
     vars::Vector{Parameter}
     vars_str::Vector{String}
@@ -134,8 +136,9 @@ struct StateSpace
     fermionic_keys::Vector{String}
     bosonic_keys::Vector{String}
     neutral_op::Vector{Is}
+    abstract_keys::Union{Vector{String}}
 
-    function StateSpace(args...; make_global::Bool=true, kwargs...)
+    function StateSpace(args...; abstract::Union{String,Vector{String}}="A", make_global::Bool=true, kwargs...)
         subspaces = Vector{SubSpace}()
         fermionic_keys = String[]
         bosonic_keys = String[]
@@ -282,7 +285,10 @@ struct StateSpace
             push!(vars_str, p.var_name)
         end
         neutral_op = [s.op_set.neutral_element for s in subspaces for key in s.keys]
-        qss = new(vars, vars_str, vars_cont, how_many_by_continuum, where_by_continuum, where_by_time, where_const, subspaces, fermionic_keys, bosonic_keys, neutral_op)
+        if isa(abstract, String)
+            abstract = [abstract]
+        end
+        qss = new(vars, vars_str, vars_cont, how_many_by_continuum, where_by_continuum, where_by_time, where_const, subspaces, fermionic_keys, bosonic_keys, neutral_op, abstract)
         if make_global
             global GLOBAL_STATE_SPACE = qss
         end
@@ -298,6 +304,7 @@ function Base.show(io::IO, qspace::StateSpace)
     for ss in qspace.subspaces
         println(io, "   - ", string(ss))
     end
+    println(io, "   - ", "Abstract Operators: ", qspace.abstract_keys)
 end
 
 ## Test 
