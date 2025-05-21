@@ -1,6 +1,6 @@
 # qExpressions
 
-The `qExpressions` module provides the symbolic quantum expressions built on top of the operator and state spaces defined in `qSpace`.  
+The `qExpressions` module provides the symbolic quantum expressions built on top of the operator and state spaces defined in `statespace`.  
 Expressions can represent single operator terms, sums of terms, indexed sums over subsystems, and full differential equations.
 
 qAlgebra organizes expressions into:
@@ -41,7 +41,7 @@ Sum
 flatten
 neq
 d_dt
-is_numeric
+isnumeric
 ```
 
 - [`term`](@ref) constructs a single `qTerm` manually.
@@ -51,7 +51,7 @@ is_numeric
 - [`flatten`](@ref) expands nested sums.
 - [`neq`](@ref) enforces distinctness between summation indices.
 - [`d_dt`](@ref) builds time derivatives (`diff_qEQ`).
-- [`is_numeric`](@ref) checks if an expression simplifies to a pure number or neutral operator.
+- [`isnumeric`](@ref) checks if an expression simplifies to a pure number or neutral operator.
 
 ---
 

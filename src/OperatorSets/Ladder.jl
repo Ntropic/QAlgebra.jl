@@ -8,19 +8,20 @@ Creates the OperatorSet for a bosonic mode using creation and annihilation opera
 function Ladder()
     ops = ["'", ""]  # (Creation, Annihilation)
     base_ladder = [[0, 1]]
-    function ladderstr2ind(str::String)::Vector{Tuple{Complex,Vector{Int}}}
+    non_base_ops::Dict{String, Vector{Tuple{ComplexRational, Is}}} = Dict("n" => [(ComplexRational(1,0,1), [1,1])])
+    function ladderstr2ind(str::String)::Vector{Tuple{ComplexRational,Vector{Int}}}
         str, exp = expstr_separate(str)
         res = findfirst(==(str), ops)
-        if res == nothing
+        if isnothing(res)
             error("Invalid Ladder string: $str, must be one of $ops, or empty (may contain ^integer). ")
         end
         if res == 1
-            return [(1.0 + 0im, [exp, 0])]
+            return [(ComplexRational(1,0,1), [exp, 0])]
         else
-            return [(1.0 + 0im, [0, exp])]
+            return [(ComplexRational(1,0,1), [0, exp])]
         end
     end
-    function ladder_product_(a::Vector{Int}, b::Vector{Int})::Vector{Tuple{Complex,Vector{Int}}}
+    function ladder_product_(a::Vector{Int}, b::Vector{Int})::Vector{Tuple{ComplexRational,Vector{Int}}}
         # using a^n a' = a' a^n + n a^{n-1}
         if a[2] > 0 && b[1] > 0
             first = ladder_product_([a[1] + 1, a[2]], [b[1] - 1, b[2]])
@@ -30,26 +31,26 @@ function Ladder()
             end
             return first
         else
-            return [(1.0 + 0im, [a[1] + b[1], a[2] + b[2]])]
+            return [(ComplexRational(1,0,1), [a[1] + b[1], a[2] + b[2]])]
         end
     end
-    function ladder_product(a::Vector{Int}, b::Vector{Int})::Vector{Tuple{Complex,Vector{Int}}}
+    function ladder_product(a::Vector{Int}, b::Vector{Int})::Vector{Tuple{ComplexRational,Vector{Int}}}
         return cleanup_terms(ladder_product_(a, b))
     end
-    function ladder_dag(op::Vector{Int})::Vector{Tuple{Complex,Vector{Int}}}
-        return [(1.0 + 0im, [op[2], op[1]])]
+    function ladder_dag(op::Vector{Int})::Vector{Tuple{ComplexRational,Vector{Int}}}
+        return [(ComplexRational(1,0,1), [op[2], op[1]])]
     end
-    function ladderstr2ind(str::Vector{String})::Vector{Tuple{Complex,Vector{Int}}}
+    function ladderstr2ind(str::Vector{String})::Vector{Tuple{ComplexRational,Vector{Int}}}
         if length(str) == 0
-            return [(1.0 + 0im, [0, 0])]
+            return [(ComplexRational(1,0,1), [0, 0])]
         end
-        new_exp::Vector{Tuple{Complex,Vector{Int}}} = ladderstr2ind(str[1])
+        new_exp::Vector{Tuple{ComplexRational,Vector{Int}}} = ladderstr2ind(str[1])
         for s_str in str[2:end]
             s = ladderstr2ind(s_str)[1]
-            new_new_exp::Vector{Tuple{Complex,Vector{Int}}} = []
+            new_new_exp::Vector{Tuple{ComplexRational,Vector{Int}}} = []
             for exp in new_exp
                 curr_terms = ladder_product(exp[2], s[2])
-                for i in 1:length(curr_terms)
+                for i in 1:eachindex(curr_terms)
                     curr_terms[i] = (curr_terms[i][1] * s[1] * exp[1], curr_terms[i][2])
                 end
                 append!(new_new_exp, curr_terms)
@@ -98,5 +99,5 @@ function Ladder()
         end
         return curr_str
     end
-    return OperatorSet("Ladder", false, 2, Int[0, 0], base_ladder, ops, ladder_product, ladder_dag, ladderstr2ind, ladder2str, ladder2latex)
+    return OperatorSet("Ladder", false, 2, Int[0, 0], base_ladder, non_base_ops, ops, ladder_product, ladder_dag, ladderstr2ind, ladder2str, ladder2latex)
 end

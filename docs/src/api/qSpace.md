@@ -1,6 +1,6 @@
 # Operator Spaces
 
-The `qSpace` submodule defines the operator and variable structure of quantum systems. These spaces serve as the foundation for building symbolic quantum expressions in qAlgebra. It centers around the code struct `StateSpace`, which holds the entire system structure: subspaces, variables, time dependence, and indexing.
+The `statespace` submodule defines the operator and variable structure of quantum systems. These spaces serve as the foundation for building symbolic quantum expressions in qAlgebra. It centers around the code struct `StateSpace`, which holds the entire system structure: subspaces, variables, time dependence, and indexing.
 
 ## Core Types
 

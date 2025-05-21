@@ -11,14 +11,14 @@ const PM_TRANSFORM_TABLE2 = Int[0 3 0 0; # p
     0 0 0 0; # z
     0 0 0 0] # I
 
-const PM_COEFF_TABLE1 = ComplexF64[0.0 0.5 -1.0 1.0;
+const PM_COEFF_TABLE1 = crationalize.([0.0 0.5 -1.0 1.0;
     0.5 0.0 1.0 1.0;
     1.0 -1.0 1.0 1.0;
-    1.0 1.0 1.0 1.0]
-const PM_COEFF_TABLE2 = ComplexF64[0 0.5 0 0;
+    1.0 1.0 1.0 1.0])
+const PM_COEFF_TABLE2 = crationalize.([0 0.5 0 0;
     -0.5 0 0 0;
     0 0 0 0;
-    0 0 0 0]
+    0 0 0 0])
 const PM_HOW_MANY = Int[1 2 1 1; # p 
     2 1 1 1; # m
     1 1 1 1; # z
@@ -32,10 +32,11 @@ Creates the OperatorSet for a qubit using Raising and Lowering operators ($\sigm
 function QubitPM()
     ops = ["p", "m", "z", "I"]
     ops_str = ["+", "-", "z", "I"]
+    non_base_ops::Dict{String, Vector{Tuple{ComplexRational, Is}}} = Dict("x"=> [(ComplexRational(1,0,1), 1),(ComplexRational(1,0,1), 2)], "y" => [(ComplexRational(0,-1,1), 1), (ComplexRational(0,1,1), 2)])
     base_pm = [1, 2, 3]
     pm_dag_inds = [2, 1, 3, 4]
     # Define the transformation function using the PAULI_* tables.
-    function pm_product(op1::Int, op2::Int)::Vector{Tuple{Complex,Int}}
+    function pm_product(op1::Int, op2::Int)::Vector{Tuple{ComplexRational,Int}}
         # Look up the coefficient and new operator index.
         c1 = PM_COEFF_TABLE1[op1, op2]
         new_index1 = PM_TRANSFORM_TABLE1[op1, op2]
@@ -48,26 +49,26 @@ function QubitPM()
             return [(c1, new_index1)]
         end
     end
-    function pm_dag(op::Int)::Vector{Tuple{Complex,Int}}
-        return [(1.0, pm_dag_inds[op])]
+    function pm_dag(op::Int)::Vector{Tuple{ComplexRational,Int}}
+        return [(ComplexRational(1,0,1), pm_dag_inds[op])]
     end
-    function pmstr2ind(str::String)::Vector{Tuple{Complex,Int}}
+    function pmstr2ind(str::String)::Vector{Tuple{ComplexRational,Int}}
         if length(str) == 0
-            return [(1.0 + 0im, 4)]
+            return [(ComplexRational(1,0,1), 4)]
         end
         res = findfirst(==(str), ops)
-        if res == nothing
+        if isnothing(res)
             error("Invalid Pauli string: $str, must be one of $ops, or empty")
         end
-        return [(1.0 + 0im, res)]
+        return [(ComplexRational(1,0,1), res)]
     end
-    function pmstr2ind(str::Vector{String})::Vector{Tuple{Complex,Int}}
+    function pmstr2ind(str::Vector{String})::Vector{Tuple{ComplexRational,Int}}
         # iteratively take paulistr2ind for each element and unify them iteratively using pauli_product 
         if length(str) == 0
-            return [(1.0 + 0im, 4)]
+            return [(ComplexRational(1,0,1), 4)]
         end
         inds = [pmstr2ind(s)[1][2] for s in str]
-        coeff = 1.0 + 0im
+        coeff = ComplexRational(1,0,1)
         while length(inds) > 1
             new_coeff, new_ind = pm_product(inds[end-1], inds[end])[1]
             coeff *= new_coeff
@@ -92,7 +93,7 @@ function QubitPM()
         end
         return curr_str
     end
-    return OperatorSet("PM Qubit", true, 1, 4, base_pm, ops, pm_product, pm_dag, pmstr2ind, pm2str, pm2latex)
+    return OperatorSet("PM Qubit", true, 1, 4, base_pm, non_base_ops, ops, pm_product, pm_dag, pmstr2ind, pm2str, pm2latex)
 end
 # Test 
 #q = QubitPM()

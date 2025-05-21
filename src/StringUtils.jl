@@ -1,6 +1,6 @@
 module StringUtils
 
-export subscript_indexes, superscript_indexes, var_substitution, var_substitution_latex, str2sub, str2sup, separate_terms, expstr_separate
+export subscript_indexes, superscript_indexes, var_substitution, var_substitution_latex, str2sub, str2sup, term_pre_split, separate_terms, expstr_separate
 
 const subscript_indexes = Dict('a' => "ₐ", 'h' => "ₕ", 'i' => "ᵢ", 'j' => "ⱼ", 'k' => "ₖ", 'l' => "ₗ", 'm' => "ₘ", 'n' => "ₙ", 'o' => "ₒ", 'p' => "ₚ", '1' => "₁", '2' => "₂", '3' => "₃", '4' => "₄", '5' => "₅", '6' => "₆", '7' => "₇", '8' => "₈", '9' => "₉", '=' => "₌", '+' => "₊", '-' => "₋", '0' => "₀", 'x' => "ₓ", 'y' => "ᵧ", ',' => ",", '∊' => "∊", ' ' => " ", '(' => "₍", ')' => "₎")
 const superscript_indexes = Dict('a' => "ᵃ", 'b' => "ᵇ", 'c' => "ᶜ", 'd' => "ᵈ", 'e' => "ᵉ", 'f' => "ᶠ",
@@ -36,6 +36,42 @@ function str2sup(s::String)::String
     return new_str
 end
 
+function term_pre_split(input::String, operator_names::Vector{String})::Tuple{Vector{String}, Vector{Bool}}
+    # Separate string into qTerm parts and qAbstract parts (with 0 for qTerm and 1 for qAbstract in the second output (Vector{Bool})
+    # Preprocess the input: remove underscores and replace spaces with asterisks.
+    input = replace(replace(input, "_" => ""), " " => "*")
+    # Split the input string by '*' signs.
+    terms = split(input, "*")
+    out_strings::Vector{String} = []
+    out_type::Vector{Bool} = []
+    curr_terms::String = ""
+    for term in terms
+        if length(term) == 0
+            continue
+        end
+        # Check if the term starts with any of the operator names.
+        if any(startswith(term, op_name) for op_name in operator_names)
+            if length(curr_terms) > 0
+                push!(out_strings, curr_terms)
+                push!(out_type, false)
+                curr_terms = ""
+            end
+            push!(out_strings, term)
+            push!(out_type, true)
+        else
+            if length(curr_terms) > 0
+                curr_terms *= "*"
+            end
+            curr_terms *= term
+        end
+    end
+    if length(curr_terms) > 0
+        push!(out_strings, curr_terms)
+        push!(out_type, false)
+    end
+    return out_strings, out_type
+end
+
 function separate_terms(input::String, total_tokens::Vector{String}, tokens_at_end::Vector{String}, tokens_at_begin::Vector{String})::Tuple{Vector{Vector{String}},Vector{Vector{String}},Vector{Vector{String}}}
     # Prepare output vectors:
     output_total = [String[] for _ in 1:length(total_tokens)]
@@ -44,14 +80,8 @@ function separate_terms(input::String, total_tokens::Vector{String}, tokens_at_e
 
     # Sort each list by descending length (to prioritize longer tokens when there is overlap).
     tokens_total_with_idx = collect(enumerate(total_tokens))
-    sort!(tokens_total_with_idx, by=x -> -length(x[2]))
-
     tokens_at_end_with_idx = collect(enumerate(tokens_at_end))
-    sort!(tokens_at_end_with_idx, by=x -> -length(x[2]))
-
     tokens_at_begin_with_idx = collect(enumerate(tokens_at_begin))
-    sort!(tokens_at_begin_with_idx, by=x -> -length(x[2]))
-
     # Preprocess the input: remove underscores and replace spaces with asterisks.
     input = replace(replace(input, "_" => ""), " " => "*")
     # Split the input string by '*' signs.

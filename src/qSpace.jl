@@ -1,8 +1,10 @@
 module qSpace
 
+using ComplexRationals
+using ..FFunctions
 using ..StringUtils
 
-export OperatorSet, SubSpace, Parameter, StateSpace
+export OperatorSet, SubSpace, Parameter, OperatorType, StateSpace, string2operator_type, GLOBAL_STATE_SPACE
 
 Is = Union{Int,Vector{Int}}
 """
@@ -17,6 +19,7 @@ struct OperatorSet
     len::Int                # length of indexes describing operator
     neutral_element::Union{Int,Vector{Int}}   # neutral element of the operator set
     base_ops::Union{Vector{Int},Vector{Vector{Int}}}
+    non_base_ops::Dict{String, Vector{Tuple{ComplexRational, Is}}}
     ops::Vector{String}     # operator symbols
     op_product::Function    # takes operator indexes of two operators of this set and outputs a vector of tuples of coefficients and associated indexes for the resulting operators in this set
     op_dag::Function        # Create Complex Transpoose Conjugate
@@ -56,11 +59,11 @@ struct SubSpace
     fermion::Bool
 end
 # Define the custom show for SubSpace.
-function Base.show(io::IO, qspace::SubSpace)
+function Base.show(io::IO, statespace::SubSpace)
     # Print the subspace key and allowed keys.
-    print(io, "SubSpace ", qspace.keys, ": ")
+    print(io, "SubSpace ", statespace.keys, ": ")
     # Use the OperatorSet's show for the op_set field.
-    show(io, qspace.op_set)
+    show(io, statespace.op_set)
 end
 
 """ 
@@ -111,7 +114,107 @@ function Base.show(io::IO, p::Parameter)
     print(io, "par: ", p.var_str)
 end
 
-global GLOBAL_STATE_SPACE = nothing
+""" 
+    OperatorType(name::String, hermitian::Bool=false, unitary::Bool=false, subspaces::Union{Nothing, Vector{Bool}}=nothing)
+
+
+Define anm operator Type, by declaring its name and properties such as hermitian and unitary. 
+"""
+struct OperatorType
+    name::String 
+
+    hermitian::Bool 
+    unitary::Bool 
+    subspaces::Union{Nothing, Vector{Bool}}
+    function OperatorType(name::String; hermitian::Bool=false, unitary::Bool=false, subspaces::Union{Nothing, Vector{Bool}}=nothing)
+        if length(name) == 0
+            error("OperatorType name cannot be empty.")
+        end
+        new(name, hermitian, unitary, subspaces)
+    end
+end
+function string2operator_type(s::String)
+    # use name(U,H) notation, separate the name from the brace. and parse the , separated elements within the brace to determine which properties are true (by default all are false) 
+    hermitian = false 
+    unitary = false 
+    if occursin("(", s)  # Check if there is a brace in the string
+        name, brace = split(s, "(")  # Output: ["As", "U,H"]
+        if length(brace) > 0
+            brace = split(brace, ")")[1]  # Output: "U,H"
+            tokens = split(brace, ",")  # Output: ["U", "H"]
+            tokens = [strip(t) for t in tokens]
+            hermitian = "H" in tokens
+            unitary = "U" in tokens 
+            token_list = ["H", "U"]
+            # if any token not in token_list, return error
+            for token in tokens
+                if !(token in token_list)
+                    throw(ArgumentError("Invalid token: $token"))
+                end
+            end
+        end
+    else
+        name = s
+    end
+    return OperatorType(name, hermitian=hermitian, unitary=unitary, subspaces=nothing)
+end
+function string2operator_type(s::String, subspace_keys::Vector{String})
+    # use name(U,H) notation, separate the name from the brace. and parse the , separated elements within the brace to determine which properties are true (by default all are false) 
+    hermitian = false 
+    unitary = false 
+    subspaces::Vector{Bool} = [true for _ in subspace_keys]
+    name::String = ""
+    if occursin("(", s)  # Check if there is a brace in the string
+        name, brace = split(s, "(")  # Output: ["As", "U,H"]
+        if length(brace) > 0
+            brace = split(brace, ")")[1]  # Output: "U,H"
+            tokens = split(brace, ",")  # Output: ["U", "H"]
+            tokens = [strip(t) for t in tokens]
+            hermitian = "H" in tokens
+            unitary = "U" in tokens 
+            token_list = vcat(["H", "U"], subspace_keys)
+            # if any token not in token_list, return error
+            for token in tokens
+                if !(token in token_list)
+                    throw(ArgumentError("Invalid token: $token"))
+                end
+            end
+            for (i, s) in enumerate(subspace_keys)
+                subspaces[i] = s in tokens
+            end
+        else
+            throw(ArgumentError("Invalid Operator string: $s"))
+        end
+    else
+        name = s
+        
+    end
+    return OperatorType(name, hermitian=hermitian, unitary=unitary, subspaces=subspaces)
+end
+function operator_type2string(p::OperatorType)
+    curr_str = p.name 
+    if any([p.hermitian, p.unitary])
+        curr_str *= "("
+        if p.hermitian
+            curr_str *= "H,"
+        end
+        if p.unitary 
+            curr_str *= "U,"
+        end
+        curr_str = curr_str[1:end-1] * ")"
+    end
+    return curr_str
+end
+function Base.show(io::IO, p::OperatorType)
+    print(io, "Op: ", operator_type2string(p))
+end
+
+"""
+    GLOBAL_STATE_SPACE
+
+Can define a globally accessible StateSpace
+"""
+GLOBAL_STATE_SPACE = nothing
 
 """
     StateSpace(args...; kwargs...)
@@ -119,8 +222,7 @@ global GLOBAL_STATE_SPACE = nothing
 Constructs a combined Hilbert and Parameter space. The Hilbert space consists of different subspaces, themselves composed of different operator sets. The Parameter space defines the variables, that are needed to describe equations on the Hilbert space.
     - **args**: A variable number of symbols or strings representing the state variables. Can refer to indexes of subsystems via for underscore notation, i.e., "alpha_i" or declare time dependence via for example "alpha(t)".
     - **kwargs**: Each keyword is interpreted as a subspace label. The values are either Operator Sets or Tuples with an integer and an OperatorSet. The integer is the number of indexes generated for the subspace.
-    - **abstract**: A string or vector of strings representing the abstract operator keys. 
-    - **make_global**: If true, the StateSpace is stored in the global variable `GLOBAL_STATE_SPACE`.
+    - **operators**: Specifies the types of abstract Operators as OperatorTypes, either directly or from Strings such as "A(U,H)", which would result in an operator with name "A" and properties Hermitian (H) and Unitary (U).
 """
 mutable struct StateSpace
     # Parameter fields:
@@ -136,9 +238,11 @@ mutable struct StateSpace
     fermionic_keys::Vector{String}
     bosonic_keys::Vector{String}
     neutral_op::Vector{Is}
-    abstract_keys::Union{Vector{String}}
-
-    function StateSpace(args...; abstract::Union{String,Vector{String}}="A", make_global::Bool=true, kwargs...)
+    fone::FAtom
+    # Abstract operators
+    operatortypes::Vector{OperatorType}
+    operator_names::Vector{String}
+    function StateSpace(args...; operators::Union{String, OperatorType, Vector{String}, Vector{OperatorType}}="A", make_global::Bool=true, kwargs...)
         subspaces = Vector{SubSpace}()
         fermionic_keys = String[]
         bosonic_keys = String[]
@@ -285,10 +389,21 @@ mutable struct StateSpace
             push!(vars_str, p.var_name)
         end
         neutral_op = [s.op_set.neutral_element for s in subspaces for key in s.keys]
-        if isa(abstract, String)
-            abstract = [abstract]
+        fone = FAtom(ComplexRational(1,0,1), zeros(Int, length(vars)))
+        if !isa(operators, Vector) 
+            operators = [operators]
         end
-        qss = new(vars, vars_str, vars_cont, how_many_by_continuum, where_by_continuum, where_by_time, where_const, subspaces, fermionic_keys, bosonic_keys, neutral_op, abstract)
+        operatortypes::Vector{OperatorType} = []
+        subspace_keys::Vector{String} = [s.key for s in subspaces]
+        for s in operators 
+            if isa(s, String) 
+                push!(operatortypes, string2operator_type(s, subspace_keys))
+            else 
+                push!(operatortypes, s)
+            end
+        end
+        operator_names::Vector{String} = [ot.name for ot in operatortypes]
+        qss = new(vars, vars_str, vars_cont, how_many_by_continuum, where_by_continuum, where_by_time, where_const, subspaces, fermionic_keys, bosonic_keys, neutral_op, fone, operatortypes, operator_names)
         if make_global
             global GLOBAL_STATE_SPACE = qss
         end
@@ -296,15 +411,17 @@ mutable struct StateSpace
     end
 end
 # Define the custom show for StateSpace.
-function Base.show(io::IO, qspace::StateSpace)
+function Base.show(io::IO, statespace::StateSpace)
     # First line: StateSpace and its variables.
-    var_str = join([p.var_str for p in qspace.vars], ", ")
+    var_str = join([p.var_str for p in statespace.vars], ", ")
     println(io, "StateSpace: [" * var_str * "]")
     # Then print each subspace on its own line.
-    for ss in qspace.subspaces
+    for ss in statespace.subspaces
         println(io, "   - ", string(ss))
     end
-    println(io, "   - ", "Abstract Operators: ", qspace.abstract_keys)
+    for op in statespace.operatortypes
+        println(io, "   - ", string(op))
+    end
 end
 
 ## Test 
@@ -341,4 +458,4 @@ include("OperatorSets/Qubit_Pauli.jl")
 include("OperatorSets/Qubit_PM.jl")
 include("OperatorSets/Ladder.jl")
 
-end # module 
+end # module qSpace

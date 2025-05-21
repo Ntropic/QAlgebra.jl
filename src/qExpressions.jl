@@ -1,10 +1,16 @@
 module qExpressions
 using ..qSpace
+using ..FFunctions
 using ..StringUtils
 using ComplexRationals
 import Base: show, adjoint, iterate, length, eltype, +, -, sort, *, ^, product, iszero, copy
 
-export qExpr, qTerm, qEQ, qSum, diff_qEQ, term, simplify, base_operators, Sum, ∑, flatten, neq, d_dt
+export qExpr, qAtom, qComposite, qTerm, qEQ, qSum, Sum, ∑, diff_qEQ, term, base_operators,simplify, flatten, neq, d_dt
+
+
+# ==========================================================================================================================================================
+# --------> TBase Types and Their Constructors <---------------------------------------------------------------------------------------------------------
+# ==========================================================================================================================================================
 
 """ 
     qExpr
@@ -12,7 +18,18 @@ export qExpr, qTerm, qEQ, qSum, diff_qEQ, term, simplify, base_operators, Sum, �
 The abstract type `qExpr` is the base type for all quantum expressions in this module.
 """
 abstract type qExpr end  # most general
+""" 
+    qAtom
+
+The abstract type `qAtom` is a subtype of `qExpr` and represents elementary operator definitions, such as qTerm and qAbstract. 
+"""
 abstract type qAtom <: qExpr end # elementary operator definitions 
+""" 
+    qComposite
+
+The abstract type `qComposite` is a subtype of `qExpr` and represents composite expressions, 
+such as qSum and qProd which consist of qAtom, qAbstract or qComposite objects themselves. 
+"""
 abstract type qComposite <: qExpr end  # products and sums of operator definitions
 
 Is = Union{Int,Vector{Int}}
@@ -21,10 +38,7 @@ Is = Union{Int,Vector{Int}}
     qTerm
 
 A `qTerm` represents a single term in a quantum expression. It contains:
-    - `coeff`: The coefficient of the term, which can be a number (e.g., `Int`, `Float64`, `Rational`, etc.).
-    - `var_exponents`: A vector of integers representing the exponents of the state variables, defined in a StateSpace.
     - `op_indices`: A vector of indices representing the operators in the term, which are also defined in a StateSpace.
-    - `abstract`: A vector of integers representing the indexes of abstract operators in the term. 
 """
 mutable struct qTerm <: qAtom
     op_indices::Vector{Is}
@@ -38,6 +52,7 @@ A purely‐symbolic abstract operator
     - sub_index: The index of the suboperator in the state_space 
     - exponent: The exponent of the operator.
     - dag: A boolean indicating whether the operator is daggered (default = `false`).
+Is an instance of an OperatorType 
 """
 mutable struct qAbstract <: qAtom
     key_index::Int
@@ -56,20 +71,32 @@ mutable struct qEQ
     terms::Vector{qComposite}         # Vector of terms
     statespace::StateSpace
 end
+function qEQ(prod::qComposite, statespace::StateSpace)
+    return qEQ([prod], statespace)
+end
+function qEQ(terms::qAtom, statespace::StateSpace)
+    return qEQ(qProd(statespace.fone, [terms]), statespace)
+end
 
 """ 
     qProd
 
 A product of qAtom expressions, i.e. qTerms or qAbstract.
 It contains:
-    - `coeff`: The coefficient of the product, which can be a number (e.g., `Int`, `Float64`, `Rational`, etc.).
-    - `var_exponents`: A vector of integers representing the exponents of the state variables, defined in a StateSpace.
+    - `coeff_fun`: The function of parameters for the Operator product
     - `expr`: A vector of qAtoms (qTerms or qAbstract) that are multiplied together.
 """
 mutable struct qProd <: qComposite
-    coeff::Number                   # Coefficient (supports Complex, Rational, Int, etc.)
-    var_exponents::Vector{Int}      # Exponents for each state variable (order matching StateSpace.variables).
-    expr::Vector{qAtom}            # Vector of qAtoms (qTerms or qAbstract).
+    coeff_fun::FFunction            # function of scalar parameters => has +,-,*,/,^ defined 
+    expr::Vector{qAtom}             # Vector of qAtoms (qTerms or qAbstract).
+end
+function qProd(coeff::Number, var_exponents::Vector{Int}, expr::qAtom)
+    f_fun = FAtom(coeff, var_exponents) 
+    return qProd(f_fun, [expr])
+end
+function qProd(coeff::Number, var_exponents::Vector{Int}, expr::AbstractVector{<:qAtom})
+    f_fun = FAtom(coeff, var_exponents)
+    return qProd(f_fun, expr)
 end
 
 """ 
@@ -179,7 +206,8 @@ Alternative way to call the `Sum` constructor. Sum(index, expr; neq) = ∑(index
 """
 ∑(index::Union{String,Symbol}, expr::qEQ; neq::Bool=false) = Sum(index, expr, neq=neq)
 ∑(indexes::Union{Vector{String},Vector{Symbol}}, expr::qEQ; neq::Bool=false) = Sum(indexes, expr, neq=neq)
-
+ 
+#### Helper Functions #######################################################################################
 # Define iteration for qEQ so that iterating over it yields its qTerm's.
 function iterate(q::qEQ, state::Int=1)
     state > length(q.terms) && return nothing
@@ -189,7 +217,8 @@ end
 # Optionally, define length and eltype.
 length(q::qEQ) = length(q.terms)
 length(q::qSum) = length(q.expr.terms)
-iszero(q::qTerm) = iszero(q.coeff)
+length(q::qProd) = length(q.expr)
+iszero(q::qProd) = iszero(q.coeff)
 iszero(q::qEQ) = length(q.terms) == 0 || all(iszero, q.terms)
 iszero(q::qSum) = iszero(q.expr)
 
@@ -200,20 +229,13 @@ function copy(q::qAbstract)::qAbstract
     return qAbstract(q.key_index, q.sub_index, q.exponent, q.dag)
 end
 function copy(q::qProd)::qProd
-    return qProd(copy(q.coeff), copy(q.var_exponents), copy(q.expr))
+    return qProd(copy(q.coeff_fun), copy(q.expr))
 end
 function copy(q::qSum)::qSum
     return qSum(copy(q.expr), q.indexes, q.subsystem_index, q.element_indexes, q.neq)
 end
 function copy(q::qEQ)::qEQ
     return qEQ(copy(q.terms), q.statespace)
-end
-
-function var_exponents(q::qProd)::Vector{Int}
-    return q.var_exponents
-end
-function var_exponents(q::qSum)::Vector{Int}
-    return zeros(Int, length(q.expr.statespace.vars))
 end
 
 function get_op_inds(space::SubSpace, res_strings::Tuple{Vector{Vector{String}},Vector{Vector{String}},Vector{Vector{String}}})::Vector{Vector{Tuple{Number,Is}}}
@@ -227,55 +249,281 @@ function get_op_inds(space::SubSpace, res_strings::Tuple{Vector{Vector{String}},
     return all_results
 end
 
-"""
-    term(q::StateSpace, operator_str::String)
-    term(q::StateSpace, coeff, operator_str::String)
+# ==========================================================================================================================================================
+# --------> Terms from Strings and Base Operators <---------------------------------------------------------------------------------------------------------
+# ==========================================================================================================================================================
 
-Generate a quantum term (qTerm) from the StateSpace `q`. The state description is provided as a string.
-
-- Tokens of the form `var^exp` (e.g. `"a^2"`) set the exponent for a state variable.
-- Other tokens are assumed to be keys that match one of the allowed subspace keys (i.e. elements in each SubSpace.keys).
-- If no coefficient is given, the default coefficient is 1.
-- Daggers are given by ', and need to preceed a possible exponent
-"""
-"""
-function term(qspace::StateSpace, coeff::Number, operator_str::String="")::qEQ
+function string2qterm(statespace::StateSpace, operator_str::String="")::Tuple{Vector{qTerm}, Vector{Number}, Vector{Int}}
     # Initialize exponents for each state variable.
-    var_exponents = zeros(Int, length(qspace.vars))
-    res_strings = separate_terms(operator_str, qspace.vars_str, qspace.fermionic_keys, qspace.bosonic_keys)
-    n_abstract_keys = length(qspace.abstract_keys)
+    var_exponents = zeros(Int, length(statespace.vars))
+    res_strings = separate_terms(operator_str, statespace.vars_str, statespace.fermionic_keys, statespace.bosonic_keys)
     for var_ind in 1:length(var_exponents)
         curr_res_str = res_strings[1][var_ind]
         var_exponents[var_ind] = sum([expstr_separate(curr_res_str[res])[2] for res in 1:length(curr_res_str)])
     end
     subspace_str2inds::Vector{Vector{Tuple{Number,Is}}} = []
-    for space in qspace.subspaces
+    for space in statespace.subspaces
         append!(subspace_str2inds, get_op_inds(space, res_strings))
     end
     # Construct terms for each combination of subspace_str2inds
-    terms::Vector{qTerm} = qTerm[]
+    terms::Vector{qTerm} = []
+    coeffs::Vector{Number} = []
     for combo in Iterators.product(subspace_str2inds...)
         curr_inds::Vector{Is} = []
-        curr_coeff::Number = coeff
+        curr_coeff::Number = 1
         for i in 1:length(combo)
             curr_coeff *= combo[i][1]
             push!(curr_inds, combo[i][2])
         end
-        push!(terms, qTerm(curr_coeff, copy(var_exponents), curr_inds))
+        push!(terms, qTerm(curr_inds))
+        push!(coeffs, curr_coeff)
     end
-    return qEQ(terms, qspace)
+    return terms, coeffs, var_exponents
+end
+function string2qabstract(statespace::StateSpace, operator_str::String)::qAbstract
+    # find which statespace.operator_names fits the beginning of the string 
+    name = nothing
+    rest::String = ""
+    key_index = -1
+    for (i, op_name) in enumerate(statespace.operator_names)
+        if startswith(operator_str, op_name)
+            name = op_name
+            key_index = i 
+            rest = operator_str[length(op_name)+1:end]
+            break
+        end
+    end
+    if isnothing(name)
+        error("Invalid string: $operator_str, must be one of $(statespace.operator_names)")
+    end
+    # process rest separate by separating into pre and post ^ 
+    expstr, exp = expstr_separate(rest)
+    # if expstr ends with ' conjugate = true 
+    conjugate = occursin("'", expstr) 
+    subindex = -1
+    if conjugate
+        a,b = split(expstr, "'")
+        if length(a) > 0
+            subindex = parse(Int, a)
+        end
+        # find the operator in statespace 
+        if length(b) > 0
+            error("For an abstract operator, the Dagger symbol (') can only be followed up by an exponential, nothing else.")
+        end
+    end
+    return qAbstract(key_index, subindex, exp, conjugate) # subindex only printed if not -1 
+end
 
-end
-function term(qspace::StateSpace, operator_str::String)
-    return term(qspace, one(1), operator_str)
-end
 """
-include("qExpressionsOps/qExpressionsAlgebra.jl")
+    term(operator_str::String, statespace::StateSpace)
+    term(coeff, operator_str::String, statespace::StateSpace)
+    term(coeff::Number, operator_str::String)
+    term(operator_str::String)
+
+Generate a quantum term (qTerm) from the StateSpace `q`. The state description is provided as a string.
+
+- Tokens of the form `var^exp` (e.g. `"a^2"`) set the exponent for a state variable.
+- Other tokens are assumed to be keys that match one of the allowed subspace keys (i.e. elements in each SubSpace.keys) or 
+  are abstract operator names in the StateSpace (with potential indexes, exponents and Daggers ').
+- If no coefficient is given, the default coefficient is 1.
+- Daggers are given by ', and need to preceed a possible exponent
+"""
+function term(statespace::StateSpace, coeff::Number, operator_str::String)
+    out_strings, out_type = term_pre_split(operator_str, statespace.operator_names)
+    var_exponents = zeros(Int, length(statespace.vars))
+    coeffs_and_terms::Vector{Vector{Tuple{Number, qAtom}}} = []
+    for (out_string, type) in zip(out_strings, out_type)
+        if type # qAbstract
+            curr_term = string2qabstract(statespace, out_string)
+            push!(coeffs_and_terms, [(1, curr_term)])
+        else  # qTerm 
+            curr_terms, curr_coeffs, curr_var_exponents = string2qterm(statespace, out_string)
+            curr_coeffs_and_terms = []
+            for (curr_coeff, curr_term) in zip(curr_coeffs, curr_terms)
+                push!(curr_coeffs_and_terms, (curr_coeff, curr_term))
+            end
+            push!(coeffs_and_terms, curr_coeffs_and_terms)
+            var_exponents .+= curr_var_exponents
+        end
+    end
+    # Generate all combinations using Product 
+    products::Vector{qProd} = []
+    for comb in Iterators.product(coeffs_and_terms...)
+        curr_coeff = reduce(*, [c[1] for c in comb])*coeff
+        curr_atoms = [c[2] for c in comb]
+        push!(products, qProd(curr_coeff, copy(var_exponents), curr_atoms))
+    end
+    return qEQ(products, statespace)
+end
+function term(statespace::StateSpace, operator_str::String)::qEQ
+    return term(statespace, one(1), operator_str)
+end
+function term(operator_str::String)::qEQ
+    return term(GLOBAL_STATE_SPACE, operator_str)
+end
+function term(coeff::Number, operator_str::String)::qEQ
+    return term(GLOBAL_STATE_SPACE, coeff, operator_str)
+end
+
+"""
+    base_operators(letter::String, statespace::StateSpace) -> Union{Int,Vector{Int}}
+    base_operators(ss:StateSpace) -> Tuple{Dict{String,qEQ},Dict{String,qEQ},Dict{String,Function}}
+
+Returns variables and/or operators in the state space `ss`.
+Specifc variables/operators can be selected by passing a string `letter`.
+If no `letter` is passed, the function returns a tuple of 3 dictionaries:
+- The first dictionary contains the variables in the state space, with their corresponding qEQ objects.
+- The second dictionary contains the operators in the state space, with their corresponding qEQ objects.
+- The third dictionary contains the abstract operators in the state space.
+If you pass "vars", it will return a tuple with elements for each variable
+"""
+function base_operators(letter::String, statespace::StateSpace)
+    my_ops::Vector{qEQ} = []
+    var_exponents = zeros(Int, length(statespace.vars))
+    neutral_operator = [s.op_set.neutral_element for s in statespace.subspaces for key in s.keys]
+    index = 1
+    if letter == "I"
+        return qEQ(qTerm(copy(neutral_operator)), statespace)
+    end
+    if letter == "vars"
+        for i in 1:length(statespace.vars)
+            var_exponents[i] += 1
+            push!(my_ops, qEQ(qProd(1, var_exponents, qTerm(copy(neutral_operator))), statespace))
+            var_exponents[i] -= 1
+        end
+        if length(my_ops) > 1
+            return tuple(my_ops...)
+        elseif length(my_ops) == 1
+            return my_ops[1]
+        else
+            return nothing
+        end
+    end
+    for (i, var) in enumerate(statespace.vars)
+        if var == letter
+            var_exponents[i] += 1
+            return qEQ(qProd(1, var_exponents, qTerm(copy(neutral_operator))), statespace)
+        end
+    end
+    for (i, var) in enumerate(statespace.vars_str)
+        if var == letter
+            var_exponents[i] += 1
+            return qEQ(qProd(1, var_exponents, qTerm(copy(neutral_operator))), statespace)
+        end
+    end
+    # check subspaces
+    for sub in statespace.subspaces
+        for key in sub.keys
+            if key == letter
+                keys = sub.keys
+                op_set = sub.op_set
+                base_ops = op_set.base_ops
+                for base_op in base_ops
+                    curr_operator = copy(neutral_operator)
+                    curr_operator[index] = base_op
+                    push!(my_ops, qEQ(qTerm(copy(curr_operator)), statespace))
+                end
+
+                # non base ops # in a Dict 
+                non_base_ops = op_set.non_base_ops
+                for (key, ops) in non_base_ops
+                    curr_terms::Vector{qProd} = qProd[]
+                    for op in ops
+                        curr_operator = copy(neutral_operator)
+                        curr_operator[index] = op[2]
+                        coeff = op[1]
+                        curr_prod = qProd(coeff, var_exponents, qTerm(copy(curr_operator)))
+                        push!(curr_terms, curr_prod)
+                    end
+                    push!(my_ops, qEQ(curr_terms, statespace))
+                end
+
+                if length(my_ops) > 1
+                    return tuple(my_ops...)
+                else
+                    return my_ops[1]
+                end
+            end
+            index += 1
+        end
+    end
+    # check for abstract operators
+    for (key_index, name) in enumerate(statespace.operator_names)
+        if name == letter
+            return (subindex=-1) -> qEQ(qAbstract(key_index, subindex, 1, false), statespace)
+        elseif name in letter
+            abstract = string2qabstract(statespace, replace(letter, "_" => ""))
+            return qEQ(abstract, statespace)
+        end
+    end
+    error("No variable, subspace component or abstract operator with key starting with '$letter' found in the state space.")
+end
+function base_operators(statespace::StateSpace)::Tuple{Dict{String,qEQ},Dict{String,qEQ}, Dict{String, Function}}
+    # return 2 dicctionaries, one with the vars and one with the operators 
+    var_dict::Dict{String,qEQ} = Dict()
+    op_dict::Dict{String,qEQ} = Dict()
+    var_exponents = zeros(Int, length(statespace.vars))
+    #abstract_dict::Dict{String,qEQ} = Dict()
+    neutral_operator = [s.op_set.neutral_element for s in statespace.subspaces for key in s.keys]
+    for (i, vars_str) in enumerate(statespace.vars_str)
+        var_exponents[i] += 1
+        var_dict[vars_str] = qEQ(qProd(1, var_exponents, qTerm(copy(neutral_operator))), statespace)
+        var_exponents[i] -= 1
+    end
+    index = 1
+    for sub in statespace.subspaces
+        op_set = sub.op_set
+        base_ops = op_set.base_ops
+        for key in sub.keys
+            for base_op in base_ops
+                curr_operator = copy(neutral_operator)
+                curr_operator[index] = base_op
+                term = qTerm(curr_operator)
+                curr_name = op_set.op2str(base_op, key)
+                op_dict[curr_name] = qEQ(term, statespace)
+            end
+
+            # non base ops # in a Dict 
+            non_base_ops = op_set.non_base_ops
+            for (key, ops) in non_base_ops
+                curr_terms::Vector{qProd} = qProd[]
+                for op in ops
+                    curr_operator = copy(neutral_operator)
+                    curr_operator[index] = op[2]
+                    coeff = op[1]
+                    curr_prod = qProd(coeff, var_exponents, qTerm(copy(curr_operator)))
+                    push!(curr_terms, curr_prod)
+                end
+                op_dict[key] = qEQ(curr_terms, statespace)
+            end
+            index += 1
+        end
+    end
+    op_dict["I"] = qEQ(qTerm(copy(neutral_operator)), statespace)
+    # now abstract operators 
+    abstract_dict::Dict{String, Function} = Dict{String, Function}()
+    for (key_index, name) in enumerate(statespace.operator_names)
+        abstract_dict[name] = (subindex=-1) -> qEQ(qAbstract(key_index, subindex, 1, false), statespace)
+    end
+    return var_dict, op_dict, abstract_dict
+end
+
+# ===========================================================================================================================================================
+# --------> Sorting and Simplifying <------------------------------------------------------------------------------------------------------------------------
+# ===========================================================================================================================================================
+
+function qAtom_sort_key(term::qTerm)
+    # Here we convert var_exponents (a Vector{Int}) to a tuple so that it compares lexicographically.
+    return tuple(term.op_indices...)
+end
+function qAtom_sort_key(term::qAbstract)
+    return tuple(term.key_index, term.subindex, term.exponent, Int(term.dag))
+end
 
 # Use your custom_sort_key for coefficients.
 function qExpr_sort_key(term::qProd)
     # Here we convert var_exponents (a Vector{Int}) to a tuple so that it compares lexicographically.
-    return (tuple(term.var_exponents...), tuple(term.op_indices...), custom_sort_key(term.coeff), tuple(0, Int[], 0))
+    return (tuple(term.coeff_fun.var_exponents...), tuple(term.op_indices...), custom_sort_key(term.coeff_fun.coeff), tuple(0, Int[], 0))
 end
 function qExpr_sort_key(term::qSum)
     curr_space = term.expr.statespace
@@ -305,18 +553,19 @@ function same_term_type(t1, t2)
     return false
 end
 function same_term_type(t1::qProd, t2::qProd)::Bool
-    return t1.var_exponents == t2.var_exponents && t1.op_indices == t2.op_indices
+    return t1.coeff_fun.var_exponents == t2.coeff_fun.var_exponents && t1.op_indices == t2.op_indices
 end
 function same_term_type(s1::qSum, s2::qSum)::Bool
     return s1.subsystem_index == s2.subsystem_index && s1.element_indexes == s2.element_indexes
 end
 
 function combine_term(t1::qProd, t2::qProd)::qTerm
-    return qTerm(t1.coeff + t2.coeff, t1.var_exponents, t1.expr)
+    return qProd(simplify(t1.coeff_fun + t2.coeff_fun), t1.expr)
 end
 function combine_term(s1::qSum, s2::qSum)::qSum
     return qSum(s1.expr + s2.expr, s1.indexes, s1.subsystem_index, s1.element_indexes, s1.neq)
 end
+
 """
     simplify(q::qEQ) -> qEQ
     simplify(q::qSum) -> qSum
@@ -376,114 +625,9 @@ function simplify(s::qSum)::qSum
     return qSum(simplified_expr, s.indexes, s.subsystem_index, s.element_indexes, s.neq)
 end
 
+
+include("qExpressionsOps/qExpressionsAlgebra.jl")
 include("qExpressionsOps/qExpressionsPrint.jl")
-
-
-"""
-    base_operators(letter::String, qspace::StateSpace) -> Union{Int,Vector{Int}}
-or 
-    base_operators(ss:StateSpace) -> Tuple{Dict{String,qEQ},Dict{String,qEQ}}
-
-Returns variables and/or operators in the state space `ss`.
-Specifc variables/operators can be selected by passing a string `letter`.
-If no `letter` is passed, the function returns a tuple of two dictionaries:
-- The first dictionary contains the variables in the state space, with their corresponding qEQ objects.
-- The second dictionary contains the operators in the state space, with their corresponding qEQ objects.
-
-If you pass "vars", it will return a tuple with elements for each variable
-"""
-function base_operators(letter::String, qspace::StateSpace)
-    my_ops::Vector{qEQ} = []
-    var_exponents = zeros(Int, length(qspace.vars))
-    curr_coeff = 1
-    neutral_operator = [s.op_set.neutral_element for s in qspace.subspaces for key in s.keys]
-    index = 1
-    if letter == "I"
-        return qEQ([qTerm(1, copy(var_exponents), copy(neutral_operator))], qspace)
-    end
-    if letter == "vars"
-        for i in 1:length(qspace.vars)
-            var_exponents[i] += 1
-            push!(my_ops, qEQ([qTerm(curr_coeff, copy(var_exponents), copy(neutral_operator))], qspace))
-            var_exponents[i] -= 1
-        end
-        if length(my_ops) > 1
-            return tuple(my_ops...)
-        elseif length(my_ops) == 1
-            return my_ops[1]
-        else
-            return nothing
-        end
-    end
-    for (i, var) in enumerate(qspace.vars)
-        if var == letter
-            var_exponents[i] += 1
-            return qEQ([qTerm(curr_coeff, copy(var_exponents), copy(neutral_operator))], qspace)
-        end
-    end
-    for (i, var) in enumerate(qspace.vars_str)
-        if var == letter
-            var_exponents[i] += 1
-            return qEQ([qTerm(curr_coeff, copy(var_exponents), copy(neutral_operator))], qspace)
-        end
-    end
-    # check variables
-    for sub in qspace.subspaces
-        for key in sub.keys
-            if key == letter
-                keys = sub.keys
-                op_set = sub.op_set
-                base_ops = op_set.base_ops
-                for base_op in base_ops
-                    curr_operator = copy(neutral_operator)
-                    curr_operator[index] = base_op
-                    term = qTerm(1, copy(var_exponents), curr_operator)
-                    push!(my_ops, qEQ([term], qspace))
-                end
-                if length(my_ops) > 1
-                    return tuple(my_ops...)
-                else
-                    return my_ops[1]
-                end
-            end
-            index += 1
-        end
-    end
-    error("No subspace with key starting with '$letter' found in the state space.")
-end
-function base_operators(qspace::StateSpace)::Tuple{Dict{String,qEQ},Dict{String,qEQ}}
-    # return 2 dicctionaries, one with the vars and one with the operators 
-    var_dict::Dict{String,qEQ} = Dict()
-    op_dict::Dict{String,qEQ} = Dict()
-    #abstract_dict::Dict{String,qEQ} = Dict()
-    neutral_operator = [s.op_set.neutral_element for s in qspace.subspaces for key in s.keys]
-    var_exponents = zeros(Int, length(qspace.vars))
-    curr_coeff = 1
-    for (i, vars_str) in enumerate(qspace.vars_str)
-        var_exponents[i] += 1
-        var_dict[vars_str] = qEQ([qTerm(curr_coeff, copy(var_exponents), copy(neutral_operator))], qspace)
-        var_exponents[i] -= 1
-    end
-    index = 1
-    for sub in qspace.subspaces
-        op_set = sub.op_set
-        base_ops = op_set.base_ops
-        for key in sub.keys
-            for base_op in base_ops
-                curr_operator = copy(neutral_operator)
-                curr_operator[index] = base_op
-                term = qTerm(1, copy(var_exponents), curr_operator)
-                curr_name = op_set.op2str(base_op, key)
-                op_dict[curr_name] = qEQ([term], qspace)
-            end
-            index += 1
-        end
-    end
-    op_dict["I"] = qEQ([qTerm(1, copy(var_exponents), copy(neutral_operator))], qspace)
-    return var_dict, op_dict
-end
-
-
 
 ##### Flatten 
 """
@@ -621,7 +765,7 @@ function neq_qsum(s::qSum, index::Int=1)::qEQ
     end
     # 1) the “all distinct” piece # add to the lower part and remove it here 
 
-    # 2) fwe consider for each sum index combination all possible 
+    # 2) we consider for each sum index combination all possible 
     ss = s.expr.statespace
     sub = ss.subspaces[s.subsystem_index]
     n_sub = length(sub.statespace_inds)
@@ -686,10 +830,12 @@ function simplify(q::diff_qEQ)::diff_qEQ
     simp_rhs = simplify(q.right_hand_side)
     return diff_qEQ(q.left_hand_side, simp_rhs, q.statespace, q.braket, q.do_sigma)
 end
-# Import the base addition operator.
+function copy(q::diff_qEQ)::diff_qEQ
+    return diff_qEQ(copy(q.left_hand_side), copy(q.right_hand_side), copy(q.statespace), copy(q.braket), copy(q.do_sigma))
+end
 
 """
-    d_dt(qspace::StateSpace, expr)
+    d_dt(statespace::StateSpace, expr)
 
 Evaluate the time derivative of an expression `expr` in the context of the given state space `ss`.
 

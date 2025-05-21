@@ -6,11 +6,11 @@ const PAULI_TRANSFORM_TABLE = [
     3 4 1 2;
     2 1 4 3;
     1 2 3 4]
-const PAULI_COEFF_TABLE = [
+const PAULI_COEFF_TABLE = crationalize.([
     1 im -im 1;
     -im 1 im 1;
     im -im 1 1;
-    1 1 1 1]
+    1 1 1 1])
 
 raw"""
     QubitPauli() -> OperatorSet
@@ -20,34 +20,35 @@ Creates the OperatorSet for a qubit using Pauli operators ($\sigma_x$, $\sigma_y
 function QubitPauli()
     ops = ["x", "y", "z", "I"]
     base_pauli = [1, 2, 3]
+    non_base_ops::Dict{String, Vector{Tuple{ComplexRational, Is}}} = Dict("p"=> [(ComplexRational(1,0,1), 1),(ComplexRational(0,1,1), 2)], "m" => [(ComplexRational(1,0,1), 1), (ComplexRational(0,-1,1), 2)])
     # Define the transformation function using the PAULI_* tables.
-    function pauli_product(op1::Int, op2::Int)::Vector{Tuple{Complex,Int}}
+    function pauli_product(op1::Int, op2::Int)::Vector{Tuple{ComplexRational,Int}}
         # Look up the coefficient and new operator index.
         c = PAULI_COEFF_TABLE[op1, op2]
         new_index = PAULI_TRANSFORM_TABLE[op1, op2]
         # Return as a one-term sum.
         return [(c, new_index)]
     end
-    function pauli_dag(op::Int)::Vector{Tuple{Complex,Int}}
-        return [(1.0, op)]
+    function pauli_dag(op::Int)::Vector{Tuple{ComplexRational,Int}}
+        return [(ComplexRational(1,0,1), op)]
     end
-    function paulistr2ind(str::String)::Vector{Tuple{Complex,Int}}
+    function paulistr2ind(str::String)::Vector{Tuple{ComplexRational,Int}}
         if length(str) == 0
-            return [(1.0 + 0im, 4)]
+            return [(ComplexRational(1,0,1), 4)]
         end
         res = findfirst(==(str), ops)
-        if res == nothing
+        if isnothing(res)
             error("Invalid Pauli string: $str, must be one of $ops, or empty")
         end
-        return [(1.0 + 0im, res)]
+        return [(ComplexRational(1,0,1), res)]
     end
-    function paulistr2ind(str::Vector{String})::Vector{Tuple{Complex,Int}}
+    function paulistr2ind(str::Vector{String})::Vector{Tuple{ComplexRational,Int}}
         # iteratively take paulistr2ind for each element and unify them iteratively using pauli_product 
         if length(str) == 0
-            return [(1.0 + 0im, 4)]
+            return [(ComplexRational(1,0,1), 4)]
         end
         inds = [paulistr2ind(s)[1][2] for s in str]
-        coeff = 1.0 + 0im
+        coeff = ComplexRational(1,0,1)
         while length(inds) > 1
             new_coeff, new_ind = pauli_product(inds[end-1], inds[end])[1]
             coeff *= new_coeff
@@ -72,7 +73,7 @@ function QubitPauli()
         end
         return curr_str
     end
-    return OperatorSet("Pauli Qubit", true, 1, 4, base_pauli, ops, pauli_product, pauli_dag, paulistr2ind, pauli2str, pauli2latex)
+    return OperatorSet("Pauli Qubit", true, 1, 4, base_pauli, non_base_ops, ops, pauli_product, pauli_dag, paulistr2ind, pauli2str, pauli2latex)
 end
 ## Test 
 #q = QubitPauli()

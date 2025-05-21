@@ -1,19 +1,19 @@
-export Dag, Commutator, is_numeric
+export Dag, Commutator, isnumeric
 
 """ 
-    is_numeric(t::qTerm, qspace::StateSpace) -> Bool
-    is_numeric(expr::qEQ) -> Bool
-    is_numeric(s::qSum) -> Bool
+    isnumeric(t::qTerm, statespace::StateSpace) -> Bool
+    isnumeric(expr::qEQ) -> Bool
+    isnumeric(s::qSum) -> Bool
 
 Returns true if only the coefficient of the term(s) is non-zero.
 """
-function is_numeric(t::qTerm, qspace::StateSpace)::Bool
-    if qspace.neutral_op == t.op_indices && all(t.var_exponents .== 0)
+function isnumeric(t::qTerm, statespace::StateSpace)::Bool
+    if statespace.neutral_op == t.op_indices && all(t.var_exponents .== 0)
         return true
     end
     return false
 end
-function is_numeric(expr::qEQ)::Bool
+function isnumeric(expr::qEQ)::Bool
     expr_s = simplify(expr)
     terms = expr_s.terms
 
@@ -22,7 +22,7 @@ function is_numeric(expr::qEQ)::Bool
     elseif length(terms) == 1
         t = terms[1]
         if t isa qTerm
-            return is_numeric(t, expr_s.statespace)
+            return isnumeric(t, expr_s.statespace)
         else
             return false
         end
@@ -30,7 +30,7 @@ function is_numeric(expr::qEQ)::Bool
         return false
     end
 end
-function is_numeric(s::qSum)::Bool
+function isnumeric(s::qSum)::Bool
     return false
 end
 
@@ -68,7 +68,7 @@ function ==(a::qSum, b::qSum)
 end
 function ==(expr::qEQ, n::Number)
     simple_expr = simplify(expr)
-    if is_numeric(simple_expr)
+    if isnumeric(simple_expr)
         if length(simple_expr.terms) == 0
             return isapprox_num(0, n)
         else
@@ -117,26 +117,3 @@ function *(d::diff_qEQ, exprs::Vector{qEQ})::diff_qEQ
     end
     return d * Commutator(exprs[1], exprs[2])
 end
-
-
-# Function to multiply two qProd instances
-function multiply_qprod(prod1::qProd, prod2::qProd, statespace::StateSpace)
-    # Placeholder for the multiplication logic
-    # Need to consider the structure of prod1 and prod2 to decide how to handle terms
-    # Combine coefficients and variable exponents
-    # Apply commutation rules if necessary
-    # Create new qProd with the result
-    # (Implementation will depend on the exact structure of qProd)
-    error("Implementation of multiply_qprod is missing")
-end
-
-# Function to check if a qProd contains only qTerm elements
-function is_qprod_pure_qterm(prod::qProd)
-    # Placeholder for the logic to iterate through the expr vector
-    # and check if each element is a qTerm
-    # If any element is a qAbstract, return false
-    # Otherwise, return true
-    error("Implementation of is_qprod_pure_qterm is missing")
-end
-end
-</final_file_content>
