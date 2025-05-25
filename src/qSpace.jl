@@ -52,8 +52,9 @@ Fermionic subspaces support multiple copies of the same subspace, so as to suppo
 struct SubSpace
     key::String                     # Original input key
     keys::Vector{String}            # Allowed keys for this subspace 
-    statespace_main_ind::Int        # Which Vector to use for statespace_inds
-    statespace_inds::Vector{Int}    # Indices to access operator values 
+    statespace_main_ind::Int        # Which Vector to use for statespace_inds  (this is for accessing the string elements)
+    statespace_inds::Vector{Int}    # Indices to access operator values in the corresponding statespace main ind  (this is for accessing the string elements)
+    op_index_inds::Vector{Int}
     op_set::OperatorSet             # The operator set for this subspace.
     continuum::Bool
     fermion::Bool
@@ -118,52 +119,28 @@ end
     OperatorType(name::String, hermitian::Bool=false, unitary::Bool=false, subspaces::Union{Nothing, Vector{Bool}}=nothing)
 
 
-Define anm operator Type, by declaring its name and properties such as hermitian and unitary. 
+Define an operator Type, by declaring its name and properties such as hermitian and unitary. 
 """
 struct OperatorType
     name::String 
-
     hermitian::Bool 
     unitary::Bool 
-    subspaces::Union{Nothing, Vector{Bool}}
-    function OperatorType(name::String; hermitian::Bool=false, unitary::Bool=false, subspaces::Union{Nothing, Vector{Bool}}=nothing)
+    subspaces::Vector{Bool}   # subspace groups
+    non_trivial_op_indices::Vector{Bool} # indices of non-trivial components in the op_indices pciture for bath subsystems
+    function OperatorType(name::String; hermitian::Bool=false, unitary::Bool=false, subspaces::Vector{Bool}, non_trivial_op_indices::Vector{Bool})
         if length(name) == 0
             error("OperatorType name cannot be empty.")
         end
-        new(name, hermitian, unitary, subspaces)
+        new(name, hermitian, unitary, subspaces, non_trivial_op_indices)
     end
 end
-function string2operator_type(s::String)
-    # use name(U,H) notation, separate the name from the brace. and parse the , separated elements within the brace to determine which properties are true (by default all are false) 
-    hermitian = false 
-    unitary = false 
-    if occursin("(", s)  # Check if there is a brace in the string
-        name, brace = split(s, "(")  # Output: ["As", "U,H"]
-        if length(brace) > 0
-            brace = split(brace, ")")[1]  # Output: "U,H"
-            tokens = split(brace, ",")  # Output: ["U", "H"]
-            tokens = [strip(t) for t in tokens]
-            hermitian = "H" in tokens
-            unitary = "U" in tokens 
-            token_list = ["H", "U"]
-            # if any token not in token_list, return error
-            for token in tokens
-                if !(token in token_list)
-                    throw(ArgumentError("Invalid token: $token"))
-                end
-            end
-        end
-    else
-        name = s
-    end
-    return OperatorType(name, hermitian=hermitian, unitary=unitary, subspaces=nothing)
-end
-function string2operator_type(s::String, subspace_keys::Vector{String})
+function string2operator_type(s::String, subspace_keys::Vector{String}, dim::Int, subspace_vec::Vector{SubSpace})
     # use name(U,H) notation, separate the name from the brace. and parse the , separated elements within the brace to determine which properties are true (by default all are false) 
     hermitian = false 
     unitary = false 
     subspaces::Vector{Bool} = [true for _ in subspace_keys]
     name::String = ""
+    modified_subspace_keys::Vector{String} = ["!"*key for key in subspace_keys]
     if occursin("(", s)  # Check if there is a brace in the string
         name, brace = split(s, "(")  # Output: ["As", "U,H"]
         if length(brace) > 0
@@ -172,24 +149,53 @@ function string2operator_type(s::String, subspace_keys::Vector{String})
             tokens = [strip(t) for t in tokens]
             hermitian = "H" in tokens
             unitary = "U" in tokens 
-            token_list = vcat(["H", "U"], subspace_keys)
+            token_list = vcat(["H", "U"], subspace_keys, modified_subspace_keys)
             # if any token not in token_list, return error
             for token in tokens
                 if !(token in token_list)
                     throw(ArgumentError("Invalid token: $token"))
                 end
             end
-            for (i, s) in enumerate(subspace_keys)
-                subspaces[i] = s in tokens
+            any_subspace_keys = false
+            for s in subspace_keys
+                if s in tokens
+                    any_subspace_keys = true
+                    break 
+                end
+            end
+            if any_subspace_keys
+                # check if any modified_subspace_keys in tokens
+                for s in modified_subspace_keys
+                    if s in tokens
+                        throw(ArgumentError("Cannot have negatved subspace and subspace keys at the same time"))
+                    end
+                end
+                for (i, s) in enumerate(subspace_keys)
+                    subspaces[i] = s in tokens
+                end
+            else
+                subspaces = fill(true, length(subspace_keys))
+                for (i, s) in enumerate(modified_subspace_keys)
+                    if s in tokens
+                        subspaces[i] = false
+                    end
+                end
             end
         else
             throw(ArgumentError("Invalid Operator string: $s"))
         end
     else
         name = s
-        
     end
-    return OperatorType(name, hermitian=hermitian, unitary=unitary, subspaces=subspaces)
+    non_trivial_op_indices::Vector{Bool} = fill(false, dim)
+    for (s_bool, subspace) in zip(subspaces, subspace_vec)
+        if s_bool == true
+            for ind in subspace.op_index_inds
+                non_trivial_op_indices[ind] = true
+            end
+        end
+    end
+    return OperatorType(name, hermitian=hermitian, unitary=unitary, subspaces=subspaces, non_trivial_op_indices=non_trivial_op_indices)
 end
 function operator_type2string(p::OperatorType)
     curr_str = p.name 
@@ -209,6 +215,20 @@ function Base.show(io::IO, p::OperatorType)
     print(io, "Op: ", operator_type2string(p))
 end
 
+function operatertypes2commutator_matrix(optypes::Vector{OperatorType})
+    # matrix of operatortypes commutation, true ==> the two commutators commute
+    mat = Matrix{Bool}(undef, length(optypes), length(optypes))
+    for i in 1:length(optypes)
+        mat[i,i] = true
+        for j in i+1:length(optypes)
+            # check for any collisions of the operator_type subspaces 
+            mat[i,j] = !any(optypes[i].subspaces .& optypes[j].subspaces)
+            mat[j,i] = mat[i,j]
+        end
+    end
+    return mat
+end
+
 """
     GLOBAL_STATE_SPACE
 
@@ -222,13 +242,18 @@ GLOBAL_STATE_SPACE = nothing
 Constructs a combined Hilbert and Parameter space. The Hilbert space consists of different subspaces, themselves composed of different operator sets. The Parameter space defines the variables, that are needed to describe equations on the Hilbert space.
     - **args**: A variable number of symbols or strings representing the state variables. Can refer to indexes of subsystems via for underscore notation, i.e., "alpha_i" or declare time dependence via for example "alpha(t)".
     - **kwargs**: Each keyword is interpreted as a subspace label. The values are either Operator Sets or Tuples with an integer and an OperatorSet. The integer is the number of indexes generated for the subspace.
-    - **operators**: Specifies the types of abstract Operators as OperatorTypes, either directly or from Strings such as "A(U,H)", which would result in an operator with name "A" and properties Hermitian (H) and Unitary (U).
+    - **operators**: Specifies the types of abstract Operators from Strings such as "A(U,H)", which would result in an operator with name "A" and properties Hermitian (H) and Unitary (U).
+                    You can specify the subspaces on which the operator acts non trivially via the subspace keys (kwarg keys). Alternatively, you can specify the subspaces on which it doesn#t act non trivially via the negatved subspace keys (!kwarg keys).
+                    If no subspace is specified, it defaults to all subspaces.
+                    Example: "A(U,H,i)" constructs an abstract operator "A" that is both hermitian and unitary and acts non trivially on the subspace "i".
+                    Example: "B(H,!i)" constructs an abstract operator "B" that is hermitian and acts trivially on the subspace "i".
+                    Example: "C(U)" constructs an abstract operator "C" that is unitary and acts non-trivially on all subspaces.
 """
 mutable struct StateSpace
     # Parameter fields:
     vars::Vector{Parameter}
     vars_str::Vector{String}
-    vars_cont::Vector{Tuple{Vector{Int},Tuple}}    # For continuum variables: (subspace indices, standardized tuple)
+    vars_cont::Vector{Tuple{Vector{Int},Tuple}}    # For continuum variables: (subspace indices, standardized tuple for distribution)
     how_many_by_continuum::Dict{Int,Int}   # for continuum subspaces, how many variables do we have 
     where_by_continuum::Dict{Int,Vector{Vector{Int}}}   # for continuum subspaces, how many variables do we have 
     where_by_time::Vector{Int}
@@ -242,12 +267,13 @@ mutable struct StateSpace
     # Abstract operators
     operatortypes::Vector{OperatorType}
     operator_names::Vector{String}
-    function StateSpace(args...; operators::Union{String, OperatorType, Vector{String}, Vector{OperatorType}}="A", make_global::Bool=true, kwargs...)
+    operatortypes_commutator_mat::Matrix{Bool}
+    function StateSpace(args...; operators::Union{String, Vector{String}}="A", make_global::Bool=true, kwargs...)
         subspaces = Vector{SubSpace}()
         fermionic_keys = String[]
         bosonic_keys = String[]
         used_strings = Set{String}()
-
+        op_index_ind_max = 1
         for (key, val) in kwargs
             key_str = String(key)
             n = 1
@@ -298,7 +324,9 @@ mutable struct StateSpace
             if continuum && !op_set.fermion
                 error("Cannot Create non fermionic Continuum Subspaces!")
             end
-            push!(subspaces, SubSpace(key_str, keys, statespace_main_ind, indices, op_set, continuum, op_set.fermion))
+            op_index_inds = collect(op_index_ind_max:op_index_ind_max+n-1)
+            op_index_ind_max += n
+            push!(subspaces, SubSpace(key_str, keys, statespace_main_ind, indices, op_index_inds, op_set, continuum, op_set.fermion))
             if op_set.fermion
                 append!(fermionic_keys, keys)
             else
@@ -396,14 +424,11 @@ mutable struct StateSpace
         operatortypes::Vector{OperatorType} = []
         subspace_keys::Vector{String} = [s.key for s in subspaces]
         for s in operators 
-            if isa(s, String) 
-                push!(operatortypes, string2operator_type(s, subspace_keys))
-            else 
-                push!(operatortypes, s)
-            end
+            push!(operatortypes, string2operator_type(s, subspace_keys, length(neutral_op), subspaces))
         end
         operator_names::Vector{String} = [ot.name for ot in operatortypes]
-        qss = new(vars, vars_str, vars_cont, how_many_by_continuum, where_by_continuum, where_by_time, where_const, subspaces, fermionic_keys, bosonic_keys, neutral_op, fone, operatortypes, operator_names)
+        operatortypes_commutator_mat = operatertypes2commutator_matrix(operatortypes)
+        qss = new(vars, vars_str, vars_cont, how_many_by_continuum, where_by_continuum, where_by_time, where_const, subspaces, fermionic_keys, bosonic_keys, neutral_op, fone, operatortypes, operator_names, operatortypes_commutator_mat)
         if make_global
             global GLOBAL_STATE_SPACE = qss
         end

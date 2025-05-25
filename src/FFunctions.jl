@@ -417,7 +417,7 @@ function simplify(s::FSum)
                     push!(new_elements, curr_element)
                 end
                 curr_element = elements[i]
-            end
+            end 
         else
             if !iszero(curr_element)
                 push!(new_elements, curr_element)
