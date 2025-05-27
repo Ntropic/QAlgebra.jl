@@ -27,15 +27,15 @@ using qAlgebra
         @test op_dict isa Dict
         @test haskey(var_dict, "alpha")
         @test haskey(op_dict, "b")
-        @test xi isa qEQ
-        @test b isa qEQ
+        @test xi isa qExpr
+        @test b isa qExpr
     end
 
     @testset "Simple Expressions" begin
         A = 2 * alpha * im * xi
         B = alpha * (Dag(b) * xi * yi)
-        @test A isa qEQ
-        @test B isa qEQ
+        @test A isa qExpr
+        @test B isa qExpr
 
         expr1 = 2 * alpha * im * xi
         expr2 = 2 * alpha * im * xi
@@ -44,14 +44,14 @@ using qAlgebra
 
     @testset "Sum and Nested Expressions" begin
         qsum_expr = Sum(["j", "k"], alpha * gamma_i * gamma_k * delta_k * xi * yi)
-        @test qsum_expr isa qEQ
+        @test qsum_expr isa qExpr
         @test qsum_expr.terms[1] isa qSum
 
         flat_expr = flatten(qsum_expr)
-        @test flat_expr isa qEQ
+        @test flat_expr isa qExpr
 
         neq_expr = neq(qsum_expr)
-        @test neq_expr isa qEQ
+        @test neq_expr isa qExpr
     end
 
     @testset "Differentiation Tests" begin
@@ -63,7 +63,7 @@ using qAlgebra
         a_term = alpha * beta^2 * xi * yi * Dag(b) * b
         b_term = alpha^2 * beta * zi * Dag(b)
         comm = simplify(Commutator(a_term, b_term))
-        @test comm isa qEQ
+        @test comm isa qExpr
 
         messy = alpha * xi + alpha^2 * zi + alpha * xi
         expected = 2 * alpha * xi + alpha^2 * zi

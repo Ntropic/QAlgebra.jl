@@ -5,7 +5,7 @@ export Dag, Commutator, is_numeric
     is_numeric(t::qAbstract, qspace::StateSpace) -> Bool
     is_numeric(p::qProd) -> Bool
     is_numeric(s::qSum) -> Bool
-    is_numeric(expr::qEQ) -> Bool
+    is_numeric(expr::qExpr) -> Bool
 
 Returns true if only the coefficient of the term(s) is non-zero.
 """
@@ -29,7 +29,7 @@ end
 function is_numeric(s::qSum)::Bool
     return is_numeric(s.expr)
 end
-function is_numeric(expr::qEQ)::Bool
+function is_numeric(expr::qExpr)::Bool
     expr_s = simplify(expr)
     terms = expr_s.terms
 
@@ -63,7 +63,7 @@ function ==(a::qProd, b::qProd)
     return a.coeff_fun == b.coeff_fun &&  all([ai == bi for (ai, bi) in zip(a.expr, b.expr)])
 end
 
-function ==(a::qEQ, b::qEQ)
+function ==(a::qExpr, b::qExpr)
     simple_a = simplify(a)
     simple_b = simplify(b)
     if length(simple_a) != length(simple_b)
@@ -86,7 +86,7 @@ function ==(a::qSum, b::qSum)
     end
     return a.expr == b.expr
 end
-function ==(expr::qEQ, n::Number)
+function ==(expr::qExpr, n::Number)
     simple_expr = simplify(expr)
     if is_numeric(simple_expr)
         if length(simple_expr.terms) == 0
@@ -97,7 +97,7 @@ function ==(expr::qEQ, n::Number)
     end
     return false
 end
-function ==(n::Number, expr::qEQ)
+function ==(n::Number, expr::qExpr)
     return expr == n  # Symmetric
 end
 
@@ -106,44 +106,44 @@ end
 function -(t::qTerm)::qTerm
     return qTerm(-t.coeff, t.var_exponents, copy(t.op_indices))
 end
-function -(t::qEQ)::qEQ
-    return qEQ(.-t.terms, t.statespace)
+function -(t::qExpr)::qExpr
+    return qExpr(.-t.terms, t.statespace)
 end
 function -(t::qSum)::qSum
     return qSum(-t.expr, t.indexes, t.subsystem_index, t.element_indexes, t.neq)
 end
 
-function +(Q1::qEQ, Q2::qEQ)::qEQ
+function +(Q1::qExpr, Q2::qExpr)::qExpr
     if Q1.statespace != Q2.statespace
-        error("Cannot add qEQ’s from different statespaces.")
+        error("Cannot add qExpr’s from different statespaces.")
     end
     new_terms = vcat(Q1.terms, Q2.terms)
     # Optionally: group like terms here.
-    return qEQ(new_terms, Q1.statespace)
+    return qExpr(new_terms, Q1.statespace)
 end
-function +(Q1::qEQ, term::qTerm)::qEQ
+function +(Q1::qExpr, term::qTerm)::qExpr
     new_terms = vcat(Q1.terms, [term])
-    return qEQ(new_terms, Q1.statespace)
+    return qExpr(new_terms, Q1.statespace)
 end
-function +(term::qTerm, Q2::qEQ)::qEQ
+function +(term::qTerm, Q2::qExpr)::qExpr
     new_terms = vcat([term], Q2.terms)
-    return qEQ(new_terms, Q2.statespace)
+    return qExpr(new_terms, Q2.statespace)
 end
-function +(Q::qEQ, S::qSum)::qEQ
+function +(Q::qExpr, S::qSum)::qExpr
     if Q.statespace != S.expr.statespace
-        error("Cannot add qEQ’s from different statespaces.")
+        error("Cannot add qExpr’s from different statespaces.")
     end
     new_terms = vcat(Q.terms, S)
-    return qEQ(new_terms, Q.statespace)
+    return qExpr(new_terms, Q.statespace)
 end
-function +(S::qSum, Q::qEQ)::qEQ
+function +(S::qSum, Q::qExpr)::qExpr
     if Q.statespace != S.expr.statespace
-        error("Cannot add qEQ’s from different statespaces.")
+        error("Cannot add qExpr’s from different statespaces.")
     end
     new_terms = vcat(S, Q.terms)
-    return qEQ(new_terms, Q.statespace)
+    return qExpr(new_terms, Q.statespace)
 end
-function +(S1::qSum, S2::qSum)::qEQ
+function +(S1::qSum, S2::qSum)::qExpr
     if S1.expr.statespace != S2.expr.statespace
         error("Cannot add qSum’s from different statespaces.")
     end
@@ -151,25 +151,25 @@ function +(S1::qSum, S2::qSum)::qEQ
     if S1.indexes == S2.indexes || S1.subsystem_index == S2.subsystem_index || S1.element_indexes == S2.element_indexes || S1.neq == S2.neq
         S_sum_expr = S1.expr + S2.expr
         S_sum = qSum(S_sum_expr, S1.indexes, S1.subsystem_index, S1.element_indexes, S1.neq)
-        return qEQ([S_sum], S1.expr.statespace)
+        return qExpr([S_sum], S1.expr.statespace)
     end
     new_terms = vcat(S1, S2)
-    return qEQ(new_terms, S1.expr.statespace)
+    return qExpr(new_terms, S1.expr.statespace)
 end
-# --- Define qEQ subtraction as addition of the negative ---
-function -(Q1::qEQ, Q2::qEQ)
+# --- Define qExpr subtraction as addition of the negative ---
+function -(Q1::qExpr, Q2::qExpr)
     Q2_minus = -Q2
     return Q1 + Q2_minus
 end
-function -(Q::qEQ, S::qSum)::qEQ
+function -(Q::qExpr, S::qSum)::qExpr
     S_minus = -S
     return Q + S_minus
 end
-function -(S::qSum, Q::qEQ)::qEQ
+function -(S::qSum, Q::qExpr)::qExpr
     Q_minus = -Q
     return S + Q_minus
 end
-function -(S1::qSum, S2::qSum)::qEQ
+function -(S1::qSum, S2::qSum)::qExpr
     S2_minus = -S2
     return S1 + S2_minus
 end
@@ -177,13 +177,13 @@ end
 
 """
     Dag(t::qTerm, qspace::StateSpace) -> qTerm
-    Dag(t::qEQ) -> qEQ
+    Dag(t::qExpr) -> qExpr
     Dag(t::qSum) -> qSum
     
-Returns the Hermitian conjugate (dagger) of a qTerm, qEQ or qSum.
+Returns the Hermitian conjugate (dagger) of a qTerm, qExpr or qSum.
 Overloads the adjoint function, which can be called via `t′`.
 """
-function Dag(t::qTerm, qspace::StateSpace)::qEQ
+function Dag(t::qTerm, qspace::StateSpace)::qExpr
     new_coeff = conj(t.coeff)
     new_exponents = copy(t.var_exponents)
     # Build a vector of the op_set for each operator factor, in the same order as t.op_indices.
@@ -208,9 +208,9 @@ function Dag(t::qTerm, qspace::StateSpace)::qEQ
         end
         push!(terms, qTerm(curr_coeff, copy(new_exponents), curr_inds))
     end
-    return qEQ(terms, qspace)
+    return qExpr(terms, qspace)
 end
-function Dag(Q::qEQ)::qEQ
+function Dag(Q::qExpr)::qExpr
     return sum([Dag(t, Q.statespace) for t in Q.terms])
 end
 function Dag(t::qSum)::qSum
@@ -220,7 +220,7 @@ function Dag(t::qSum, qspace::StateSpace)::qSum
     return qSum(Dag(t.expr), t.indexes, t.subsystem_index, t.element_indexes, t.neq)
 end
 
-adjoint(Q::qEQ) = Dag(Q)
+adjoint(Q::qExpr) = Dag(Q)
 adjoint(Q::qSum) = Dag(Q)
 
 """
@@ -277,9 +277,9 @@ end
 function *(t1::qTerm, t2::qTerm, statespace::StateSpace)
     return multiply_qterm(t1, t2, statespace)
 end
-function *(Q1::qEQ, Q2::qEQ)::qEQ
+function *(Q1::qExpr, Q2::qExpr)::qExpr
     if Q1.statespace != Q2.statespace
-        error("Cannot multiply qEQ’s from different statespaces.")
+        error("Cannot multiply qExpr’s from different statespaces.")
     end
     new_terms = qTerm[]
     for t1 in Q1.terms
@@ -288,14 +288,14 @@ function *(Q1::qEQ, Q2::qEQ)::qEQ
             append!(new_terms, prod_terms)
         end
     end
-    return qEQ(new_terms, Q1.statespace)
+    return qExpr(new_terms, Q1.statespace)
 end
-function *(Q1::qEQ, num::Number)::qEQ
-    return qEQ([qTerm(num * t.coeff, t.var_exponents, t.op_indices) for t in Q1.terms], Q1.statespace)
+function *(Q1::qExpr, num::Number)::qExpr
+    return qExpr([qTerm(num * t.coeff, t.var_exponents, t.op_indices) for t in Q1.terms], Q1.statespace)
 end
-function *(s::Number, Q::qEQ)::qEQ
+function *(s::Number, Q::qExpr)::qExpr
     new_terms = [qTerm(s * t.coeff, t.var_exponents, t.op_indices) for t in Q.terms]
-    return qEQ(new_terms, Q.statespace)
+    return qExpr(new_terms, Q.statespace)
 end
 function *(S::qSum, num::Number)::qSum
     return qSum(S.expr * num, S.indexes, S.subsystem_index, S.element_indexes, S.neq)
@@ -303,76 +303,76 @@ end
 function *(num::Number, S::qSum)::qSum
     return qSum(S.expr * num, S.indexes, S.subsystem_index, S.element_indexes, S.neq)
 end
-function *(S::qSum, Q::qEQ)::qSum
+function *(S::qSum, Q::qExpr)::qSum
     if S.expr.statespace != Q.statespace
-        error("Cannot multiply qSum and qEQ from different statespaces.")
+        error("Cannot multiply qSum and qExpr from different statespaces.")
     end
     new_terms = S.expr * Q
-    return qEQ([qSum(new_terms, S.indexes, S.subsystem_index, S.element_indexes)], Q.statespace)
+    return qExpr([qSum(new_terms, S.indexes, S.subsystem_index, S.element_indexes)], Q.statespace)
 end
-function *(Q::qEQ, S::qSum)::qSum
+function *(Q::qExpr, S::qSum)::qSum
     if S.expr.statespace != Q.statespace
-        error("Cannot multiply qSum and qEQ from different statespaces.")
+        error("Cannot multiply qSum and qExpr from different statespaces.")
     end
     new_terms = Q * S.expr
     return qSum(new_terms, S.indexes, S.subsystem_index, S.element_indexes)
 end
 function *(Q::qSum, S::qSum)::qSum
     if Q.expr.statespace != S.expr.statespace
-        error("Cannot multiply qSum and qEQ from different statespaces.")
+        error("Cannot multiply qSum and qExpr from different statespaces.")
     end
     new_terms = Q.expr * S.expr
     inner_sum = qSum(new_terms, S.indexes, S.subsystem_index, S.element_indexes, S.neq)
-    outer_sum = qSum(qEQ([inner_sum], Q.expr.statespace), Q.index, Q.subsystem_index, Q.element_indexes, Q.neq)
-    return qEQ([outer_sum], Q.expr.statespace)
+    outer_sum = qSum(qExpr([inner_sum], Q.expr.statespace), Q.index, Q.subsystem_index, Q.element_indexes, Q.neq)
+    return qExpr([outer_sum], Q.expr.statespace)
 end
 
-# --- Define the commutator for qEQ ---
+# --- Define the commutator for qExpr ---
 """
-    Commutator(Q1::qEQ, Q2::qEQ) -> qEQ
-    Commutator(Q::qEQ, t::qSum) -> qEQ
-    Commutator(t::qSum, Q::qEQ) -> qEQ
+    Commutator(Q1::qExpr, Q2::qExpr) -> qExpr
+    Commutator(Q::qExpr, t::qSum) -> qExpr
+    Commutator(t::qSum, Q::qExpr) -> qExpr
 
 Computes the commutator [Q1, Q2] = Q1 * Q2 - Q2 * Q1.
-Both qEQ's must share the same statespace.
+Both qExpr's must share the same statespace.
 """
-function Commutator(Q1::qEQ, Q2::qEQ)::qEQ
-    # qEQ multiplication is already defined.
+function Commutator(Q1::qExpr, Q2::qExpr)::qExpr
+    # qExpr multiplication is already defined.
     return Q1 * Q2 - Q2 * Q1
 end
-function Commutator(Q::qEQ, t::qSum)::qSum
+function Commutator(Q::qExpr, t::qSum)::qSum
     return Q * t - t * Q
 end
-function Commutator(t::qSum, Q::qEQ)::qSum
+function Commutator(t::qSum, Q::qExpr)::qSum
     return t * Q - Q * t
 end
 function Commutator(Q::qSum, t::qSum)::qSum
     return Q * t - t * Q
 end
 
-function Commutator(t1::qTerm, t2::qTerm, statespace::StateSpace)::qEQ
-    Q1 = qEQ([t1], statespace)
-    Q2 = qEQ([t2], statespace)
+function Commutator(t1::qTerm, t2::qTerm, statespace::StateSpace)::qExpr
+    Q1 = qExpr([t1], statespace)
+    Q2 = qExpr([t2], statespace)
     return Commutator(Q1, Q2)
 end
 
-function identity_qEQ(qspace::StateSpace)
+function Identity(qspace::StateSpace)
     # Set variable exponents to zero.
     var_exponents = zeros(Int, length(qspace.vars))
     # Build a vector of neutral operator indexes.
     neutral_ops = [s.op_set.neutral_element for s in qspace.subspaces for key in s.keys]
-    # Create a single-term qEQ.
-    return qEQ([qTerm(1, var_exponents, neutral_ops)], qspace)
+    # Create a single-term qExpr.
+    return qExpr(qspace, qProd(qspace, qspace.fone, qspace.neutral_op))
 end
 
-function ^(Q::qEQ, n::Integer)
+function ^(Q::qExpr, n::Integer)
     if n < 0
-        error("Negative exponent not defined for qEQ.")
+        error("Negative exponent not defined for qExpr.")
     elseif n == 0
-        return identity_qEQ(Q.statespace)
+        return Identity(Q.statespace)
     end
 
-    result = identity_qEQ(Q.statespace)
+    result = Identity(Q.statespace)
     base = Q
     exp = n
     while exp > 0
@@ -387,52 +387,52 @@ end
 
 
 
-# Addition of a diff_qEQ with a qEQ.
-function +(d::diff_qEQ, Q::Union{qEQ,qExpr})::diff_qEQ
+# Addition of a diff_qEQ with a qExpr.
+function +(d::diff_qEQ, Q::Union{qExpr,qComposite})::diff_qEQ
     new_rhs = simplify(d.right_hand_side + Q)
     return diff_qEQ(d.left_hand_side, new_rhs, d.statespace; braket=d.braket, do_sigma=d.do_sigma)
 end
-function -(d::diff_qEQ, Q::Union{qEQ,qExpr})::diff_qEQ
+function -(d::diff_qEQ, Q::Union{qExpr,qComposite})::diff_qEQ
     new_rhs = simplify(d.right_hand_side - Q)
     return diff_qEQ(d.left_hand_side, new_rhs, d.statespace; braket=d.braket, do_sigma=d.do_sigma)
 end
-function *(d::diff_qEQ, Q::Union{qEQ,qExpr})::diff_qEQ
+function *(d::diff_qEQ, Q::Union{qExpr,qComposite})::diff_qEQ
     new_rhs = simplify(d.right_hand_side * Q)
     return diff_qEQ(d.left_hand_side, new_rhs, d.statespace; braket=d.braket, do_sigma=d.do_sigma)
 end
 
 ##### Commutators ###################################################
-function +(Q::qEQ, exprs::Vector{qEQ})::qEQ
+function +(Q::qExpr, exprs::Vector{qExpr})::qExpr
     if length(exprs) != 2
         error("Only vectors of length 2 can be added -> commutator.")
     end
     return Q + Commutator(exprs[1], exprs[2])
 end
-function -(Q::qEQ, exprs::Vector{qEQ})::qEQ
+function -(Q::qExpr, exprs::Vector{qExpr})::qExpr
     if length(exprs) != 2
         error("Only vectors of length 2 can be added -> commutator.")
     end
     return Q - Commutator(exprs[1], exprs[2])
 end
-function *(Q::qEQ, exprs::Vector{qEQ})::qEQ
+function *(Q::qExpr, exprs::Vector{qExpr})::qExpr
     if length(exprs) != 2
         error("Only vectors of length 2 can be added -> commutator.")
     end
     return Q * Commutator(exprs[1], exprs[2])
 end
-function +(d::diff_qEQ, exprs::Vector{qEQ})::diff_qEQ
+function +(d::diff_qEQ, exprs::Vector{qExpr})::diff_qEQ
     if length(exprs) != 2
         error("Only vectors of length 2 can be added -> commutator.")
     end
     return d + Commutator(exprs[1], exprs[2])
 end
-function -(d::diff_qEQ, exprs::Vector{qEQ})::diff_qEQ
+function -(d::diff_qEQ, exprs::Vector{qExpr})::diff_qEQ
     if length(exprs) != 2
         error("Only vectors of length 2 can be added -> commutator.")
     end
     return d - Commutator(exprs[1], exprs[2])
 end
-function *(d::diff_qEQ, exprs::Vector{qEQ})::diff_qEQ
+function *(d::diff_qEQ, exprs::Vector{qExpr})::diff_qEQ
     if length(exprs) != 2
         error("Only vectors of length 2 can be added -> commutator.")
     end

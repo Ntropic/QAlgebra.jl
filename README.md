@@ -60,7 +60,7 @@ flat_qsum = flatten(qsum)
 neq_sum = neq_sum(qsum) # this also flattens the sum
 
 # A differential equation of expectation values can be constructed via
-diff_eq = d_dt(zi, alpha*expr+sum) # this simplifies, flattens and neq's the qEQ
+diff_eq = d_dt(zi, alpha*expr+sum) # this simplifies, flattens and neq's the quantum equation
 ```
 
 ## Author 

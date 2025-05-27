@@ -57,7 +57,7 @@ export QubitPauli, QubitPM, Ladder
 
 include("qExpressions.jl")
 using .qExpressions
-export qExpr, qAtom, qComposite, qTerm, qEQ, qSum, Sum, ∑, diff_qEQ, term, base_operators,simplify, flatten, neq, d_dt
+export qObj, qAtom, qComposite, qTerm, qExpr, qSum, Sum, ∑, diff_qEQ, term, base_operators,simplify, flatten, neq, d_dt
 export Dag, Commutator, isnumeric
 export string, latex_string
 
