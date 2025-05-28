@@ -126,12 +126,14 @@ struct OperatorType
     hermitian::Bool 
     unitary::Bool 
     subspaces::Vector{Bool}   # subspace groups
+    non_subspaces::Vector{Bool} 
     non_trivial_op_indices::Vector{Bool} # indices of non-trivial components in the op_indices pciture for bath subsystems
     function OperatorType(name::String; hermitian::Bool=false, unitary::Bool=false, subspaces::Vector{Bool}, non_trivial_op_indices::Vector{Bool})
         if length(name) == 0
             error("OperatorType name cannot be empty.")
         end
-        new(name, hermitian, unitary, subspaces, non_trivial_op_indices)
+        non_subspaces = .!subspaces
+        new(name, hermitian, unitary, subspaces, non_subspaces, non_trivial_op_indices)
     end
 end
 function string2operator_type(s::String, subspace_keys::Vector{String}, dim::Int, subspace_vec::Vector{SubSpace})

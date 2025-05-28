@@ -68,33 +68,6 @@ function qAbstract(operator_type::OperatorType, key_index::Int, sub_index::Int, 
     return qAbstract(key_index, sub_index, exponent, dag, operator_type, index_map)
 end
 
-"""
-    qExpr
-
-A `qExpr` represents a quantum equation, consisting of a Vector of quantum Expressions representing the additive terms of the equation.
-It also contains a reference to the state space in which the equation is defined.
-"""
-mutable struct qExpr
-    statespace::StateSpace
-    terms::Vector{qComposite}         # Vector of terms
-    function qExpr(statespace::StateSpace, terms::Vector{<:qComposite})
-        if isempty(terms) 
-            # add neotral zero term
-            zero_term = qProd(statespace.fone*0, qTerm(statespace.neutral_op))
-            push!(terms, zero_term)
-        end
-        return new(statespace, terms)
-    end
-end
-function qExpr(statespace::StateSpace, prod::qComposite)
-    return qExpr(statespace, [prod])
-end
-function qExpr(statespace::StateSpace, terms::qAtom)
-    return qExpr(statespace, qProd(statespace, statespace.fone, [terms]))
-end
-
-
-
 """ 
     qProd
 
@@ -133,7 +106,30 @@ mutable struct qProd <: qComposite
     end
 end
 
+"""
+    qExpr
 
+A `qExpr` represents a quantum equation, consisting of a Vector of quantum Expressions representing the additive terms of the equation.
+It also contains a reference to the state space in which the equation is defined.
+"""
+mutable struct qExpr
+    statespace::StateSpace
+    terms::Vector{qComposite}         # Vector of terms
+    function qExpr(statespace::StateSpace, terms::Vector{<:qComposite})
+        if isempty(terms) 
+            # add neotral zero term
+            zero_term = qProd(statespace.fone*0, qTerm(statespace.neutral_op))
+            push!(terms, zero_term)
+        end
+        return new(statespace, terms)
+    end
+end
+function qExpr(statespace::StateSpace, prod::qComposite)
+    return qExpr(statespace, [prod])
+end
+function qExpr(statespace::StateSpace, terms::qAtom)
+    return qExpr(statespace, qProd(statespace, statespace.fone, [terms]))
+end
 
 """ 
     qSum
@@ -148,7 +144,8 @@ It contains:
             For example, the indexes i,j,k can refer to different elements in a much larger bath of elements. 
 """
 mutable struct qSum <: qComposite
-    expr::qExpr       # The expression being summed over.
+    statespace::StateSpace
+    expr::qExpr       # The expression being summed over.    # use expr in other qComposites except for qProd
     indexes::Vector{String}   # The summation index (e.g. "i").
     subsystem_index::Int  # The subspace index where the summation index was found.
     element_indexes::Vector{Int}    # The position in that subspace.
@@ -166,14 +163,14 @@ It represents time evolution of operator expectation values, and wraps the symbo
 
 # Fields
 - `left_hand_side::qTerm`: The LHS operator being differentiated.
-- `right_hand_side::qExpr`: The RHS symbolic expression.
+- `expr::qExpr`: The RHS symbolic expression.
 - `statespace::StateSpace`: The StateSpace in which the equation is defined.
 - `braket::Bool`: Whether to use braket notation ⟨⋯⟩ (default = `true`).
 - `do_sigma::Bool`: Whether to display Pauli operators as `σₓ`, etc. (default = `true`).
 """
-mutable struct diff_qEQ
+mutable struct diff_qEQ <: qComposite
     left_hand_side::qProd
-    right_hand_side::qExpr
+    expr::qExpr
     statespace::StateSpace
     braket::Bool
     do_sigma::Bool
@@ -186,8 +183,8 @@ Construct a [`diff_qEQ`](@ref) that represents the time derivative of ⟨lhs⟩ 
 
 Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
-function diff_qEQ(left_hand_side::qProd, right_hand_side::qExpr, statespace::StateSpace; braket::Bool=true, do_sigma::Bool=true)
-    new_rhs = neq(right_hand_side)
+function diff_qEQ(left_hand_side::qProd, expr::qExpr, statespace::StateSpace; braket::Bool=true, do_sigma::Bool=true)
+    new_rhs = neq(expr)
     return diff_qEQ(left_hand_side, new_rhs, statespace, braket, do_sigma)
 end
 
@@ -227,7 +224,7 @@ function Sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::qExpr; neq::Bo
         end
     end
     if length(index_strs) > 0
-        return qExpr(ss, [qSum(expr, index_strs, the_s_ind, e_inds, neq)])
+        return qExpr(ss, [qSum(ss, expr, index_strs, the_s_ind, e_inds, neq)])
     else
         return expr
     end
@@ -268,7 +265,7 @@ function copy(q::qProd)::qProd
     return qProd(q.statespace, copy(q.coeff_fun), copy(q.expr))
 end
 function copy(q::qSum)::qSum
-    return qSum(copy(q.expr), copy(q.indexes), copy(q.subsystem_index), copy(q.element_indexes), copy(q.neq))
+    return qSum(copy(q.statespace), copy(q.expr), copy(q.indexes), copy(q.subsystem_index), copy(q.element_indexes), copy(q.neq))
 end
 function copy(q::qExpr)::qExpr
     return qExpr(q.statespace, copy(q.terms))
@@ -499,12 +496,13 @@ function base_operators(statespace::StateSpace)::Tuple{Dict{String,qExpr},Dict{S
     # return 2 dicctionaries, one with the vars and one with the operators 
     var_dict::Dict{String,qExpr} = Dict()
     op_dict::Dict{String,qExpr} = Dict()
+    CRone = one(ComplexRational)
     var_exponents = zeros(Int, length(statespace.vars))
     #abstract_dict::Dict{String,qExpr} = Dict()
-    neutral_operator = [s.op_set.neutral_element for s in statespace.subspaces for key in s.keys]
+    neutral_operator = s.neutral_op
     for (i, vars_str) in enumerate(statespace.vars_str)
         var_exponents[i] += 1
-        var_dict[vars_str] = qExpr(statespace, qProd(statespace, 1, var_exponents, qTerm(copy(neutral_operator))))
+        var_dict[vars_str] = qExpr(statespace, qProd(statespace, CRone, var_exponents, qTerm(copy(neutral_operator))))
         var_exponents[i] -= 1
     end
     index = 1
@@ -608,7 +606,7 @@ function combine_term(t1::qProd, t2::qProd)::qTerm
     return qProd(simplify(t1.coeff_fun + t2.coeff_fun), t1.expr)
 end
 function combine_term(s1::qSum, s2::qSum)::qSum
-    return qSum(simplify(s1.expr + s2.expr), s1.indexes, s1.subsystem_index, s1.element_indexes, s1.neq)
+    return qSum(s1.statespace, simplify(s1.expr + s2.expr), s1.indexes, s1.subsystem_index, s1.element_indexes, s1.neq)
 end
 
 """
@@ -672,7 +670,7 @@ function simplify(q::qExpr)::qExpr
 end
 function simplify(s::qSum)::qSum
     simplified_expr = simplify(s.expr)
-    return qSum(simplified_expr, s.indexes, s.subsystem_index, s.element_indexes, s.neq)
+    return qSum(s.statespace, simplified_expr, s.indexes, s.subsystem_index, s.element_indexes, s.neq)
 end
 
 
@@ -740,7 +738,7 @@ function flatten_qSum(s::qSum)::qExpr
             error("Unsupported: nested sum with different subsystem index: $(n.subsystem_index)")
         end
         merged_einds = vcat(s.element_indexes, n.element_indexes)
-        push!(out_terms, qSum(n.expr, merged_idxs, s.subsystem_index, merged_einds, s.neq))
+        push!(out_terms, qSum(s.statespace, n.expr, merged_idxs, s.subsystem_index, merged_einds, s.neq))
     end
 
     return qExpr(inner.statespace, out_terms)
@@ -895,10 +893,10 @@ function neq_qsum(s::qSum, index::Int=1)::qExpr
                                 pieces += new_term
                             end
                         else
-                            pieces += qSum(qExpr(ss, new_terms), new_indexes, expr.subsystem_index, new_element_indexes, expr.neq)
+                            pieces += qSum(s.statespace, qExpr(ss, new_terms), new_indexes, expr.subsystem_index, new_element_indexes, expr.neq)
                         end
                     else # no change to sum structure
-                        pieces += qSum(qExpr(ss, new_terms), copy(expr.indexes), expr.subsystem_index, copy(expr.element_indexes), expr.neq)
+                        pieces += qSum(s.statespace, qExpr(ss, new_terms), copy(expr.indexes), expr.subsystem_index, copy(expr.element_indexes), expr.neq)
                     end
                 end
             end
@@ -910,11 +908,11 @@ end
 
 
 function simplify(q::diff_qEQ)::diff_qEQ
-    simp_rhs = simplify(q.right_hand_side)
+    simp_rhs = simplify(q.expr)
     return diff_qEQ(q.left_hand_side, simp_rhs, q.statespace, q.braket, q.do_sigma)
 end
 function copy(q::diff_qEQ)::diff_qEQ
-    return diff_qEQ(copy(q.left_hand_side), copy(q.right_hand_side), copy(q.statespace), copy(q.braket), copy(q.do_sigma))
+    return diff_qEQ(copy(q.left_hand_side), copy(q.expr), copy(q.statespace), copy(q.braket), copy(q.do_sigma))
 end
 
 """

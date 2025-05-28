@@ -442,7 +442,7 @@ end
 
 
 function diff_qEQ2string(q::diff_qEQ; do_latex::Bool=false, grouped::Bool=true)::String
-    right_hand_side = qeq_to_string(q.right_hand_side, do_latex=do_latex, do_sigma=q.do_sigma, braket=q.braket, grouped=grouped)
+    expr = qeq_to_string(q.expr, do_latex=do_latex, do_sigma=q.do_sigma, braket=q.braket, grouped=grouped)
     left_hand_side_op_str = qeq_to_string_ungrouped(qExpr([q.left_hand_side], q.statespace), do_latex=do_latex, do_sigma=q.do_sigma, braket=q.braket)
     left_hand_side_op_str = lstrip(left_hand_side_op_str, '+')
     if do_latex
@@ -450,7 +450,7 @@ function diff_qEQ2string(q::diff_qEQ; do_latex::Bool=false, grouped::Bool=true):
     else
         left_hand_side = "d(" * left_hand_side_op_str * ") / dt"
     end
-    return left_hand_side * " = " * right_hand_side
+    return left_hand_side * " = " * expr
 end
 
 function show(io::IO, q::diff_qEQ)
