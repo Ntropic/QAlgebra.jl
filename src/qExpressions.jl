@@ -499,7 +499,7 @@ function base_operators(statespace::StateSpace)::Tuple{Dict{String,qExpr},Dict{S
     CRone = one(ComplexRational)
     var_exponents = zeros(Int, length(statespace.vars))
     #abstract_dict::Dict{String,qExpr} = Dict()
-    neutral_operator = s.neutral_op
+    neutral_operator = statespace.neutral_op
     for (i, vars_str) in enumerate(statespace.vars_str)
         var_exponents[i] += 1
         var_dict[vars_str] = qExpr(statespace, qProd(statespace, CRone, var_exponents, qTerm(copy(neutral_operator))))

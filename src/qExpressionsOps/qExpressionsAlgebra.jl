@@ -51,9 +51,12 @@ end
 function where_acting(q::qAbstract, statespace::StateSpace)::Vector{Bool}
     return copy(q.operator_type.non_subspaces)
 end
+
 function qAtom_commute(q1::qAtom, q2::qAtom, statespace::StateSpace)::Bool
     # check if all elements of where neutral are NAND
-    return all([nand(a,b) for zip(where_acting(q1, statespace), where_acting(q2, statespace))])
+    act_q1 = where_acting(q1, statespace)
+    act_q2 = where_acting(q2, statespace)
+    return all([nand(a,b) for (a,b) in zip(act_q1, act_q2)])
 end
 
 function same_statespace(a::qComposite, b::qComposite)::Bool
@@ -121,7 +124,7 @@ function -(t::qProd)::qProd
     return qProd(t.statespace, -t.coeff_fun, copy(t.expr))
 end
 function -(t::qExpr)::qExpr
-    return qExpr(-.t.terms, t.statespace)  
+    return qExpr(.-t.terms, t.statespace)  
 end
 function -(t::qComposite)::qComposite
     t_new = copy(t)
@@ -143,13 +146,13 @@ end
 
 #### Binary - ####################################################################
 function -(Q1::qExpr, Q2::qExpr)::qExpr
-    new_terms = vcat(Q1.terms, -.Q2.terms)
+    new_terms = vcat(Q1.terms, .-Q2.terms)
     # Optionally: group like terms here.
     return qExpr(Q1.statespace, new_terms)
 end
 function -(Q1::qExpr, Q2::qComposite)::qExpr
     new_terms = copy(Q1.terms)
-    push!(new_terms, -.Q2)
+    push!(new_terms, .-Q2)
     return qExpr(Q1.statespace, new_terms)
 end
 
@@ -248,16 +251,25 @@ function remove_subsequent_qTerms(p::qProd)::Vector{qProd}
 end
 function commuting_sort(p::qProd)::qProd
     ss = p.statespace 
-    terms = p.terms
+    terms = p.expr
+    coeff_fun = p.coeff_fun
+
+    n = length(terms) 
     # create sort keys for each term 
     sort_keys = [sort_key(t) for t in terms]
-    # 
-
+    is_qTerm::Vector{Bool} = [isa(t, qTerm) for t in terms]
+    i = 1   
+    while i < n # reduce n when removing an element 
+        # check if both are qTerm -> unify them 
+        # otherwise use qAtom_commute to check if they commute 
+    end
+end
+            
 
 function *(p1::qProd, p2::qProd)::qProd
     p = trivial_multiply(p1, p2)
     # now lets simplify by first sorting the qAbstract elements as much as possible and then simplifying subsequent qTerm terms.
-
+end
 
 function *(t1::qTerm, t2::qTerm, statespace::StateSpace)
     return multiply_qatom(t1, t2, statespace)
@@ -464,3 +476,4 @@ end
 
 adjoint(Q::qExpr) = Dag(Q)
 adjoint(Q::qSum) = Dag(Q)
+
