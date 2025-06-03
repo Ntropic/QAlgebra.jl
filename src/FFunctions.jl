@@ -544,7 +544,7 @@ function sign_string(c::ComplexRational, do_latex::Bool=false)::Tuple{Bool, Stri
         return (false, string(c, do_latex=do_latex))
     end
 end
-is_abs_one(c::ComplexRational)::Bool = (abs(c.a) == abs(c.b))
+is_abs_one(c::ComplexRational)::Bool = (abs(c.a) == abs(c.c))
 function is_abs_one(c::FFunction)
     if isnumeric(c)
         if isa(c, FAtom)
@@ -578,7 +578,7 @@ function stringer(a::FAtom)::Tuple{Bool,String}  # true = minus, false = plus
         vec = string(a.var_exponents)
         sign, c_str = sign_string(c) 
         if is_abs_one(c)
-            return (sign, vec)
+            return sign, vec
         else
             return sign,  c_str*"*"*vec
         end
@@ -674,7 +674,7 @@ function stringer(a::FAtom, vars::Vector{String}; do_latex::Bool=false)
         c = a.coeff
         sign, c_str = sign_string(c) 
         if is_abs_one(c)
-            return (sign, vec)
+            return sign, var_str
         else
             if do_latex
                 return sign, c_str*" "*var_str
@@ -730,15 +730,31 @@ function stringer(r::FRational, vars::Vector{String}; do_latex::Bool=false)
     end
 end
 
+include("FFunctionOps/FFunctionHelper.jl")
 function to_stringer(f::FFunction, vars::Vector{String}; do_latex::Bool=false, braced::Bool=false)::Tuple{Bool, String}
     if braced && f isa FSum && length(f) > 1
         sig, body = stringer(f, vars; do_latex=do_latex, braced=braced)
+        # Apply braces if necessary
+        body = do_latex ? "\\left( $body \\right)" : "($body)"
+        # braced attempt
+        done, pre_f, new_f = separate_FSum(f)
+        if done 
+            sig_new, body_new = stringer(new_f, vars; do_latex=do_latex, braced=braced)
+            body_new = do_latex ? "\\left( $body_new \\right)" : "($body_new)"
+            # add prefactor (i.e. base) if it isn'T trivial (isonelike)
+            sig_outer, prefactor_outer = stringer(pre_f, vars; do_latex=do_latex)
+            sig_new = sig_new || sig_outer
+            connector = do_latex ? " " : "*"
+            if !isonelike(pre_f)
+                body_new = prefactor_outer*connector*body_new   # add an outer prefactor 
+            end 
+            if length(body_new) < length(body)
+                body = body_new
+                sig = sig_new
+            end
+        end
     else
         sig, body = stringer(f, vars; do_latex=do_latex)
-    end
-    # Apply braces to sums if requested
-    if braced && f isa FSum && length(f) > 1
-        body = do_latex ? "\\left( $body \\right)" : "($body)"
     end
     return sig, body
 end
