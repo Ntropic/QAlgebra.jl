@@ -157,8 +157,8 @@ function -(Q1::qExpr, Q2::qComposite)::qExpr
 end
 
 #### Multiply ####################################################################
-function trivial_multiply(q1::qProd, q2::qProd)::qProd
-    return qProd(Q1.statespace, Q1.coeff_fun*Q2.coeff_fun, vcat(Q1.terms, Q2.terms))
+function trivial_multiply(Q1::qProd, Q2::qProd)::qProd
+    return qProd(Q1.statespace, simplify(Q1.coeff_fun*Q2.coeff_fun), vcat(Q1.terms, Q2.terms))
 end
 # Multiplies two qTerm’s from the same statespace. Returns a vector of qTerm’s that are the result of this multiplication and corresponding ComplexRational coefficients. 
 function multiply_qterm(t1::qTerm, t2::qTerm, statespace::StateSpace)::Tuple{Vector{qTerm}, Vector{ComplexRational}}
@@ -196,139 +196,63 @@ function multiply_qterm(t1::qTerm, t2::qTerm, statespace::StateSpace)::Tuple{Vec
         push!(new_coeffs, new_factor)
     end
     return new_terms, new_coeffs
-end
-function multiply_qterms(terms::Vector{qTerm}, statespace::StateSpace)::Tuple{Vector{qTerm}, Vector{ComplexRational}}
-    n = length(terms)
-    if n == 1
-        return terms, [one(ComplexRational)]
-    elseif n == 2
-        return multiply_qterms(terms[1], terms[2], statespace)
-    elseif n > 2 
-        curr_terms, curr_coeffs = multiply_qterms(terms[1:end-1], statespace)
-        final_terms::Vector{qTerm} = qTerm[]
-        final_coeffs::Vector{ComplexRational} = ComplexRational[]
-        for i in 1:length(curr_terms)
-            new_terms, new_coeffs = multiply_qterms([curr_terms[i]], terms[end], statespace)
-            append!(final_terms, new_terms)
-            append!(final_coeffs, new_coeffs .* curr_coeffs[i])
-        end
-        return final_terms, final_coeffs
-    else
-        error("Invalid number of terms in multiply_qterms.")
-    end
-end
-function remove_subsequent_qTerms(p::qProd)::Vector{qProd}
-    # first group terms into qTerm boxes and qAbstract boxes 
-    ss = p.statespace
-    terms::Vector{Vector{qAtom}} = []
-    coeffs::Vector{ComplexRational} = []
-    i = 1 
-    curr_terms::Vector{qAtom} = []
-    for term in p.expr
-        if istype(term, qTerm) 
-            push!(curr_terms, term)
-        else 
-            if length(curr_terms) > 0 
-                multiplied_terms, multiplied_coeffs = multiply_qterms(curr_terms, ss)
-                curr_terms = Vector{qAtom}[]
-                new_coeffs = Vector{ComplexRational}[]
-                for (t, c) in zip(terms, coeffs)
-                    for (mt, mc) in zip(multiplied_terms, multiplied_coeffs)
-                        push!(new_terms, vcat(t, mt, terms))
-                        push!(new_coeffs, c * mc)
-                    end
-                end
-                terms = new_terms 
-                coeffs = new_coeffs 
-            else
-               for i in 1:length(terms)
-                   push!(terms[i], term)
-                end
-            end
-        end
-    end
-    return qProd[qProd(ss, p.coeff_fun*c, t) for (t, c) in zip(terms, coeffs)]
-end
-function commuting_sort(p::qProd)::qProd
-    ss = p.statespace 
-    terms = p.expr
-    coeff_fun = p.coeff_fun
-
-    n = length(terms) 
-    # create sort keys for each term 
-    sort_keys = [sort_key(t) for t in terms]
-    is_qTerm::Vector{Bool} = [isa(t, qTerm) for t in terms]
-    i = 1   
-    while i < n # reduce n when removing an element 
-        # check if both are qTerm -> unify them 
-        # otherwise use qAtom_commute to check if they commute 
-    end
-end
-            
-
-function *(p1::qProd, p2::qProd)::qProd
-    p = trivial_multiply(p1, p2)
-    # now lets simplify by first sorting the qAbstract elements as much as possible and then simplifying subsequent qTerm terms.
-end
-
+end            
 function *(t1::qTerm, t2::qTerm, statespace::StateSpace)
-    return multiply_qatom(t1, t2, statespace)
+    return multiply_qterm(t1, t2, statespace)
 end
+
+#### Main Multiplication Functions ################################################
+function *(p1::qProd, p2::qProd)::qProd
+    p = trivial_multiply(p1, p2)  # append the terms of p1 and p2.
+    return simplify(p)    # simplify the product.
+end
+function *(p1::qProd, num::Number)::qProd
+    return qProd(p1.statespace, p1.coeff_fun*num, copy(p1.terms))
+end
+function *(num::Number, p1::qProd)::qProd
+    return qProd(p1.statespace, p1.coeff_fun*num, copy(p1.terms))
+end
+
 function *(Q1::qExpr, Q2::qExpr)::qExpr
     if Q1.statespace != Q2.statespace
         error("Cannot multiply qExpr’s from different statespaces.")
     end
-    new_terms = qTerm[]
+    new_terms = qComposite[]
     for t1 in Q1.terms
         for t2 in Q2.terms
-            prod_terms = multiply_qatom(t1, t2, Q1.statespace)
-            append!(new_terms, prod_terms)
+            append!(new_terms, t1*t2)  
         end
     end
-    return qExpr(new_terms, Q1.statespace)
+    return simplify(qExpr(new_terms, Q1.statespace))
+end
+function *(Q1::qExpr, Q2::qComposite)::qExpr
+    Q_new = copy(Q1)
+    Q_new.terms = qComposite[t * Q2 for t in Q1.terms]
+    return simplify(Q_new)
 end
 function *(Q1::qExpr, num::Number)::qExpr
-    return qExpr([qTerm(num * t.coeff, t.var_exponents, t.op_indices) for t in Q1.terms], Q1.statespace)
+    return qExpr(Q1.statespace, qComposite[q*num for q in Q1.terms])
 end
-function *(s::Number, Q::qExpr)::qExpr
-    new_terms = [qTerm(s * t.coeff, t.var_exponents, t.op_indices) for t in Q.terms]
-    return qExpr(new_terms, Q.statespace)
-end
-function *(S::qSum, num::Number)::qSum
-    return qSum(S.expr * num, S.indexes, S.subsystem_index, S.element_indexes, S.neq)
-end
-function *(num::Number, S::qSum)::qSum
-    return qSum(S.expr * num, S.indexes, S.subsystem_index, S.element_indexes, S.neq)
-end
-function *(S::qSum, Q::qExpr)::qSum
-    if S.expr.statespace != Q.statespace
-        error("Cannot multiply qSum and qExpr from different statespaces.")
-    end
-    new_terms = S.expr * Q
-    return qExpr([qSum(new_terms, S.indexes, S.subsystem_index, S.element_indexes)], Q.statespace)
-end
-function *(Q::qExpr, S::qSum)::qSum
-    if S.expr.statespace != Q.statespace
-        error("Cannot multiply qSum and qExpr from different statespaces.")
-    end
-    new_terms = Q * S.expr
-    return qSum(new_terms, S.indexes, S.subsystem_index, S.element_indexes)
-end
-function *(Q::qSum, S::qSum)::qSum
-    if Q.expr.statespace != S.expr.statespace
-        error("Cannot multiply qSum and qExpr from different statespaces.")
-    end
-    new_terms = Q.expr * S.expr
-    inner_sum = qSum(new_terms, S.indexes, S.subsystem_index, S.element_indexes, S.neq)
-    outer_sum = qSum(qExpr([inner_sum], Q.expr.statespace), Q.index, Q.subsystem_index, Q.element_indexes, Q.neq)
-    return qExpr([outer_sum], Q.expr.statespace)
+function *(num::Number, Q1::qExpr)::qExpr
+    return qExpr(Q1.statespace, qComposite[q*num for q in Q1.terms])
 end
 
-
-
+function *(Q1::qComposite, Q2::qExpr)::qComposite
+    Q_new = copy(Q1)
+    Q_new.expr = Q1.expr * Q2
+    return Q_new
+end
+function *(Q1::qComposite, num::Number)::qComposite
+    Q_new = copy(Q1)
+    Q_new.expr = Q1.expr * num
+    return Q_new
+end
+function *(num::Number, Q2::qComposite)::qComposite
+    return Q2 * num
+end
 
 ##### Exponentiation ###################################################
-function ^(Q::qExpr, n::Integer)
+function ^(Q::Union{qExpr, qComposite}, n::Integer)
     if n < 0
         error("Negative exponent not defined for qExpr.")
     elseif n == 0
@@ -358,25 +282,54 @@ end
 Computes the commutator [Q1, Q2] = Q1 * Q2 - Q2 * Q1.
 Both qExpr's must share the same statespace.
 """
-function Commutator(Q1::qExpr, Q2::qExpr)::qExpr
+function Commutator(Q1::Union{qExpr, qComposite}, Q2::Union{qExpr, qComposite})
     # qExpr multiplication is already defined.
     return Q1 * Q2 - Q2 * Q1
 end
-function Commutator(Q::qExpr, t::qSum)::qSum
-    return Q * t - t * Q
+function +(Q::qExpr, exprs::Vector{qExpr})::qExpr
+    if length(exprs) != 2
+        error("Only vectors of length 2 can be interpreted as Commutator arguments.")
+    end
+    c = Commutator(exprs[1], exprs[2])
+    return c + Q
 end
-function Commutator(t::qSum, Q::qExpr)::qSum
-    return t * Q - Q * t
+function +(exprs::Vector{qExpr}, Q::qExpr)::qExpr
+    if length(exprs) != 2
+        error("Only vectors of length 2 can be interpreted as Commutator arguments.")
+    end
+    c = Commutator(exprs[1], exprs[2])
+    return c + Q 
 end
-function Commutator(Q::qSum, t::qSum)::qSum
-    return Q * t - t * Q
+function -(Q::qExpr, exprs::Vector{qExpr})::qExpr
+    if length(exprs) != 2
+        error("Only vectors of length 2 can be interpreted as Commutator arguments.")
+    end
+    c = Commutator(exprs[1], exprs[2])
+    return Q - c
+end
+function -(exprs::Vector{qExpr}, Q::qExpr)::qExpr
+    if length(exprs) != 2
+        error("Only vectors of length 2 can be interpreted as Commutator arguments.")
+    end
+    c = Commutator(exprs[1], exprs[2])
+    return c - Q
+end
+function *(Q::qExpr, exprs::Vector{qExpr})::qExpr
+    if length(exprs) != 2
+        error("Only vectors of length 2 can be interpreted as Commutator arguments.")
+    end
+    c = Commutator(exprs[1], exprs[2])
+    return Q * c
+end
+function *(exprs::Vector{qExpr}, Q::qExpr)::qExpr
+    if length(exprs) != 2
+        error("Only vectors of length 2 can be interpreted as Commutator arguments.")
+    end
+    c = Commutator(exprs[1], exprs[2])
+    return c * Q 
 end
 
-function Commutator(t1::qTerm, t2::qTerm, statespace::StateSpace)::qExpr
-    Q1 = qExpr([t1], statespace)
-    Q2 = qExpr([t2], statespace)
-    return Commutator(Q1, Q2)
-end
+
 
 function Identity(qspace::StateSpace)
     # Set variable exponents to zero.
@@ -386,44 +339,6 @@ function Identity(qspace::StateSpace)
     # Create a single-term qExpr.
     return qExpr(qspace, qProd(qspace, qspace.fone, qspace.neutral_op))
 end
-
-function +(Q::qExpr, exprs::Vector{qExpr})::qExpr
-    if length(exprs) != 2
-        error("Only vectors of length 2 can be added -> commutator.")
-    end
-    return Q + Commutator(exprs[1], exprs[2])
-end
-function -(Q::qExpr, exprs::Vector{qExpr})::qExpr
-    if length(exprs) != 2
-        error("Only vectors of length 2 can be added -> commutator.")
-    end
-    return Q - Commutator(exprs[1], exprs[2])
-end
-function *(Q::qExpr, exprs::Vector{qExpr})::qExpr
-    if length(exprs) != 2
-        error("Only vectors of length 2 can be added -> commutator.")
-    end
-    return Q * Commutator(exprs[1], exprs[2])
-end
-function +(d::diff_qEQ, exprs::Vector{qExpr})::diff_qEQ
-    if length(exprs) != 2
-        error("Only vectors of length 2 can be added -> commutator.")
-    end
-    return d + Commutator(exprs[1], exprs[2])
-end
-function -(d::diff_qEQ, exprs::Vector{qExpr})::diff_qEQ
-    if length(exprs) != 2
-        error("Only vectors of length 2 can be added -> commutator.")
-    end
-    return d - Commutator(exprs[1], exprs[2])
-end
-function *(d::diff_qEQ, exprs::Vector{qExpr})::diff_qEQ
-    if length(exprs) != 2
-        error("Only vectors of length 2 can be added -> commutator.")
-    end
-    return d * Commutator(exprs[1], exprs[2])
-end
-
 
 """
     Dag(t::qTerm, qspace::StateSpace) -> qTerm
@@ -460,20 +375,36 @@ function Dag(t::qTerm, qspace::StateSpace)::Tuple{Vector{qTerm}, Vector{ComplexR
     end
     return terms, coeffs
 end
+function Dag(t::qAbstract, qspace::StateSpace)::Tuple{Vector{qAbstract}, Vector{ComplexRational}} 
+    # check if is hermitian
+    if t.operator_type.hermitian
+        return [t], [one(ComplexRational)]
+    end 
+    # check if is daggered already 
+    if t.operator_type.daggered 
+        new_t = copy(t) 
+        new_t.dag = !t.dag 
+        return [new_t], [one(ComplexRational)]
+    end 
+end
+
 function Dag(p::qProd)::qExpr 
-    # continue here 
+    # reverse order elementwise Dag 
+    terms = []
+    for t in reverse(p.expr)
+        push!(terms, Dag(t))
+    end
+    return qProd(p.statespace, conj(p.coeff_fun), terms)
 end
 
 function Dag(Q::qExpr)::qExpr
-    return sum([Dag(t, Q.statespace) for t in Q.terms])
+    return qExpr([Dag(t, Q.statespace) for t in Q.terms])
 end
-function Dag(t::qSum)::qSum
-    return qSum(Dag(t.expr), t.indexes, t.subsystem_index, t.element_indexes, t.neq)
-end
-function Dag(t::qSum, qspace::StateSpace)::qSum
-    return qSum(Dag(t.expr), t.indexes, t.subsystem_index, t.element_indexes, t.neq)
+function Dag(t::qComposite)::qComposite
+    t_new = copy(t) 
+    t_new.expr = Dag(t.expr)
+    return t_new 
 end
 
 adjoint(Q::qExpr) = Dag(Q)
-adjoint(Q::qSum) = Dag(Q)
-
+adjoint(Q::qComposite) = Dag(Q)

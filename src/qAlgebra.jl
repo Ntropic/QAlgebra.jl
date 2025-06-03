@@ -8,6 +8,12 @@ const DEFAULT_COEFF_PREFS = Dict(
     :FIRST_MODE => true,
     )
 
+""" 
+    get_default(name::Symbol)
+
+Returns the current default value for the coefficient preference with the given name. If no such preference has been set 
+it returns the default value from `DEFAULT_COEFF_PREFS`.
+"""
 function get_default(name::Symbol)
     return @load_preference(String(name), DEFAULT_COEFF_PREFS[name])
 end
@@ -36,19 +42,19 @@ end
 """
     set_first_mode(mode::Bool)
 Sets a new default value for the first mode and saves it persistently.
-First mode specifies whether braced terms with a leading negative are flipped.
+First mode specifies whether braced terms with a leading negative are flipped or only if all terms are negative.
 """
 function set_first_mode(mode::Bool)
     set_default(:FIRST_MODE, mode)
 end
 
-export set_float_digits, set_exp_digits, set_first_mode
+export get_default, set_float_digits, set_exp_digits, set_first_mode
 
 include("StringUtils.jl")
 
 include("FFunctions.jl")
 using .FFunctions
-export FFunction, FAtom, FSum, FRational, simplify, isnumeric, iszero, max_exponents, build_xpows, evaluate, to_string
+export FFunction, FAtom, FSum, FRational, simplify, isnumeric, iszero, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string
 
 include("qSpace.jl")
 using .qSpace
@@ -57,7 +63,7 @@ export QubitPauli, QubitPM, Ladder
 
 include("qExpressions.jl")
 using .qExpressions
-export qObj, qAtom, qComposite, qTerm, qExpr, qSum, Sum, ∑, diff_qEQ, term, base_operators,simplify, flatten, neq, d_dt
+export qObj, qAtom, qComposite, qTerm, qProd, qExpr, qSum, Sum, ∑, diff_qEQ, term, base_operators, flatten, neq, d_dt
 export Dag, Commutator, isnumeric
 export string, latex_string
 

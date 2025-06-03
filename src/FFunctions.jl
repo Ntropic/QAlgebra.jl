@@ -2,8 +2,9 @@ module FFunctions
 
 using ..StringUtils
 using ComplexRationals
+using ..qAlgebra: get_default 
 
-export FFunction, FAtom, FSum, FRational, simplify, isnumeric, iszero, max_exponents, build_xpows, evaluate, to_string
+export FFunction, FAtom, FSum, FRational, simplify, isnumeric, iszero, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string
 
 """
     FFunction
@@ -85,7 +86,7 @@ function isless(a::FAtom, b::FAtom)
 end
 
 
-import Base: iszero, isempty
+import Base: iszero, isempty, isone
 """
     iszero(a::FAtom)     -> Bool
     iszero(s::FSum)      -> Bool
@@ -351,7 +352,17 @@ function gcd(s::FFunction, t::FFunction)
 end
 #gcd(a*2+b+a*4)
 
+import Base: adjoint, conj 
+function adjoint(f::FAtom)::FAtom
+    return FAtom(conj(f.coeff), copy(f.var_exponents))
+end
+adjoint(f::FSum) = FSum([adjoint(t) for t in f.terms])
+adjoint(f::FRational) = FRational(adjoint(f.numer), adjoint(f.denom))
+conj(f::FFunction) = adjoint(f)
+
 """
+For FFunction objects we have
+
     simplify(a::FAtom) -> FAtom
     simplify(s::FSum)  -> FSum
     simplify(r::FRational) -> FFunction
@@ -360,6 +371,15 @@ Simplifies symbolic expressions:
 - **Atom**: returns unchanged.
 - **Sum**: recursively simplifies terms, sorts them, and combines like terms (unifies coefficients).
 - **Rational**: simplifies numerator and denominator, cancels common factors in coefficients and exponents, and collapses to a sum if the denominator becomes a single term.
+
+And for qOperator based objects
+
+    simplify(q::qProd, statespace::StateSpace) -> qProd
+    simplify(q::qExpr) -> qExpr
+    simplify(q::qSum) -> qSum
+    simplify(q::diff_qEQ) -> diff_qEQ
+
+Simplify a qProd, qExpr, qSum or diff_qEQ by sorting terms and ading up terms that are equal (up to a coefficient). 
 """
 function simplify end
 
@@ -650,14 +670,17 @@ function stringer(a::FAtom, vars::Vector{String}; do_latex::Bool=false)
                 push!(varparts, e == 1 ? vars[i] : "$(vars[i])"*str2sup(string(e)))
             end
         end
-
-        var_str = isempty(varparts) ? "" : join(varparts, do_latex ? "\\cdot " : "")
+        var_str = isempty(varparts) ? "" : join(varparts, "")
         c = a.coeff
         sign, c_str = sign_string(c) 
         if is_abs_one(c)
             return (sign, vec)
         else
-            return sign,  c_str*"*"*var_str
+            if do_latex
+                return sign, c_str*" "*var_str
+            else
+                return sign, c_str*"*"*var_str
+            end
         end
     end
 end
@@ -668,6 +691,11 @@ function stringer(s::FSum, vars::Vector{String}; do_latex::Bool=false, braced::B
     terms = s.terms
     if isempty(terms)
         return false, "0"
+    end
+    if braced && (allnegative(s)|| (get_default(:FIRST_MODE) && allnegative(s[1])))
+        sig = true
+        _, body = stringer(-s, vars; do_latex=do_latex)
+        return sig, body
     end
 
     parts = String[]
@@ -702,17 +730,6 @@ function stringer(r::FRational, vars::Vector{String}; do_latex::Bool=false)
     end
 end
 
-"""
-    to_string(f::FFunction, vars::Vector{String};
-              do_latex::Bool = false,
-              braced::Bool = false,
-              optional_sign::Bool = true) -> String
-
-Converts an `FFunction` into a human‐readable string using variable names in `vars`.
-- If `do_latex=true`, uses LaTeX syntax (e.g. `\frac{}` and superscripts).
-- If `braced=true`, wraps sums in parentheses.
-- If `optional_sign=false`, always prefixes a plus or minus sign.
-"""
 function to_stringer(f::FFunction, vars::Vector{String}; do_latex::Bool=false, braced::Bool=false)::Tuple{Bool, String}
     if braced && f isa FSum && length(f) > 1
         sig, body = stringer(f, vars; do_latex=do_latex, braced=braced)
@@ -725,6 +742,18 @@ function to_stringer(f::FFunction, vars::Vector{String}; do_latex::Bool=false, b
     end
     return sig, body
 end
+
+"""
+    to_string(f::FFunction, vars::Vector{String};
+              do_latex::Bool = false,
+              braced::Bool = false,
+              optional_sign::Bool = true) -> String
+
+Converts an `FFunction` into a human‐readable string using variable names in `vars`.
+- If `do_latex=true`, uses LaTeX syntax (e.g. `\frac{}` and superscripts).
+- If `braced=true`, wraps sums in parentheses.
+- If `optional_sign=false`, always prefixes a plus or minus sign.
+"""
 function to_string(f::FFunction, vars::Vector{String}; do_latex::Bool=false, braced::Bool=false, optional_sign::Bool=true)::String
     sig, body = to_stringer(f, vars; do_latex=do_latex, braced=braced)
 

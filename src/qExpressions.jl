@@ -3,13 +3,13 @@ using ..qSpace
 using ..FFunctions
 using ..StringUtils
 using ComplexRationals
-import Base: show, adjoint, iterate, length, eltype, +, -, sort, *, ^, product, iszero, copy
+import Base: show, adjoint, conj, iterate, length, eltype, +, -, sort, *, ^, product, iszero, copy
 
-export qObj, qAtom, qComposite, qTerm, qExpr, qSum, Sum, ∑, diff_qEQ, term, base_operators,simplify, flatten, neq, d_dt
+export qObj, qAtom, qComposite, qTerm, qProd, qExpr, qSum, Sum, ∑, diff_qEQ, term, base_operators,simplify, flatten, neq, d_dt
 
 
 # ==========================================================================================================================================================
-# --------> TBase Types and Their Constructors <---------------------------------------------------------------------------------------------------------
+# --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
 # ==========================================================================================================================================================
 
 """ 
@@ -484,7 +484,7 @@ function base_operators(letter::String, statespace::StateSpace)
     # check for abstract operators
     for (key_index, name) in enumerate(statespace.operator_names)
         if name == letter
-            return (subindex=-1) -> qExpr(statespace, qAbstract(key_index, subindex, 1, false))
+            return (subindex=-1) -> qExpr(statespace, qAbstract(key_i2ndex, subindex, 1, false))
         elseif name in letter
             abstract = string2qabstract(statespace, replace(letter, "_" => ""))
             return qExpr(statespace, abstract)
@@ -591,13 +591,28 @@ function sort(qterms::Vector{qComposite}; var_first::Bool=false, kwargs...)
     return sorted_terms
 end
 
-
-function same_term_type(t1, t2)
+function same_term_type(t1::qAtom, t2::qAtom) # generic case 
     return false
 end
-function same_term_type(t1::qProd, t2::qProd)::Bool
-    return t1.coeff_fun.var_exponents == t2.coeff_fun.var_exponents && t1.op_indices == t2.op_indices
+function same_term_type(t1::qTerm, t2::qTerm)
+    return t1.op_indices == t2.op_indices 
 end
+function same_term_type(t1::qAbstract, t2::qAbstract) 
+    return t1.key_index == t2.key_index && t1.sub_index == t2.sub_index && t1.index_map == t2.index_map
+end
+function same_term_type(t1::qProd, t2::qProd)::Bool
+    # check operators individually -> must all be the same!
+    if length(t1.expr) != length(t2.expr) 
+        same = false
+    end
+    for (a,b) in zip(t1.expr, t2.expr) 
+        if !same_term_type(a,b)
+            return false 
+        end
+    end
+    return true
+end
+
 function same_term_type(s1::qSum, s2::qSum)::Bool
     return s1.subsystem_index == s2.subsystem_index && s1.element_indexes == s2.element_indexes
 end
@@ -609,26 +624,41 @@ function combine_term(s1::qSum, s2::qSum)::qSum
     return qSum(s1.statespace, simplify(s1.expr + s2.expr), s1.indexes, s1.subsystem_index, s1.element_indexes, s1.neq)
 end
 
-"""
-    simplify(q::qProd, statespace::StateSpace) -> qProd
-    simplify(q::qExpr) -> qExpr
-    simplify(q::qSum) -> qSum
-    simplify(q::diff_qEQ) -> diff_qEQ
+import ..FFunctions: simplify
+include("qExpressionsOps/qExpression_Helper.jl") # Helper functions for qProd simplify
+function simplify(p::qProd)::qExpr
+    p_new = qProd[pad_before_qAbstracts(p)]
+    did_any = true 
+    while did_any
+        left_terms = qProd[] 
+        for curr_p in p_new 
+            append!(left_terms, qTerms2left(curr_p)) 
+        end 
+        did_any = false 
+        p_new = qProd[] 
+        
+        for i in 1:length(left_terms)
+            new_term, did_it = reduce_qabstractpairs(left_terms[i])
+            push!(p_new, new_term)
+            if did_it
+                did_any = true
+            end
+        end
+    end
+    return qExpr(p.statespace, p_new)
+end    
 
-Simplify a qProd, qExpr, qSum or diff_qEQ by sorting terms and ading up terms that are equal (up to a coefficient). 
-"""
-function simplify(q::qProd, statespace::StateSpace)::qProd   # remove this statespace, continue here
-    # can'T just sort terms in qProd, we need to check for each term: if two adjacent terms are both qTerm => compute their product. for qAbstract terms, we can check ideal order
-end
-
-function simplify(q::qExpr)::qExpr
+function simplify(q::qExpr; var_first::Bool=false)::qExpr
     # If there are no terms, return an empty qExpr.
     if isempty(q.terms)
         return qExpr(q.statespace, qComposite[])
     end
 
+    #expr = [simplify(t) for t in q.terms]
+    q = qExpr(q.statespace, expr)
+
     # First, sort qExpr without modifying the original.
-    sorted_q = sort(q)
+    sorted_q = sort(q; var_first=var_first)
     sorted_terms = copy(sorted_q.terms)
 
     combined_terms = qComposite[]

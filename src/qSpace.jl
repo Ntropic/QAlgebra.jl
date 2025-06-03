@@ -355,29 +355,31 @@ mutable struct StateSpace
             end
         end
         # Convert state variables (positional arguments) into strings.
+        # Convert state variables (positional arguments) into Parameters.
         for arg in args
-            # Create a Parameter for each arg 
             if !isa(arg, String)
-                error("Parameters are declared via Strings, problem for $arg.")
+                error("Parameters must be declared via Strings, problem with $arg.")
             end
-            var_of_continuum = false
-            var_of_t = false
+
+            var_of_t = occursin("(t)", arg)
+            raw_arg = replace(arg, "(t)" => "")
+            var_of_continuum = occursin("_", raw_arg)
+
+            pre, sub = "", ""
             var_continuum_index = 0
-            if occursin("(t)", arg)
-                var_of_t = true
-                pre, sub = split(arg, "(t)")
-                pre = string(pre)
-                push!(vars, Parameter(pre, var_of_t, var_of_continuum, var_continuum_index))
-                push!(where_by_time, length(vars))
-            elseif occursin("_", arg)
-                pre, sub = split(arg, "_")
-                pre = string(pre)
-                sub = string(sub)
+
+            if var_of_continuum
+                parts = split(raw_arg, "_")
+                if length(parts) != 2
+                    error("Malformed continuum variable: $arg")
+                end
+                pre, sub = parts
                 if length(sub) > 1
                     error("Continuum index ($sub) in ($arg) must be a single character.")
                 end
+
                 if pre in used_strings
-                    error("Duplicate string ($pre) found in variable definitions")
+                    error("Duplicate variable name ($pre) found.")
                 end
                 push!(used_strings, pre)
 
@@ -391,33 +393,46 @@ mutable struct StateSpace
                         break
                     end
                 end
-                how_many_by_continuum[var_continuum_index] += 1
-                # add Parameter for each sub in curr_subs
                 if var_continuum_index == 0
-                    error("Couldn't find a continuum with key ($pre) for original input ($arg)")
+                    error("Couldn't find a continuum with key ($sub) for variable ($arg)")
                 end
+
+                how_many_by_continuum[var_continuum_index] += 1
                 i_vec::Vector{Int} = []
                 curr_where = Int[]
-                for (i, sub) in enumerate(curr_subs)
-                    push!(vars, Parameter(pre, var_of_t, var_of_continuum, var_continuum_index; var_suffix=sub))
-                    push!(curr_where, length(vars))
+                for sublabel in curr_subs
+                    p = Parameter(string(pre), var_of_t, true, var_continuum_index; var_suffix=sublabel)
+                    push!(vars, p)
                     push!(i_vec, length(vars))
+                    push!(curr_where, length(vars))
+                    if var_of_t
+                        push!(where_by_time, length(vars))
+                    else
+                        push!(where_const, length(vars))
+                    end
                 end
                 push!(where_by_continuum[var_continuum_index], curr_where)
                 push!(vars_cont, (i_vec, ()))
+
             else
-                push!(vars, Parameter(arg, var_of_t, var_of_continuum, var_continuum_index))
-                push!(where_const, length(vars))
-                if arg in used_strings
-                    error("Duplicate string ($arg) found in variable definitions")
+                pre = raw_arg
+                if pre in used_strings
+                    error("Duplicate variable name ($pre) found.")
                 end
-                push!(used_strings, arg)
+                push!(used_strings, pre)
+                p = Parameter(pre, var_of_t, false, 0)
+                push!(vars, p)
+                if var_of_t
+                    push!(where_by_time, length(vars))
+                else
+                    push!(where_const, length(vars))
+                end
             end
         end
-        vars_str::Vector{String} = []
-        for p in vars
-            push!(vars_str, p.var_name)
-        end
+
+        # Generate the string representations
+        vars_str::Vector{String} = [p.var_str for p in vars]
+
         neutral_op = [s.op_set.neutral_element for s in subspaces for key in s.keys]
         fone = FAtom(ComplexRational(1,0,1), zeros(Int, length(vars)))
         if !isa(operators, Vector) 

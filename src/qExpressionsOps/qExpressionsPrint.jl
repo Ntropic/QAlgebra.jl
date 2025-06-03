@@ -28,7 +28,6 @@ function var_exponents2string(var_exponents::Vector{Int}, statespace::StateSpace
     monomial = strip(monomial)
     return monomial
 end
-
 function operators2string(op_indices::Vector{Is}, statespace::StateSpace; do_latex::Bool=false, do_sigma::Bool=false)::String
     op_str::String = ""
     subspaces = statespace.subspaces
@@ -51,6 +50,60 @@ function operators2string(op_indices::Vector{Is}, statespace::StateSpace; do_lat
     end
     return op_str 
 end
+function qAtom2string(qatom::qTerm, statespace::StateSpace; do_latex::Bool=false, do_sigma::Bool=false)::String
+    return operators2string(qatom.op_indices, statespace; do_latex=do_latex, do_sigma=do_sigma)
+end
+function qAbstract2string(q::qAbstract, statespace::StateSpace; do_latex::Bool=false, do_sigma::Bool=false)::String
+    type = q.operator_type
+    name = type.name 
+    if do_latex 
+        string = raw"\hat{" * name * "}"
+        if q.sub_index != -1 
+            string *= "_"*string(q.sub_index)
+        end
+        if q.dag
+            string *= raw"^{\dagger}"
+            if q.exponent != 1 
+                string = raw"\left("*string* raw"\right)^{"*string(q.exponent)*"}"
+            end
+        elseif q.exponent != 1 
+            exp_str *= "^{"*string(q.exponent)*"}"
+        end
+    else
+        string = name 
+        if q.sub_index != -1 
+            string *= str2sub(string(q.sub_index))
+        end
+        if q.dag 
+            string *= "'"
+        end
+        if q.exponent != 1 
+            string *= str2sup(string(q.exponent))
+        end
+    end
+    return string
+end 
+
+function variable_str_vec(q::qComposite; do_latex::Bool=true)::Vector{String}
+    if do_latex 
+        return String[t.var_latex for t in q.statespace.vars]
+    else
+        return String[t.var_str for t in q.statespace.vars]
+    end
+end
+function qComposite2string(q::qProd; do_latex::Bool=true, do_sigma::Bool=true)::Tuple{Bool, String}
+    num = is_numeric(q)
+    if is_numeric
+        curr_sign, curr_str = to_stringer(q.coeff_fun, variable_str_vec(q, do_latex=do_latex), braced=false)
+        return curr_sign, curr_str
+    else
+        curr_sign, curr_str = to_stringer(q.coeff_fun, variable_str_vec(q, do_latex=do_latex), braced=true)
+        operator_str = join([qAtom2string(t, q.statespace, do_latex=do_latex, do_sigma=do_sigma) for t in q.expr], "")
+    end
+end
+
+
+
 
 is_negative(x::Real) = x < 0
 function is_negative(x::Complex)
