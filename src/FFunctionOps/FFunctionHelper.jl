@@ -109,7 +109,7 @@ end
 function simple_FSum(f::FSum) 
     return all([typeof(term)==FAtom for term in f.terms])
 end
-function separate_FSum(f::FFSum )::Tuple{Bool, Union{FAtom, Nothing}, FSum}
+function separate_FSum(f::FSum )::Tuple{Bool, Union{FAtom, Nothing}, FSum}
     if simple_FSum(f) 
         coeffs, vs = get_coeffs_ops(f)
         if has_common_multiple(coeffs) 

@@ -99,9 +99,8 @@ function qComposite2string(q::qProd; do_latex::Bool=true, do_sigma::Bool=true)::
     else
         curr_sign, curr_str = to_stringer(q.coeff_fun, variable_str_vec(q, do_latex=do_latex), braced=true)
         operator_str = join([qAtom2string(t, q.statespace, do_latex=do_latex, do_sigma=do_sigma) for t in q.expr], "")
-        if do_latex 
-            return curr_sign, curr_str * "\cdot" * operator_str
-
+        connector =do_latex ? raw"\cdot" : "*"
+        return curr_sign, curr_str * connector * operator_str
     end
 end
 

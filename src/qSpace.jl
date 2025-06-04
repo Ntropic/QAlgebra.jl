@@ -72,7 +72,7 @@ end
 
 Parameter is a struct that represents a variable in the state space, and information of how to access and print it.
 """
-struct Parameter
+mutable struct Parameter
     var_name::String
     var_str::String
     var_latex::String
@@ -251,7 +251,7 @@ Constructs a combined Hilbert and Parameter space. The Hilbert space consists of
                     Example: "B(H,!i)" constructs an abstract operator "B" that is hermitian and acts trivially on the subspace "i".
                     Example: "C(U)" constructs an abstract operator "C" that is unitary and acts non-trivially on all subspaces.
 """
-mutable struct StateSpace
+struct StateSpace
     # Parameter fields:
     vars::Vector{Parameter}
     vars_str::Vector{String}
