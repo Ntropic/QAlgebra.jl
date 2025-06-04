@@ -195,9 +195,15 @@ multiply_one(a::FRational, b::Int) = (a.numer * b) / (a.denom * b)
 /(n::Number, a::FFunction) = FAtom(n, zeros(Int, dims(a))) / a
 
 # exponentiation 
-^(A::FSum, n::Int) = FSum([ x^n for x in A.terms ])
 ^(A::FAtom, n::Int) = FAtom(A.coeff^n, A.var_exponents .* n)
+^(A::FSum, n::Int) = FSum([ x^n for x in A.terms ])
 ^(a::FRational, n::Int) = FRational(a.numer^n, a.denom^n)
+
+import Base: inv 
+inv(a::FAtom) = FAtom(a.coeff^(-1), a.var_exponents .*(-1))
+inv(a::FSum) = FSum(inv.(a.terms))
+inv(a::FRational) = FRational(inv(a.numer), inv(a.denom)) 
+
 import Base: copy 
 function copy(x::FAtom)
     return FAtom(copy(x.coeff), copy(x.var_exponents))
@@ -647,46 +653,108 @@ function show(io::IO, f::FFunction)
 end
 
 # Generic fallback
-function stringer(f::FFunction, vars::Vector{String}; do_latex::Bool=false)
+function stringer(f::FFunction, vars::Vector{String}; do_latex::Bool=false, do_frac::Bool=true) 
     error("No stringer method for type $(typeof(f)) with variable names")
 end
 
 # --- FAtom with variable names ---
-function stringer(a::FAtom, vars::Vector{String}; do_latex::Bool=false)
+function stringer(a::FAtom, vars::Vector{String}; do_latex::Bool=false, do_frac::Bool=true) 
     exps = a.var_exponents
     @assert length(vars) == length(exps) "Number of symbols must match number of variables"
-
+    connector = do_latex ? " " : ""
     if isnumeric(a)
         return sign_string(a.coeff) 
     else
         # build the variable part
-        varparts = String[]
-        for (i, e) in enumerate(exps)
-            if e == 0
-                continue
-            elseif do_latex
-                push!(varparts, e == 1 ? vars[i] : "$(vars[i])^{$e}")
-            else
-                push!(varparts, e == 1 ? vars[i] : "$(vars[i])"*str2sup(string(e)))
-            end
-        end
-        var_str = isempty(varparts) ? "" : join(varparts, "")
         c = a.coeff
-        sign, c_str = sign_string(c) 
-        if is_abs_one(c)
-            return sign, var_str
-        else
-            if do_latex
-                return sign, c_str*" "*var_str
+        if !do_frac
+            varparts = String[]
+            for (i, e) in enumerate(exps)
+                if e == 0
+                    continue
+                elseif do_latex
+                    push!(varparts, e == 1 ? vars[i] : "$(vars[i])^{$e}")
+                else
+                    push!(varparts, e == 1 ? vars[i] : "$(vars[i])"*str2sup(string(e)))
+                end
+            end
+            var_str = isempty(varparts) ? "" : join(varparts, "")
+            sign, c_str = sign_string(c) 
+            if is_abs_one(c)
+                return sign, var_str
             else
-                return sign, c_str*"*"*var_str
+                return sign, c_str * connector * var_str
+            end
+        else
+            # group terms with positive and negative exponents 
+            pos_inds::Vector{Int} = Int[]
+            neg_inds::Vector{Int} = Int[]
+            for (i, e) in enumerate(exps)
+                if e > 0
+                    push!(pos_inds, i)
+                elseif e < 0
+                    push!(neg_inds, i)
+                end
+            end
+            pos_parts = String[]
+            neg_parts = String[]
+            if do_latex
+                for (i, e) in zip(pos_inds, exps[pos_inds])
+                    push!(pos_parts, e == 1 ? vars[i] : "$(vars[i])^{$e}")
+                end
+                for (i, e) in zip(neg_inds, exps[neg_inds])
+                    push!(neg_parts, e == -1 ? vars[i] : "$(vars[i])^{$(-e)}")
+                end
+            else
+                for (i, e) in zip(pos_inds, exps[pos_inds])
+                    push!(pos_parts, e == 1 ? vars[i] : "$(vars[i])"*str2sup(string(e)))
+                end 
+                for (i, e) in zip(neg_inds, exps[neg_inds])
+                    push!(neg_parts, e == -1 ? vars[i] : "$(vars[i])"*str2sup(string(-e)))
+                end
+            end
+            if length(neg_inds) == 0 
+                sign, c_str = sign_string(c) 
+                var_str = isempty(pos_parts) ? "" : join(pos_parts, "")
+                if is_abs_one(c)
+                    return sign, var_str
+                else
+                    if do_latex
+                        return sign, c_str*" "*var_str
+                    else
+                        return sign, c_str*var_str
+                    end
+                end
+            else 
+                c_num = ComplexRational(c.a, c.b, 1)
+                c_denom = ComplexRational(c.c, 0, 1)
+                sign, c_pos = sign_string(c_num)
+                c_pos *= connector 
+                if is_abs_one(c_num) && !isempty(pos_parts)
+                    c_pos = ""
+                end
+                _, c_neg = sign_string(c_denom) 
+                c_neg *= connector 
+    
+                if is_abs_one(c_denom)
+                    c_neg = ""
+                end
+                pos_str = isempty(pos_parts) ? "" : join(pos_parts, "")
+                neg_str = isempty(neg_parts) ? "" : join(neg_parts, "")
+                num_str = c_pos * pos_str
+                denom_str = c_neg * neg_str
+                if do_latex 
+                    return sign, raw"\frac{"*num_str*" }{"*denom_str*"}"
+                else
+                    return sign, num_str*"/("*denom_str*")"
+                end
             end
         end
     end
 end
 
 # --- FSum with variable names ---
-function stringer(s::FSum, vars::Vector{String}; do_latex::Bool=false, braced::Bool=false)
+function stringer(s::FSum, vars::Vector{String}; do_latex::Bool=false, braced::Bool=false, do_frac::Bool=true)
     s = simplify(s)
     terms = s.terms
     if isempty(terms)
@@ -694,13 +762,13 @@ function stringer(s::FSum, vars::Vector{String}; do_latex::Bool=false, braced::B
     end
     if braced && (allnegative(s)|| (get_default(:FIRST_MODE) && allnegative(s[1])))
         sig = true
-        _, body = stringer(-s, vars; do_latex=do_latex)
+        _, body = stringer(-s, vars; do_latex=do_latex, do_frac=do_frac)
         return sig, body
     end
 
     parts = String[]
     for (i, t) in enumerate(terms)
-        sig, body = stringer(t, vars; do_latex=do_latex)
+        sig, body = stringer(t, vars; do_latex=do_latex, do_frac=do_frac)
         if i == 1
             push!(parts, sig ? "-" * body : body)
         else
@@ -713,13 +781,13 @@ function stringer(s::FSum, vars::Vector{String}; do_latex::Bool=false, braced::B
 end
 
 # --- FRational with variable names ---
-function stringer(r::FRational, vars::Vector{String}; do_latex::Bool=false)
+function stringer(r::FRational, vars::Vector{String}; do_latex::Bool=false, do_frac::Bool=true)
     r = simplify(r)
     n = r.numer
     d = r.denom
 
-    n_sig, n_str = stringer(n, vars; do_latex=do_latex, braced=true)
-    _, d_str = stringer(d, vars; do_latex=do_latex, braced=true)
+    n_sig, n_str = stringer(n, vars; do_latex=do_latex, braced=true, do_frac=false)
+    _, d_str = stringer(d, vars; do_latex=do_latex, braced=true, do_frac=false)
 
     if do_latex
         return n_sig, "\\frac{$n_str}{$d_str}"
@@ -731,7 +799,7 @@ function stringer(r::FRational, vars::Vector{String}; do_latex::Bool=false)
 end
 
 include("FFunctionOps/FFunctionHelper.jl")
-function to_stringer(f::FFunction, vars::Vector{String}; do_latex::Bool=false, braced::Bool=false)::Tuple{Bool, String}
+function to_stringer(f::FFunction, vars::Vector{String}; do_latex::Bool=false, braced::Bool=false, do_frac::Bool=true)::Tuple{Bool, String}
     if braced && f isa FSum && length(f) > 1
         sig, body = stringer(f, vars; do_latex=do_latex, braced=braced)
         # Apply braces if necessary
@@ -739,12 +807,12 @@ function to_stringer(f::FFunction, vars::Vector{String}; do_latex::Bool=false, b
         # braced attempt
         done, pre_f, new_f = separate_FSum(f)
         if done 
-            sig_new, body_new = stringer(new_f, vars; do_latex=do_latex, braced=braced)
+            sig_new, body_new = stringer(new_f, vars; do_latex=do_latex, braced=braced, do_frac=do_frac)
             body_new = do_latex ? "\\left( $body_new \\right)" : "($body_new)"
             # add prefactor (i.e. base) if it isn'T trivial (isonelike)
-            sig_outer, prefactor_outer = stringer(pre_f, vars; do_latex=do_latex)
+            sig_outer, prefactor_outer = stringer(pre_f, vars; do_latex=do_latex, do_frac=do_frac)
             sig_new = sig_new || sig_outer
-            connector = do_latex ? " " : "*"
+            connector = do_latex ? " " : ""
             if !isonelike(pre_f)
                 body_new = prefactor_outer*connector*body_new   # add an outer prefactor 
             end 
@@ -754,7 +822,7 @@ function to_stringer(f::FFunction, vars::Vector{String}; do_latex::Bool=false, b
             end
         end
     else
-        sig, body = stringer(f, vars; do_latex=do_latex)
+        sig, body = stringer(f, vars; do_latex=do_latex, do_frac=do_frac)
     end
     return sig, body
 end
@@ -770,8 +838,8 @@ Converts an `FFunction` into a human‐readable string using variable names in `
 - If `braced=true`, wraps sums in parentheses.
 - If `optional_sign=false`, always prefixes a plus or minus sign.
 """
-function to_string(f::FFunction, vars::Vector{String}; do_latex::Bool=false, braced::Bool=false, optional_sign::Bool=true)::String
-    sig, body = to_stringer(f, vars; do_latex=do_latex, braced=braced)
+function to_string(f::FFunction, vars::Vector{String}; do_latex::Bool=false, braced::Bool=false, optional_sign::Bool=true, do_frac::Bool=true)::String
+    sig, body = to_stringer(f, vars; do_latex=do_latex, braced=braced, do_frac=do_frac)
 
     if sig
         return "-" * body
