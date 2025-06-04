@@ -555,39 +555,35 @@ function qAtom_sort_key(term::qAbstract)
 end
 
 # Use your custom_sort_key for coefficients.
-function qobj_sort_key(term::qProd; var_first::Bool=false)
+function qobj_sort_key(term::qProd)
     # Here we convert var_exponents (a Vector{Int}) to a tuple so that it compares lexicographically.
-    if var_first
-        return (tuple(term.coeff_fun.var_exponents...), tuple(term.op_indices...), custom_sort_key(term.coeff_fun.coeff), tuple(0, Int[], 0))
-    else
-        return (tuple(term.op_indices...), tuple(term.coeff_fun.var_exponents...), custom_sort_key(term.coeff_fun.coeff), tuple(0, Int[], 0))
-    end
+    return (tuple(0, Int[], 0), sort_key(term.coeff_fun), qAtom_sort_key.(term.expr)...)
 end
+
 function qobj_sort_key(term::qSum; var_first::Bool=false)
     curr_space = term.expr.statespace
-    var_exponents = zeros(Int, length(curr_space.vars))
-    op_indices::Vector{Is} = []
-    for subspace in curr_space.subspaces
-        op = subspace.op_set
-        n_ops = length(subspace.keys)
-        neutral_element = op.neutral_element
-        for j in 1:length(n_ops)
-            push!(op_indices, neutral_element)
-        end
-    end
-    if var_first
-        return (tuple(var_exponents...), tuple(op_indices...), custom_sort_key(0.0), tuple(term.subsystem_index, term.element_indexes, length(term)))
-    else
-        return (tuple(op_indices...), tuple(var_exponents...), custom_sort_key(0.0), tuple(term.subsystem_index, term.element_indexes, length(term)))
-    end
+    return (tuple(term.subsystem_index, term.element_indexes, length(term.expr)), term.neq)
 end
 # Sort the terms in a qExpr using the key above.
-function sort(qeq::qExpr; var_first::Bool=false, kwargs...)
-    sorted_terms = sort(qeq.terms, by= x-> qobj_sort_key(x; var_first=var_first), kwargs...)
+function sort(qeq::qExpr; kwargs...)
+    # first the internal sort 
+    terms = [sort(t) for t in qeq.terms]
+    # now the outer sort 
+    sorted_terms = sort(terms, by= x-> qobj_sort_key(x), kwargs...)
     return qExpr(qeq.statespace, sorted_terms)
 end
-function sort(qterms::Vector{qComposite}; var_first::Bool=false, kwargs...)
-    sorted_terms = sort(qterms, by= x-> qobj_sort_key(x; var_first=var_first), kwargs...)
+function sort(qprod::qProd; kwargs...)  # cannot sort qprod 
+    return copy(qprod)
+end
+function sort(qcomp::qComposite; kwargs...)
+    new_qcomp = copy(qcomp)
+    new_qcomp.expr = sort(qcomp.expr; kwargs...)
+    return new_qcomp
+end
+
+function sort(qterms::Vector{qComposite}; kwargs...)
+    qterms2 = [sort(t) for t in qterms]  # recursive
+    sorted_terms = sort(qterms2, by= x-> qobj_sort_key(x), kwargs...)
     return sorted_terms
 end
 

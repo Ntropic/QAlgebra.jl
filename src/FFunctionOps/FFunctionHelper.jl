@@ -106,9 +106,13 @@ end
 function isonelike(f::FAtom)::Bool
     return isonelike(f.coeff)
 end
-function simple_FSum(f::FSum) 
+function simple_FSum(f::FSum)::Bool
     return all([typeof(term)==FAtom for term in f.terms])
 end
+function simple_FSum(f::FAtom)::Bool
+    return true 
+end
+
 function separate_FSum(f::FSum )::Tuple{Bool, Union{FAtom, Nothing}, FSum}
     if simple_FSum(f) 
         coeffs, vs = get_coeffs_ops(f)

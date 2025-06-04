@@ -356,6 +356,8 @@ struct StateSpace
         end
         # Convert state variables (positional arguments) into strings.
         # Convert state variables (positional arguments) into Parameters.
+        # first sort args by length -> this helps avoid conflicts in potential string parsing, so that alpha' and alpha are both deteccted properly for example, since we search first for alpha'...
+        args = sort(collect(args), by=length, rev=true)
         for arg in args
             if !isa(arg, String)
                 error("Parameters must be declared via Strings, problem with $arg.")

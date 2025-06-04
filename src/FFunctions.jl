@@ -174,6 +174,7 @@ import Base: -, +
 *(a::FAtom, r::FRational) = FRational(FSum(a)*r.numer, r.denom)
 *(r::FRational, a::FAtom) = FRational(r.numer*FSum(a), r.denom)
 *(a::FRational, b::FRational) = FRational(a.numer*b.numer, a.denom*b.denom)
+*(s::FSum, a::FAtom) = FSum([ x*a for x in s.terms ])
 *(a::FSum, b::FRational) = FRational(a*b.numer, b.denom)
 *(b::FRational, a::FSum) = FRational(a*b.numer, b.denom)
 # number 
