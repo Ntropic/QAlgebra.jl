@@ -5,7 +5,7 @@ using ..StringUtils
 using ComplexRationals
 import Base: show, adjoint, conj, iterate, length, eltype, +, -, sort, *, ^, product, iszero, copy
 
-export qObj, qAtom, qComposite, qTerm, qProd, qExpr, qSum, Sum, ∑, diff_qEQ, term, base_operators,simplify, flatten, neq, d_dt
+export qObj, qAtom, qComposite, qMultiComp, qTerm, qAtomProduct, qExpr, qSum, Sum, ∑, diff_qEQ, term, base_operators,simplify, flatten, neq, d_dt
 
 
 # ==========================================================================================================================================================
@@ -28,9 +28,16 @@ abstract type qAtom <: qObj end # elementary operator definitions
     qComposite
 
 The abstract type `qComposite` is a subtype of `qObj` and represents composite expressions, 
-such as qSum and qProd which consist of qAtom, qAbstract or qComposite objects themselves. 
+such as qSum and qAtomProduct which consist of qAtom, qAbstract or qComposite objects themselves. 
 """
 abstract type qComposite <: qObj end  # products and sums of operator definitions
+
+"""
+    qMultiComp
+
+The abstract type `qMultiComposite` is a subtype of `qComposite` and represents composite expressions that contain multiple `qExpr` objects, such as `qCompositeProd` and `qCommutator`. 
+"""
+abstract type qMultiComposite <: qComposite end  
 
 Is = Union{Int,Vector{Int}}
 
@@ -69,7 +76,7 @@ function qAbstract(operator_type::OperatorType, key_index::Int, sub_index::Int, 
 end
 
 """ 
-    qProd
+    qAtomProduct
 
 A product of qAtom expressions, i.e. qTerms or qAbstract.
 It contains:
@@ -77,30 +84,30 @@ It contains:
     - `coeff_fun`: The function of parameters for the Operator product
     - `expr`: A vector of qAtoms (qTerms or qAbstract) that are multiplied together.
 """
-mutable struct qProd <: qComposite
+mutable struct qAtomProduct <: qComposite
     statespace::StateSpace         # State space of the product.
     coeff_fun::FFunction            # function of scalar parameters => has +,-,*,/,^ defined 
     expr::Vector{qAtom}             # Vector of qAtoms (qTerms or qAbstract).
-    function qProd(statespace::StateSpace, coeff::FFunction, expr::Vector{<:qAtom}= [])
+    function qAtomProduct(statespace::StateSpace, coeff::FFunction, expr::Vector{<:qAtom}= [])
         if isempty(expr)
            # add neutral operator
            expr = [statespace.neutral_op]
         end
         new(statespace, coeff, expr)
     end
-    function qProd(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::qAtom)
+    function qAtomProduct(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::qAtom)
         f_fun = FAtom(coeff, var_exponents) 
         return new(statespace, f_fun, [expr]) 
     end
-    function qProd(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::AbstractVector{<:qAtom})
+    function qAtomProduct(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::AbstractVector{<:qAtom})
         f_fun = FAtom(coeff, var_exponents)
         return new(statespace, f_fun, expr)
     end
-    function qProd(statespace::StateSpace, coeff::Number, expr::AbstractVector{<:qAtom})
+    function qAtomProduct(statespace::StateSpace, coeff::Number, expr::AbstractVector{<:qAtom})
         f_fun = coeff* statespace.fone
         return new(statespace, f_fun, expr)
     end
-    function qProd(statespace::StateSpace, coeff::Number, expr::qAtom)
+    function qAtomProduct(statespace::StateSpace, coeff::Number, expr::qAtom)
         f_fun = coeff * statespace.fone
         return new(statespace, f_fun, [expr]) 
     end
@@ -118,7 +125,7 @@ mutable struct qExpr
     function qExpr(statespace::StateSpace, terms::Vector{<:qComposite})
         if isempty(terms) 
             # add neotral zero term
-            zero_term = qProd(statespace.fone*0, qTerm(statespace.neutral_op))
+            zero_term = qAtomProduct(statespace.fone*0, qTerm(statespace.neutral_op))
             push!(terms, zero_term)
         end
         return new(statespace, terms)
@@ -128,7 +135,7 @@ function qExpr(statespace::StateSpace, prod::qComposite)
     return qExpr(statespace, [prod])
 end
 function qExpr(statespace::StateSpace, terms::qAtom)
-    return qExpr(statespace, qProd(statespace, statespace.fone, [terms]))
+    return qExpr(statespace, qAtomProduct(statespace, statespace.fone, [terms]))
 end
 
 """ 
@@ -145,7 +152,7 @@ It contains:
 """
 mutable struct qSum <: qComposite
     statespace::StateSpace
-    expr::qExpr       # The expression being summed over.    # use expr in other qComposites except for qProd
+    expr::qExpr       # The expression being summed over.    # use expr in other qComposites except for qAtomProduct
     indexes::Vector{String}   # The summation index (e.g. "i").
     subsystem_index::Int  # The subspace index where the summation index was found.
     element_indexes::Vector{Int}    # The position in that subspace.
@@ -169,7 +176,7 @@ It represents time evolution of operator expectation values, and wraps the symbo
 - `do_sigma::Bool`: Whether to display Pauli operators as `σₓ`, etc. (default = `true`).
 """
 mutable struct diff_qEQ <: qComposite
-    left_hand_side::qProd
+    left_hand_side::qAtomProduct
     expr::qExpr
     statespace::StateSpace
     braket::Bool
@@ -183,7 +190,7 @@ Construct a [`diff_qEQ`](@ref) that represents the time derivative of ⟨lhs⟩ 
 
 Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
-function diff_qEQ(left_hand_side::qProd, expr::qExpr, statespace::StateSpace; braket::Bool=true, do_sigma::Bool=true)
+function diff_qEQ(left_hand_side::qAtomProduct, expr::qExpr, statespace::StateSpace; braket::Bool=true, do_sigma::Bool=true)
     new_rhs = neq(expr)
     return diff_qEQ(left_hand_side, new_rhs, statespace, braket, do_sigma)
 end
@@ -250,8 +257,8 @@ end
 # Optionally, define length and eltype.
 length(q::qExpr) = length(q.terms)
 length(q::qSum) = length(q.expr.terms)
-length(q::qProd) = length(q.expr)
-iszero(q::qProd) = iszero(q.coeff_fun)
+length(q::qAtomProduct) = length(q.expr)
+iszero(q::qAtomProduct) = iszero(q.coeff_fun)
 iszero(q::qExpr) = length(q.terms) == 0 || all(iszero, q.terms)
 iszero(q::qSum) = iszero(q.expr)
 
@@ -261,8 +268,8 @@ end
 function copy(q::qAbstract)::qAbstract
     return qAbstract(copy(q.key_index), copy(q.sub_index), copy(q.exponent), copy(q.dag), copy(q.operator_type), copy(q.index_map))
 end
-function copy(q::qProd)::qProd
-    return qProd(q.statespace, copy(q.coeff_fun), copy(q.expr))
+function copy(q::qAtomProduct)::qAtomProduct
+    return qAtomProduct(q.statespace, copy(q.coeff_fun), copy(q.expr))
 end
 function copy(q::qSum)::qSum
     return qSum(copy(q.statespace), copy(q.expr), copy(q.indexes), copy(q.subsystem_index), copy(q.element_indexes), copy(q.neq))
@@ -381,11 +388,11 @@ function term(statespace::StateSpace, coeff::Number, operator_str::String)
         end
     end
     # Generate all combinations using Product 
-    products::Vector{qProd} = []
+    products::Vector{qAtomProduct} = []
     for comb in Iterators.product(coeffs_and_terms...)
         curr_coeff = reduce(*, [c[1] for c in comb])*coeff
         curr_atoms = [c[2] for c in comb]
-        push!(products, qProd(statespace, curr_coeff, copy(var_exponents), curr_atoms))
+        push!(products, qAtomProduct(statespace, curr_coeff, copy(var_exponents), curr_atoms))
     end
     return qExpr(statespace, products)
 end
@@ -422,7 +429,7 @@ function base_operators(letter::String, statespace::StateSpace)
     if letter == "vars"
         for i in 1:length(statespace.vars)
             var_exponents[i] += 1
-            push!(my_ops, qExpr(qProd(statespace, 1, var_exponents, qTerm(copy(neutral_operator))), statespace))
+            push!(my_ops, qExpr(qAtomProduct(statespace, 1, var_exponents, qTerm(copy(neutral_operator))), statespace))
             var_exponents[i] -= 1
         end
         if length(my_ops) > 1
@@ -436,13 +443,13 @@ function base_operators(letter::String, statespace::StateSpace)
     for (i, var) in enumerate(statespace.vars)
         if var == letter
             var_exponents[i] += 1
-            return qExpr(statespace, qProd(statespace, 1, var_exponents, qTerm(copy(neutral_operator))))
+            return qExpr(statespace, qAtomProduct(statespace, 1, var_exponents, qTerm(copy(neutral_operator))))
         end
     end
     for (i, var) in enumerate(statespace.vars_str)
         if var == letter
             var_exponents[i] += 1
-            return qExpr(statespace, qProd(statespace, 1, var_exponents, qTerm(copy(neutral_operator))))
+            return qExpr(statespace, qAtomProduct(statespace, 1, var_exponents, qTerm(copy(neutral_operator))))
         end
     end
     # check subspaces
@@ -461,12 +468,12 @@ function base_operators(letter::String, statespace::StateSpace)
                 # non base ops # in a Dict 
                 non_base_ops = op_set.non_base_ops
                 for (key, ops) in non_base_ops
-                    curr_terms::Vector{qProd} = qProd[]
+                    curr_terms::Vector{qAtomProduct} = qAtomProduct[]
                     for op in ops
                         curr_operator = copy(neutral_operator)
                         curr_operator[index] = op[2]
                         coeff = op[1]
-                        curr_prod = qProd(statespace,coeff, var_exponents, qTerm(copy(curr_operator)))
+                        curr_prod = qAtomProduct(statespace,coeff, var_exponents, qTerm(copy(curr_operator)))
                         push!(curr_terms, curr_prod)
                     end
                     push!(my_ops, qExpr(statespace, curr_terms))
@@ -502,7 +509,7 @@ function base_operators(statespace::StateSpace)::Tuple{Dict{String,qExpr},Dict{S
     neutral_operator = statespace.neutral_op
     for (i, vars_str) in enumerate(statespace.vars_str)
         var_exponents[i] += 1
-        var_dict[vars_str] = qExpr(statespace, qProd(statespace, CRone, var_exponents, qTerm(copy(neutral_operator))))
+        var_dict[vars_str] = qExpr(statespace, qAtomProduct(statespace, CRone, var_exponents, qTerm(copy(neutral_operator))))
         var_exponents[i] -= 1
     end
     index = 1
@@ -521,12 +528,12 @@ function base_operators(statespace::StateSpace)::Tuple{Dict{String,qExpr},Dict{S
             # non base ops # in a Dict 
             non_base_ops = op_set.non_base_ops
             for (key, ops) in non_base_ops
-                curr_terms::Vector{qProd} = qProd[]
+                curr_terms::Vector{qAtomProduct} = qAtomProduct[]
                 for op in ops
                     curr_operator = copy(neutral_operator)
                     curr_operator[index] = op[2]
                     coeff = op[1]
-                    curr_prod = qProd(statespace, coeff, var_exponents, qTerm(copy(curr_operator)))
+                    curr_prod = qAtomProduct(statespace, coeff, var_exponents, qTerm(copy(curr_operator)))
                     push!(curr_terms, curr_prod)
                 end
                 op_dict[key] = qExpr(statespace, curr_terms)
@@ -555,7 +562,7 @@ function qAtom_sort_key(term::qAbstract)
 end
 
 # Use your custom_sort_key for coefficients.
-function qobj_sort_key(term::qProd)
+function qobj_sort_key(term::qAtomProduct)
     # Here we convert var_exponents (a Vector{Int}) to a tuple so that it compares lexicographically.
     return (tuple(0, Int[], 0), sort_key(term.coeff_fun), qAtom_sort_key.(term.expr)...)
 end
@@ -572,7 +579,7 @@ function sort(qeq::qExpr; kwargs...)
     sorted_terms = sort(terms, by= x-> qobj_sort_key(x), kwargs...)
     return qExpr(qeq.statespace, sorted_terms)
 end
-function sort(qprod::qProd; kwargs...)  # cannot sort qprod 
+function sort(qprod::qAtomProduct; kwargs...)  # cannot sort qprod 
     return copy(qprod)
 end
 function sort(qcomp::qComposite; kwargs...)
@@ -596,7 +603,7 @@ end
 function same_term_type(t1::qAbstract, t2::qAbstract) 
     return t1.key_index == t2.key_index && t1.sub_index == t2.sub_index && t1.index_map == t2.index_map
 end
-function same_term_type(t1::qProd, t2::qProd)::Bool
+function same_term_type(t1::qAtomProduct, t2::qAtomProduct)::Bool
     # check operators individually -> must all be the same!
     if length(t1.expr) != length(t2.expr) 
         same = false
@@ -613,25 +620,25 @@ function same_term_type(s1::qSum, s2::qSum)::Bool
     return s1.subsystem_index == s2.subsystem_index && s1.element_indexes == s2.element_indexes
 end
 
-function combine_term(t1::qProd, t2::qProd)::qTerm
-    return qProd(simplify(t1.coeff_fun + t2.coeff_fun), t1.expr)
+function combine_term(t1::qAtomProduct, t2::qAtomProduct)::qTerm
+    return qAtomProduct(simplify(t1.coeff_fun + t2.coeff_fun), t1.expr)
 end
 function combine_term(s1::qSum, s2::qSum)::qSum
     return qSum(s1.statespace, simplify(s1.expr + s2.expr), s1.indexes, s1.subsystem_index, s1.element_indexes, s1.neq)
 end
 
 import ..FFunctions: simplify
-include("qExpressionsOps/qExpression_Helper.jl") # Helper functions for qProd simplify
-function simplify(p::qProd)::qExpr
-    p_new = qProd[pad_before_qAbstracts(p)]
+include("qExpressionsOps/qExpression_Helper.jl") # Helper functions for qAtomProduct simplify
+function simplify(p::qAtomProduct)::qExpr
+    p_new = qAtomProduct[pad_before_qAbstracts(p)]
     did_any = true 
     while did_any
-        left_terms = qProd[] 
+        left_terms = qAtomProduct[] 
         for curr_p in p_new 
             append!(left_terms, qTerms2left(curr_p)) 
         end 
         did_any = false 
-        p_new = qProd[] 
+        p_new = qAtomProduct[] 
         
         for i in 1:length(left_terms)
             new_term, did_it = reduce_qabstractpairs(left_terms[i])
@@ -806,7 +813,7 @@ function term_equal_indexes(abstract::qAbstract, index1::Int, index2::Int, subsp
     return false, [abstract]
 end
 
-function term_equal_indexes(prod::qProd, index1::Int, index2::Int, subspace::SubSpace)::Tuple{Bool, Vector{qProd}}
+function term_equal_indexes(prod::qAtomProduct, index1::Int, index2::Int, subspace::SubSpace)::Tuple{Bool, Vector{qAtomProduct}}
     changed_any = false
     term_variants = Vector{Vector{qAtom}}()
     for atom in prod.expr
@@ -822,11 +829,11 @@ function term_equal_indexes(prod::qProd, index1::Int, index2::Int, subspace::Sub
     # Generate all combinations (cartesian product) of updated terms
     combinations = Iterators.product(term_variants...)
 
-    simplified_products = qProd[]
+    simplified_products = qAtomProduct[]
 
     for combo in combinations
         new_expr = collect(combo)
-        new_prod = qProd(prod.statespace, prod.coeff_fun, new_expr)
+        new_prod = qAtomProduct(prod.statespace, prod.coeff_fun, new_expr)
         push!(simplified_products, simplify(new_prod))
     end
 
@@ -952,7 +959,7 @@ of the form
     LHS = RHS
 The function then returns a `diff_qEQ` constructed from the left-hand side qTerm and the right-hand side qExpr.
 """
-function d_dt(left_hand::Union{qProd,qExpr}, right_hand::qExpr)::diff_qEQ
+function d_dt(left_hand::Union{qAtomProduct,qExpr}, right_hand::qExpr)::diff_qEQ
     # Check if expr is an equality.
     qstate = right_hand.statespace
 

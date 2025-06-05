@@ -5,7 +5,7 @@ using Preferences
 const DEFAULT_COEFF_PREFS = Dict(
     :FLOAT_DIGITS => 2,
     :EXP_DIGITS => 2,
-    :FIRST_MODE => true,
+    :FLIP_IF_FIRST_TERM_NEGATIVE => true,
     )
 
 """ 
@@ -40,15 +40,15 @@ function set_exp_digits(d::Int)
     set_default(:EXP_DIGITS, d)
 end
 """
-    set_first_mode(mode::Bool)
+    set_flip_if_first_term_negative(mode::Bool)
 Sets a new default value for the first mode and saves it persistently.
 First mode specifies whether braced terms with a leading negative are flipped or only if all terms are negative.
 """
-function set_first_mode(mode::Bool)
-    set_default(:FIRST_MODE, mode)
+function set_flip_if_first_term_negative(mode::Bool)
+    set_default(:FLIP_IF_FIRST_TERM_NEGATIVE, mode)
 end
 
-export get_default, set_float_digits, set_exp_digits, set_first_mode
+export get_default, set_float_digits, set_exp_digits, set_flip_if_first_term_negative
 
 include("StringUtils.jl")
 
@@ -63,7 +63,7 @@ export QubitPauli, QubitPM, Ladder
 
 include("qExpressions.jl")
 using .qExpressions
-export qObj, qAtom, qComposite, qTerm, qProd, qExpr, qSum, Sum, ∑, diff_qEQ, term, base_operators, flatten, neq, d_dt
+export qObj, qAtom, qComposite, qMultiComp, qTerm, qAtomProduct, qExpr, qSum, Sum, ∑, diff_qEQ, term, base_operators, flatten, neq, d_dt
 export Dag, Commutator, isnumeric
 export string, latex_string
 

@@ -381,12 +381,12 @@ Simplifies symbolic expressions:
 
 And for qOperator based objects
 
-    simplify(q::qProd, statespace::StateSpace) -> qProd
+    simplify(q::qAtomProduct, statespace::StateSpace) -> qAtomProduct
     simplify(q::qExpr) -> qExpr
     simplify(q::qSum) -> qSum
     simplify(q::diff_qEQ) -> diff_qEQ
 
-Simplify a qProd, qExpr, qSum or diff_qEQ by sorting terms and ading up terms that are equal (up to a coefficient). 
+Simplify a qAtomProduct, qExpr, qSum or diff_qEQ by sorting terms and ading up terms that are equal (up to a coefficient). 
 """
 function simplify end
 
@@ -411,7 +411,7 @@ function simplify(r::FRational)
     min_vals = min.(min_n, min_d)
     n = vec_multiply(n, min_vals)
     d = vec_multiply(d, min_vals)
-    if allnegative(d) || (get_default(:FIRST_MODE) && allnegative(d[1]))   # prefer negatives on numerator
+    if allnegative(d) || (get_default(:FLIP_IF_FIRST_TERM_NEGATIVE) && allnegative(d[1]))   # prefer negatives on numerator
         n = -n
         d = -d
     end
@@ -598,7 +598,7 @@ function stringer(s::FSum; braced::Bool=false) ::Tuple{Bool,String}
     s = simplify(s)
     terms = s.terms
     if braced 
-        if allnegative(s) || (get_default(:FIRST_MODE) && allnegative(s[1]))
+        if allnegative(s) || (get_default(:FLIP_IF_FIRST_TERM_NEGATIVE) && allnegative(s[1]))
             # if all negative and braced, we can just negate the whole thing
             sig = true
             _, body = stringer(-s)
@@ -761,7 +761,7 @@ function stringer(s::FSum, vars::Vector{String}; do_latex::Bool=false, braced::B
     if isempty(terms)
         return false, "0"
     end
-    if braced && (allnegative(s)|| (get_default(:FIRST_MODE) && allnegative(s[1])))
+    if braced && (allnegative(s)|| (get_default(:FLIP_IF_FIRST_TERM_NEGATIVE) && allnegative(s[1])))
         sig = true
         _, body = stringer(-s, vars; do_latex=do_latex, do_frac=do_frac)
         return sig, body

@@ -1,4 +1,4 @@
-function pad_before_qAbstracts(p::qProd)::qProd
+function pad_before_qAbstracts(p::qAtomProduct)::qAtomProduct
     ss = p.statespace
     neutral = qTerm(ss.neutral_op)
 
@@ -22,10 +22,10 @@ function pad_before_qAbstracts(p::qProd)::qProd
     if isa(terms[1], qAbstract)
         insert!(terms, 1, copy(neutral))
     end
-    return qProd(ss, copy(p.coeff_fun), terms)
+    return qAtomProduct(ss, copy(p.coeff_fun), terms)
 end
 
-function qTerms2left(p::qProd)::Vector{qProd}
+function qTerms2left(p::qAtomProduct)::Vector{qAtomProduct}
     ss = p.statespace
     coeff_fun = p.coeff_fun
     last_atom_index = findlast(t -> isa(t, qTerm), terms)
@@ -95,11 +95,11 @@ function qTerms2left(p::qProd)::Vector{qProd}
             end
         end
     end
-    # create qProd for each 
-    return qProd[qProd(ss, c, t) for (c,t) in zip(all_coeffs, all_terms)]
+    # create qAtomProduct for each 
+    return qAtomProduct[qAtomProduct(ss, c, t) for (c,t) in zip(all_coeffs, all_terms)]
 end
 
-function reduce_qabstractpairs(p::qProd)::Tuple{qProd, Bool}
+function reduce_qabstractpairs(p::qAtomProduct)::Tuple{qAtomProduct, Bool}
     # remove pairs of qAbstract if possible 
     ss = p.statespace
     terms = copy(p.expr)
@@ -139,5 +139,5 @@ function reduce_qabstractpairs(p::qProd)::Tuple{qProd, Bool}
             end
         end
     end
-    return qProd(ss, p.coeff_fun, terms), did_any
+    return qAtomProduct(ss, p.coeff_fun, terms), did_any
 end

@@ -31,7 +31,7 @@ qAbstract
 
 For composite operators we have
 ```@docs
-qProd
+qAtomProduct
 qSum
 ```
 - [`qTerm`](@ref) represents a single operator term with a coefficient.

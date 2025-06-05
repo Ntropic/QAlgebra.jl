@@ -91,7 +91,7 @@ function variable_str_vec(q::qComposite; do_latex::Bool=true)::Vector{String}
         return String[t.var_str for t in q.statespace.vars]
     end
 end
-function qComposite2string(q::qProd; do_latex::Bool=true, do_sigma::Bool=true)::Tuple{Bool, String}
+function qComposite2string(q::qAtomProduct; do_latex::Bool=true, do_sigma::Bool=true)::Tuple{Bool, String}
     num = is_numeric(q)
     if is_numeric
         curr_sign, curr_str = to_stringer(q.coeff_fun, variable_str_vec(q, do_latex=do_latex), braced=false)

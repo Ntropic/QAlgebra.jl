@@ -3,7 +3,7 @@ export Dag, Commutator, is_numeric, same_statespace
 """ 
     is_numeric(t::qTerm, qspace::StateSpace) -> Bool
     is_numeric(t::qAbstract, qspace::StateSpace) -> Bool
-    is_numeric(p::qProd) -> Bool
+    is_numeric(p::qAtomProduct) -> Bool
     is_numeric(s::qSum) -> Bool
     is_numeric(expr::qExpr) -> Bool
 
@@ -22,7 +22,7 @@ end
 function is_numeric(t::qAbstract, statespace::StateSpace)::Bool
     return false 
 end
-function is_numeric(p::qProd)::Bool
+function is_numeric(p::qAtomProduct)::Bool
     return all(is_numeric(t, p.statespace) for t in p.terms)
 end
 function is_numeric(s::qSum)::Bool
@@ -71,7 +71,7 @@ end
 function ==(a::qAbstract, b::qAbstract)
     return a.key_index == b.key_index && a.sub_index == b.sub_index && a.exponent == b.exponent && a.dag == b.dag && a.index_map == b.index_map 
 end
-function ==(a::qProd, b::qProd)
+function ==(a::qAtomProduct, b::qAtomProduct)
     return a.coeff_fun == b.coeff_fun &&  all([ai == bi for (ai, bi) in zip(a.expr, b.expr)])
 end
 
@@ -120,8 +120,8 @@ end
 ### Basic Operations: 
 
 ####### Unary Minus #############################################################
-function -(t::qProd)::qProd
-    return qProd(t.statespace, -t.coeff_fun, copy(t.expr))
+function -(t::qAtomProduct)::qAtomProduct
+    return qAtomProduct(t.statespace, -t.coeff_fun, copy(t.expr))
 end
 function -(t::qExpr)::qExpr
     return qExpr(.-t.terms, t.statespace)  
@@ -157,8 +157,8 @@ function -(Q1::qExpr, Q2::qComposite)::qExpr
 end
 
 #### Multiply ####################################################################
-function trivial_multiply(Q1::qProd, Q2::qProd)::qProd
-    return qProd(Q1.statespace, simplify(Q1.coeff_fun*Q2.coeff_fun), vcat(Q1.terms, Q2.terms))
+function trivial_multiply(Q1::qAtomProduct, Q2::qAtomProduct)::qAtomProduct
+    return qAtomProduct(Q1.statespace, simplify(Q1.coeff_fun*Q2.coeff_fun), vcat(Q1.terms, Q2.terms))
 end
 # Multiplies two qTerm’s from the same statespace. Returns a vector of qTerm’s that are the result of this multiplication and corresponding ComplexRational coefficients. 
 function multiply_qterm(t1::qTerm, t2::qTerm, statespace::StateSpace)::Tuple{Vector{qTerm}, Vector{ComplexRational}}
@@ -202,15 +202,15 @@ function *(t1::qTerm, t2::qTerm, statespace::StateSpace)
 end
 
 #### Main Multiplication Functions ################################################
-function *(p1::qProd, p2::qProd)::qProd
+function *(p1::qAtomProduct, p2::qAtomProduct)::qAtomProduct
     p = trivial_multiply(p1, p2)  # append the terms of p1 and p2.
     return simplify(p)    # simplify the product.
 end
-function *(p1::qProd, num::Number)::qProd
-    return qProd(p1.statespace, p1.coeff_fun*num, copy(p1.terms))
+function *(p1::qAtomProduct, num::Number)::qAtomProduct
+    return qAtomProduct(p1.statespace, p1.coeff_fun*num, copy(p1.terms))
 end
-function *(num::Number, p1::qProd)::qProd
-    return qProd(p1.statespace, p1.coeff_fun*num, copy(p1.terms))
+function *(num::Number, p1::qAtomProduct)::qAtomProduct
+    return qAtomProduct(p1.statespace, p1.coeff_fun*num, copy(p1.terms))
 end
 
 function *(Q1::qExpr, Q2::qExpr)::qExpr
@@ -337,7 +337,7 @@ function Identity(qspace::StateSpace)
     # Build a vector of neutral operator indexes.
     neutral_ops = [s.op_set.neutral_element for s in qspace.subspaces for key in s.keys]
     # Create a single-term qExpr.
-    return qExpr(qspace, qProd(qspace, qspace.fone, qspace.neutral_op))
+    return qExpr(qspace, qAtomProduct(qspace, qspace.fone, qspace.neutral_op))
 end
 
 """
@@ -388,13 +388,13 @@ function Dag(t::qAbstract, qspace::StateSpace)::Tuple{Vector{qAbstract}, Vector{
     end 
 end
 
-function Dag(p::qProd)::qExpr 
+function Dag(p::qAtomProduct)::qExpr 
     # reverse order elementwise Dag 
     terms = []
     for t in reverse(p.expr)
         push!(terms, Dag(t))
     end
-    return qProd(p.statespace, conj(p.coeff_fun), terms)
+    return qAtomProduct(p.statespace, conj(p.coeff_fun), terms)
 end
 
 function Dag(Q::qExpr)::qExpr
