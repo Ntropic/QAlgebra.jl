@@ -53,7 +53,7 @@ end
 function qAtom2string(qatom::qTerm, statespace::StateSpace; do_latex::Bool=false, do_sigma::Bool=false)::String
     return operators2string(qatom.op_indices, statespace; do_latex=do_latex, do_sigma=do_sigma)
 end
-function qAbstract2string(q::qAbstract, statespace::StateSpace; do_latex::Bool=false, do_sigma::Bool=false)::String
+function qAtom2string(q::qAbstract, statespace::StateSpace; do_latex::Bool=false, do_sigma::Bool=false)::String
     type = q.operator_type
     name = type.name 
     if do_latex 
@@ -91,13 +91,13 @@ function variable_str_vec(q::qComposite; do_latex::Bool=true)::Vector{String}
         return String[t.var_str for t in q.statespace.vars]
     end
 end
-function qComposite2string(q::qAtomProduct; do_latex::Bool=true, do_sigma::Bool=true)::Tuple{Bool, String}
-    num = is_numeric(q)
-    if is_numeric
-        curr_sign, curr_str = to_stringer(q.coeff_fun, variable_str_vec(q, do_latex=do_latex), braced=false)
+# braced not used here as an argument use, it in other qComposites that contain qExpr to determine groupings!
+function qComposite2string(q::qAtomProduct; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=false)::Tuple{Bool, String}
+    if is_numeric(q)
+        curr_sign, curr_str = to_stringer(q.coeff_fun, variable_str_vec(q, do_latex=do_latex), braced=false, do_frac=do_frac)
         return curr_sign, curr_str
     else
-        curr_sign, curr_str = to_stringer(q.coeff_fun, variable_str_vec(q, do_latex=do_latex), braced=true)
+        curr_sign, curr_str = to_stringer(q.coeff_fun, variable_str_vec(q, do_latex=do_latex), braced=true, do_frac=do_frac)
         operator_str = join([qAtom2string(t, q.statespace, do_latex=do_latex, do_sigma=do_sigma) for t in q.expr], "")
         connector =do_latex ? raw"\cdot" : "*"
         return curr_sign, curr_str * connector * operator_str
@@ -105,396 +105,134 @@ function qComposite2string(q::qAtomProduct; do_latex::Bool=true, do_sigma::Bool=
 end
 
 
-
-
-is_negative(x::Real) = x < 0
-function is_negative(x::Complex)
-    if !iszero(real(x))
-        return real(x) < 0
-    elseif !iszero(imag(x))
-        return imag(x) < 0
+function qComposites2string(terms::Vector{qComposite}; do_latex::Bool=false, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, separate_sign::Bool=false)::String
+    substrings::Vector{Tuple{Bool, String}} = [qComposite2string(t, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac) for t in terms]
+    # connect substrings  
+    if separate_sign
+        string = substrings[1][2]
     else
-        return false
+        string = substrings[1][1] ? "-" * substrings[1][2] : substrings[1][2]
     end
+    for (curr_sign, curr_str) in substrings[2:end]
+        string *= curr_sign ? "-" * curr_str : "+" * curr_str
+    end
+    if separate_sign 
+        return substrings[1][1], string
+    end
+    return string
 end
-function are_negative(x::Vector)
-    for i in x
-        if !is_negative(i)
-            return false
-        end
-    end
-    return true
-end
-function format_number(num::Number; precision::Int=4, n::Int=2, do_latex::Bool=false)
-    # Special-case zero:
-    if iszero(num)
-        return "0"
-    end
-
-    # First, get a scientific notation string.
-    sci_str = @sprintf("%.*e", precision, num)  # e.g. "1.2345e+03"
-    parts = split(sci_str, "e")
-    significand = parts[1]
-    exponent_str = parts[2]
-    exponent = parse(Int, exponent_str)
-
-    # If exponent is within [-n, n], return fixed-point formatting.
-    if -n <= exponent <= n
-        return @sprintf("%.*f", precision, num)
-    else
-        if do_latex
-            return significand * " \\times 10^{" * string(exponent) * "}"
+import ..FFunctions: how_to_combine_Fs
+function group_qAtomProducts(qs::Vector{qAtomProduct})::Vector{Union{qAtomProduct, Tuple{Union{FAtom, FSum}, Vector{qAtomProduct}}}}
+    coeffs_funs::Vector{Union{FAtom, FSum}} = [q.coeff_fun for q in qs]
+    coeff_groups, indexes = how_to_combine_Fs(coeffs_funs)
+    new_qs = []
+    for (coeffs, indexes) in zip(coeff_groups, indexes)
+        if !( coeffs isa Tuple )
+            push!(new_qs, copy(qs[indexes[1]]))
         else
-            return significand * "×10" * str2sup(string(exponent))
+            pre_F = coeffs[1]
+            post_F = coeffs[2]
+            post_q = qAtomProduct[]
+            for (F, i) in zip(post_F, indexes) 
+                new_p = copy(qs[i]) 
+                new_p.coeff_fun *= F 
+                push!(post_q, new_p) 
+            end 
+            push!(new_qs, (pre_F, post_q)) 
         end
-    end
+    end 
+    return new_qs 
+end 
+
+function qAtomProduct_group2string(qs::qAtomProduct; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true)::Tuple{Bool, String, String}
+    curr_sign, operator_str = qComposite2string(qs, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
+    return curr_sign, "", operator_str
 end
-function format_number(num::Complex; precision::Int=4, n::Int=2, do_latex::Bool=false)
-    re_val = real(num)
-    im_val = imag(num)
-    # If both parts are zero:
-    if iszero(re_val) && iszero(im_val)
-        return "0"
-        # Only imaginary part nonzero:
-    elseif iszero(re_val)
-        im_str = format_number(abs(im_val); precision=precision, n=n, do_latex=do_latex)
-        # Prepend a minus sign if needed.
-        return (im_val < 0 ? "-" : "") * im_str * "i"
-        # Only real part nonzero:
-    elseif iszero(im_val)
-        return format_number(re_val; precision=precision, n=n, do_latex=do_latex)
+function qAtomProduct_group2string(qs::Tuple{Union{FAtom, FSum}, Vector{qAtomProduct}}; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true)::String
+    # assume the qs can be simple grouped (see the functions: simple_combinable_Fs, group_Fs)
+    F = qs[1]
+    qs = qs[2]
+    f_sign, f_str = to_stringer(F; do_latex=do_latex, braced=braced, do_frac=do_frac)
+    q_str = qComposites2string(qs; do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac, separate_sign=false)  # don't worry about internal signs, this has already been taken care off by the sign handling of the grouping 
+    return f_sign, f_str, q_str
+end 
+
+function allnegative(x::Tuple{Bool, String})::Bool 
+    return x[1]
+end
+function allnegative(x::Vector{Tuple{Bool, String}})::Bool
+    return all(allnegative, x)
+end
+function brace(x::String; do_latex::Bool=true)::String
+    if do_latex 
+        return raw"\left(" * x * raw"\right)"
     else
-        # Both parts nonzero: format each and wrap in parentheses.
-        re_str = format_number(re_val; precision=precision, n=n, do_latex=do_latex)
-        im_str = format_number(abs(im_val); precision=precision, n=n, do_latex=do_latex)
-        # Use a minus sign if imaginary part is negative.
-        sign_str = im_val < 0 ? " - " : " + "
-        return "(" * re_str * sign_str * im_str * "i" * ")"
+        return "(" * x * ")"
     end
 end
-
-
-function prefactor_to_string(coeff::Number, var_exponents::Vector{Int}, statespace::StateSpace, any_ops::Bool=false; do_latex::Bool=false)::Tuple{String,Bool}
-    any_vars = any(var_exponents .!= 0)
-    any_either = any_ops || any_vars
-    varstr = var_exponents2string(var_exponents, statespace, do_latex=do_latex)
-    coeff = crationalize(coeff)
-    coeffstr = ""
-    coeff_one = false
-    if isone(abs(coeff)) && (isone(abs(real(coeff))) || isone(abs(imag(coeff))))
-        coeff_one = true
-        if isone(abs(imag(coeff)))
-            if coeff.b / coeff.c > 0
-                coeffstr *= "+i"
+function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_grouping::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+    # outputs sign, string, {optional return_grouping:} single_group::Bool   => return grouping implies that the expression will be braced if it isn't already! , hence the outputted sign is handled differently 
+    # first sort terms 
+    q_sorted = sort(q)
+    if !braced # outside (not inside of a qComposite)
+        if !return_grouping
+            return qComposites2string(q_sorted.terms, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac, separate_sign=true)
+        else
+            return qComposites2string(q_sorted.terms, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac, separate_sign=true), false
+        end
+    else  # iunside amnother qComposite
+        # separate into qAtomProduct and other qComposite terms -> sorting puts qAtomProducts first 
+        # then group qAtomProducts by their factors 
+        first_non_qAtomProduct = findfirst(x -> !isa(x, qAtomProduct), q_sorted.terms)
+        if first_non_qAtomProduct === nothing
+            first_non_qAtomProduct = length(q_sorted.terms)
+        end
+        qAtomProduct_terms::Vector{qAtomProduct} = q_sorted.terms[1:first_non_qAtomProduct]
+        other_terms = q_sorted.terms[first_non_qAtomProduct+1:end]
+        groups = group_qAtomProducts(qAtomProduct_terms)
+        # create strings for each element 
+        all_strings = []
+        for group in groups
+            curr_sign, first, second = qAtomProduct_group2string(group, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
+            if length(group) > 1
+                push!(all_strings, (curr_sign, first*brace(second, do_latex=do_latex)))
             else
-                coeffstr *= "-i"
+                push!(all_strings, (curr_sign, first*second))
             end
-        else
-            if coeff.a / coeff.c > 0
-                coeffstr *= "+"
+        end
+        for term in other_terms
+            push!(all_strings, qComposite2string(term, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac))
+        end
+        
+        # make qComposites2string better, by allowing a third output in case of single group. to traverse multiple layers of Composites within composites. 
+        if return_grouping 
+            # do we switch the sign? 
+            if allnegative(all_strings) || ( get_default(:FLIP_IF_FIRST_TERM_NEGATIVE) && all_strings[1][1] )
+                # switch signs 
+                first_sign = true 
+                all_strings = [(!sign, s) for (sign, s) in all_strings]
             else
-                coeffstr *= "-"
-            end
-            if !any_either
-                coeffstr *= "1"
-            end
-        end
-    elseif isa(coeff, ComplexRational)
-        coeffstr *= complexrational2str(coeff, do_latex)
-    else
-        # use get_default(:FLOAT_DIGITS) to determine the digits of precision to use for the coefficient
-        precision = get_default(:FLOAT_DIGITS)
-        n = get_default(:EXP_DIGITS)
-        coeffstr *= format_number(coeff, precision=precision, n=n, do_latex=do_latex)
-    end
-    if length(varstr) > 0
-        if do_latex
-            varstr *= raw"\,"
-        else
-            varstr *= "\u200A"
-        end
-    elseif length(coeffstr) > 0
-        if do_latex
-            coeffstr *= raw"\,"
-        else
-            coeffstr *= "\u200A"
-        end
-    end
-    if !do_latex && any_vars && !coeff_one
-        coeffstr *= "×"
-    end
-    final_str = strip(coeffstr * varstr)
-    if !(startswith(final_str, "+") || startswith(final_str, "-"))
-        final_str = "+" * final_str
-    end
-    do_either = any_vars || !coeff_one
-    return final_str, do_either
-end
-function qobj_to_string(t::qTerm, statespace::StateSpace; do_latex::Bool=false, do_sigma::Bool=false, braket::Bool=false)::String
-    # Build the monomial part
-    var_exponents = t.var_exponents
-    op_indices = t.op_indices
-    op_str = operators2string(op_indices, statespace, do_latex=do_latex, do_sigma=do_sigma)
-    any_ops = length(op_str) > 0
-    prefactor_string, _ = prefactor_to_string(t.coeff, var_exponents, statespace, any_ops, do_latex=do_latex)
-    if braket && any_ops
-        if do_latex
-            op_str = raw"\braket{" * op_str * raw"}"
-        else
-            op_str = "⟨" * op_str * "⟩"
-        end
-    end
-    final_str = strip(prefactor_string * op_str)
-    return final_str
-end
-function sum_symbol_str(s::qSum; do_latex::Bool=false)
-    if do_latex
-        s_index_str = join(s.indexes, ",")
-    else
-        s_index_str = join(s.indexes, "")
-    end
-    n = length(s.indexes)
-    equal_sign = "="
-    if !s.neq
-        if do_latex
-            return "\\sum_{$s_index_str}^{=}"
-        else
-            return "∑" * str2sub(s_index_str) * "⁼"
-        end
-    else
-        if n == 1
-            if do_latex
-                return "\\sum_{$s_index_str}^{\\neq}"
-            else
-                return "∑" * str2sub(s_index_str)
+                first_sign = false
             end
         else
-            if do_latex
-                return "\\sum_{($s_index_str)}^{\\neq}"  # \\in \\mathcal{C}_N^{$n}
-            else
-                return "∑" * str2sub("(" * s_index_str * ")")
+            first_sign = all_strings[1][1]
+        end
+        total_string = all_strings[1][1] ? "-" * all_strings[1][2] : all_strings[1][2]
+        for (sign, s) in all_strings[2:end]
+            if sign 
+                total_string *= "-" * s
+            else 
+                total_string *= "+" * s
             end
         end
-    end
-end
-function qobj_to_string(s::qSum, statespace::StateSpace; do_latex::Bool=false, do_sigma::Bool=false, braket::Bool=false)::String
-    sum_str = sum_symbol_str(s; do_latex=do_latex)
-    grouped_expressions = separate_into_common_subterms(s.expr.terms, statespace)
-    allnegative = are_negative([g[1] for g in grouped_expressions])
-    if allnegative
-        new_grouped_expressions = [(-g[1], g[2], g[3]) for g in grouped_expressions]
-        grouped_expressions = new_grouped_expressions
-    end
-    sep_strings = [brace(t, statespace, do_latex=do_latex, do_sigma=do_sigma, braket=braket) for t in grouped_expressions]
-    term_string = strip(join(sep_strings))
-    term_string = lstrip(term_string, '+')
-    if length(grouped_expressions) > 1
-        if do_latex
-            term_string = raw"\left(" * term_string * raw"\right)"
+        if return_grouping 
+            single_group::Bool = length(groups) == 1 && length(all_strings) == 1
+            return first_sign, total_string, single_group
         else
-            term_string = "(" * term_string * ")"
-        end
-    end
-    if !allnegative
-        return "+" * sum_str * " " * term_string
-    else
-        return "-" * sum_str * " " * term_string
-    end
-end
-
-"""
-    best_common_factor(coeffs::Vector{Number}) -> Number
-
-Given a vector of nonzero coefficients, try every candidate (each unique coefficient)
-and return the one that, when used as a divisor for all coefficients, produces the most ones.
-If there is a tie, the candidate with the lowest total absolute deviation from 1 among the
-non‑1 factors is chosen.
-"""
-# no docstring here
-function best_common_factor(coeffs::AbstractVector{<:Number})
-    # Remove zeros (if any).
-    coeffs_nonzero = filter(c -> !iszero(c), coeffs)
-    if isempty(coeffs_nonzero)
-        return one(promote_type(eltype(coeffs), Int))
-    end
-    candidates = unique(coeffs_nonzero)
-    best_candidate = candidates[1]
-    best_score = (-Inf, Inf)  # (count_ones, candidate_amplitude) 
-    # We want to maximize count_ones, then minimize amplitude.
-    for cand in candidates
-        # Compute the factors obtained by dividing each coefficient by the candidate.
-        factors = [c / cand for c in coeffs_nonzero]
-        count_ones = count(f -> isone(f), factors)
-        candidate_amplitude = real(complex(abs(cand)))
-        score = (count_ones, -candidate_amplitude)
-        if score > best_score
-            best_score = score
-            best_candidate = cand
-        end
-    end
-    return best_candidate
-end
-
-"""
-    find_and_apply_common_factor(qterms::Vector{qTerm}) -> (common, new_terms)
-
-For a vector of qTerm's, first remove any with a zero coefficient, then find the best common
-factor among the coefficients using `best_common_factor`. Returns a tuple:
-- common: the chosen common factor.
-- new_terms: the qTerm's updated with their coefficient divided by the common factor.
-"""
-# no docstring here
-function find_and_apply_common_factor(qterms::Vector{qTerm}; remove_exponents::Bool=false)
-    # implicitly assume each qExpr is a qTerm
-    # Remove any terms with a zero coefficient.
-    nonzero_terms = filter(t -> !iszero(t.coeff), qterms)
-    # Collect the coefficients.
-    coeffs = [t.coeff for t in nonzero_terms]
-    common = best_common_factor(coeffs)
-    # Divide each term's coefficient by the common factor.
-    if remove_exponents
-        zero_exponents = zeros(Int, length(nonzero_terms[1].var_exponents))
-        new_terms = [qTerm(t.coeff / common, zero_exponents, t.op_indices) for t in nonzero_terms]
-    else
-        new_terms = [qTerm(t.coeff / common, t.var_exponents, t.op_indices) for t in nonzero_terms]
-    end
-    return common, new_terms
-end
-function separate_into_common_subterms(qexpr::Vector{qExpr}, statespace::StateSpace)::Vector{Tuple{Number,Vector{Int},Vector{qExpr}}}
-    nonzero_qobj = filter(t -> !iszero(t), qexpr)
-    sorted_q = sort(nonzero_qobj)
-    sorted_expr = copy(sorted_q)
-    if isempty(sorted_expr)
-        return Tuple{Number,Vector{Int},Vector{qExpr}}[]
-    elseif length(sorted_expr) == 1
-        zero_exponents = zeros(Int, length(statespace.vars))
-        common_factor = 1
-        return [(common_factor, zero_exponents, sorted_expr)]
-    end
-    grouped_expressions::Vector{Tuple{Number,Vector{Int},Vector{qExpr}}} = Tuple{Number,Vector{Int},Vector{qExpr}}[]
-    curr_qobj_qterm::Vector{qTerm} = []
-    # first group the terms 
-    curr_i = 1
-    i = 1
-    curr_var_exponents::Vector{Int} = var_exponents(sorted_expr[1])
-    zero_exponents = zeros(Int, length(curr_var_exponents))
-    curr_qobj::Vector{qExpr} = [sorted_expr[1]]
-    while i < length(sorted_expr)
-        i += 1
-        if iszero(curr_var_exponents)
-            push!(grouped_expressions, (1, zero_exponents, curr_qobj))
-            curr_i = i
-            curr_var_exponents = var_exponents(sorted_expr[i])
-            curr_qobj = [sorted_expr[i]]
-        elseif curr_var_exponents == var_exponents(sorted_expr[i])
-            push!(curr_qobj, sorted_expr[i])
-        else
-            curr_qobj_qterm = [x::qTerm for x in curr_qobj]
-            if length(curr_qobj_qterm) == 1
-                push!(grouped_expressions, (1, zero_exponents, curr_qobj_qterm))
-            else
-                # find common factor
-                common_factor, corrected_terms = find_and_apply_common_factor(curr_qobj_qterm, remove_exponents=true)
-                push!(grouped_expressions, (common_factor, curr_var_exponents, corrected_terms))
-            end
-            curr_i = i
-            curr_var_exponents = var_exponents(sorted_expr[i])
-            curr_qobj = [sorted_expr[i]]
-        end
-    end
-    if iszero(curr_var_exponents)
-        common_factor = 1
-        push!(grouped_expressions, (common_factor, zero_exponents, curr_qobj))
-    else
-        # turn into qTerms
-        curr_qobj_qterm = [x::qTerm for x in curr_qobj]
-        if length(curr_qobj_qterm) == 1
-            push!(grouped_expressions, (1, zero_exponents, curr_qobj_qterm))
-        else
-            # find common factor
-            common_factor, corrected_terms = find_and_apply_common_factor(curr_qobj_qterm, remove_exponents=true)
-            push!(grouped_expressions, (common_factor, curr_var_exponents, corrected_terms))
-        end
-    end
-    return grouped_expressions
-end
-# --- Functions to print an entire qExpr -----------------------------
-function qeq_to_string_ungrouped(q::qExpr; do_latex::Bool=false, do_sigma::Bool=false, braket::Bool=true)::String
-    if length(q) > 0
-        term_string = strip(join([qobj_to_string(t, q.statespace, do_latex=do_latex, do_sigma=do_sigma, braket=braket) for t in q]))
-    else
-        term_string = "0"
-    end
-    term_string = lstrip(term_string, '+')
-    return term_string
-end
-function brace(grouped_term::Tuple{Number,Vector{Int},Vector{qExpr}}, statespace::StateSpace; do_latex::Bool=false, do_sigma::Bool=false, braket::Bool=true)
-    coeff::Number = grouped_term[1]
-    var_exponents::Vector{Int} = grouped_term[2]
-    qexprs::Vector{qExpr} = grouped_term[3]
-    if length(qexprs) == 0
-        return ""
-    elseif length(qexprs) == 1
-        if !isone(coeff) || !iszero(var_exponents)
-            error("Invalid term: $grouped_term.")
-        end
-        term_string = qobj_to_string(qexprs[1], statespace, do_latex=do_latex, do_sigma=do_sigma, braket=braket)
-        prefactorstring, do_either = prefactor_to_string(coeff, var_exponents, statespace, true, do_latex=do_latex)
-        if do_either
-            if do_latex
-                return prefactorstring * "\\left(" * term_string * "\\right)"
-            else
-                return prefactorstring * "(" * term_string * ")"
-            end
-        else
-            return term_string
-        end
-    else # need to brace 
-        if length(qexprs) > 0
-            term_string = strip(join([qobj_to_string(t, statespace, do_latex=do_latex, do_sigma=do_sigma, braket=braket) for t in qexprs]))
-            term_string = lstrip(term_string, '+')
-            if length(term_string) > 0
-                prefactorstring, do_either = prefactor_to_string(coeff, var_exponents, statespace, true, do_latex=do_latex)
-                if do_either
-                    if do_latex
-                        return prefactorstring * "\\left(" * term_string * "\\right)"
-                    else
-                        return prefactorstring * "(" * term_string * ")"
-                    end
-                else
-                    return term_string
-                end
-            else
-                return ""
-            end
-
-        else
-            return ""
+            return first_sign, total_string
         end
     end
 end
-function qeq_to_string_grouped(q::qExpr; do_latex::Bool=false, do_sigma::Bool=false, braket::Bool=true)::String
-    grouped_expressions = separate_into_common_subterms(q.terms, q.statespace)
-    term_string = strip(join([brace(t, q.statespace, do_latex=do_latex, do_sigma=do_sigma, braket=braket) for t in grouped_expressions]))
-    return lstrip(term_string, '+')
-end
-
-function qeq_to_string(q::qExpr; do_latex, do_sigma::Bool=false, braket::Bool=true, grouped::Bool=true)::String
-    q_simplified = simplify(q)
-    if grouped
-        return qeq_to_string_grouped(q_simplified; do_latex=do_latex, do_sigma=do_sigma, braket=braket)
-    else
-        return qeq_to_string_ungrouped(q_simplified; do_latex=do_latex, do_sigma=do_sigma, braket=braket)
-    end
-end
-
-function show(io::IO, x::qExpr)
-    print(io, qeq_to_string(x, do_latex=false, do_sigma=false))
-end
-function show(io::IO, ::MIME"text/latex", x::qExpr)
-    print(io, latexstring(qeq_to_string(x, do_latex=true, do_sigma=false)))
-end
-
 
 function diff_qEQ2string(q::diff_qEQ; do_latex::Bool=false, grouped::Bool=true)::String
     expr = qeq_to_string(q.expr, do_latex=do_latex, do_sigma=q.do_sigma, braket=q.braket, grouped=grouped)
@@ -508,6 +246,42 @@ function diff_qEQ2string(q::diff_qEQ; do_latex::Bool=false, grouped::Bool=true):
     return left_hand_side * " = " * expr
 end
 
+#### String ##########################################################################################################################
+""" 
+    string(eq::qExpr) -> String
+    string(eq::diff_qEQ) -> String
+
+Returns a string representation of the qExpr, qSum, or diff_qEQ object. The string is formatted in a human-readable way, but without LaTeX formatting.
+"""
+function string(eq::qExpr)::String
+    # add default variables for do_Frac, do_sigma, braced and so on. take care of this by writing a single function called by every string and latex string function 
+    curr_sign, curr_string = qExpr2string(eq, do_latex=false, do_sigma=false)
+    total_string = curr_sign ? "-" * curr_string : curr_string
+    return total_string
+end
+
+#### LaTeX-String ##########################################################################################################################
+""" 
+    latex_string(eq::qExpr) -> String
+    latex_string(eq::diff_qEQ) -> String
+
+Returns a LaTeX string representation of the qExpr, qSum, or diff_qEQ object. 
+"""
+function latex_string(eq::qExpr)::String
+    curr_sign, curr_string = qExpr2string(eq, do_latex=true, do_sigma=false)
+    total_string = curr_sign ? "-" * curr_string : curr_string
+    return total_string
+end
+
+#### Show off #########################################################################################################################
+function show(io::IO, x::qExpr)
+    print(io, string(x))
+end
+function show(io::IO, ::MIME"text/latex", x::qExpr)
+    print(io, latexstring(latex_string(x)))
+end
+
+
 function show(io::IO, q::diff_qEQ)
     print(io, diff_qEQ2string(q, do_latex=false))
 end
@@ -515,37 +289,3 @@ function show(io::IO, ::MIME"text/latex", q::diff_qEQ)
     print(io, latexstring(diff_qEQ2string(q, do_latex=true)))
 end
 
-#### String ##########################################################################################################################
-""" 
-    string(eq::qExpr) -> String
-    string(eq::qSum) -> String
-    string(eq::diff_qEQ) -> String
-
-Returns a string representation of the qExpr, qSum, or diff_qEQ object. The string is formatted in a human-readable way, but without LaTeX formatting.
-"""
-function string(eq::qExpr)::String
-    return qeq_to_string(eq, do_latex=false, do_sigma=false)
-end
-function string(eq::qSum)::String
-    return qobj_to_string(eq, eq.statespace, do_latex=false, do_sigma=false)
-end
-function string(eq::diff_qEQ)::String
-    return diff_qEQ2string(eq, do_latex=false)
-end
-#### LaTeXString #####################################################################################################################
-""" 
-    latex_string(eq::qExpr) -> String
-    latex_string(eq::qSum) -> String
-    latex_string(eq::diff_qEQ) -> String
-
-Returns a LaTeX string representation of the qExpr, qSum, or diff_qEQ object. 
-"""
-function latex_string(eq::qExpr)::String
-    return qeq_to_string(eq, do_latex=true, do_sigma=false)
-end
-function latex_string(eq::qSum)::String
-    return qobj_to_string(eq, eq.statespace, do_latex=true, do_sigma=false)
-end
-function latex_string(eq::diff_qEQ)::String
-    return diff_qEQ2string(eq, do_latex=true)
-end

@@ -127,3 +127,109 @@ function separate_FSum(f::FSum )::Tuple{Bool, Union{FAtom, Nothing}, FSum}
     end
     return false, nothing, copy(f)
 end
+
+function simple_combinable_F(t1::Union{FAtom, FSum}, t2::Union{FAtom, FSum})::Tuple{Bool, ComplexRational}
+    # Transform FAtom's to FSums 
+    if t1 isa FAtom
+        t1 = FSum([t1])
+    end
+    if t2 isa FAtom
+        t2 = FSum([t2])
+    end
+    @assert length(t1) == length(t2) "Cannot separate pair terms with different lengths."
+
+    # check if corresponding terms have the similar exponents (i.e. the difference of exponents has to be the same for each term in FSum)
+    exponents_diff = a1.terms[1].var_exponents .- a2.terms[1].var_exponents
+    if !all([diff == 0 for diff in exponents_diff])
+        return false, ComplexRational(0, 0, 0)
+    end
+    for (a1, a2) in zip(t1.terms[2:end], t2.terms[2:end])
+        if a1.var_exponents .- a2.var_exponents != exponents_diff
+            return false, ComplexRational(0, 0, 0)
+        end
+    end
+    
+    # check if the terms have a constant ratio in the coefficients 
+    ratio = t1.terms[1].coeff / t2.terms[1].coeff
+    if !(ratio.b == 0 || ratio.a == 0)
+        return false, ratio
+    end
+    for (a1, a2) in zip(t1.terms[2:end], t2.terms[2:end])
+        if a1.coeff / a2.coeff != ratio
+            return false, ratio
+        end
+    end
+    return true, ratio
+end
+# check for multiple elements in a Vector of FSum 
+function simple_combinable_Fs(ts::Vector{Union{FAtom,FSum}})::Tuple{Vector{Vector{Union{FAtom, FSum}}}, Vector{Vector{Int}}}
+    groups = Vector{Vector{Union{FAtom,FSum}}}()
+    indexes = Vector{Vector{Int}}()
+    for (i, t) in enumerate(ts)
+        placed = false
+        for (inds, grp) in zip(indexes, groups)
+            ok,_ = simple_combinable_F(grp[1], t)
+            if ok 
+                push!(grp, t)
+                push!(inds, i)
+                placed = true
+                break
+            end
+        end
+        if !placed
+            push!(groups, [t])
+            push!(indexes, [i])
+        end
+    end
+    return groups, indexes
+end
+
+function ratios_Fs(ts::Vector{Union{FAtom,FSum}})::Vector{ComplexRational}
+    if ts[1] isa FAtom 
+        c1 = ts[1].coeff
+    else 
+        c1 = ts[1].terms[1].coeff
+    end
+    ratios = ComplexRational[ComplexRational(1,0,1)]
+    for t in ts[2:end] 
+        if t isa FAtom 
+            c2 = t.coeff
+        else 
+            c2 = t.terms[1].coeff
+        end
+        push!(ratios, c1/c2)
+    end
+    return ratios
+end
+function group_Fs(ts::Vector{Union{FAtom,FSum}})::Union{FAtom,FSum, Tuple{FAtom, Vector{Union{FAtom, FSum}}}}
+    # find the correct way to group a group of Fs (they must be groupable, create the input vector with simple_combinable_Fs)
+    if length(ts) == 1
+        return ts[1]
+    elseif length(ts) > 1
+        # we need to find the best common ratio 
+        ratios = ratios_Fs(ts)
+        base, multiples = common_denominator_form(ratios)
+        pre_F = ts[1]*base 
+        post_Fs = [ t*m for (t,m) in zip(ts, multiples)]
+        return (pre_F, post_Fs)
+    end
+end
+
+"""
+    how_to_combine_Fs(ts::Vector{Union{FAtom, FSum}}) :: Tuple{Vector{Union{FAtom, FSum, Tuple{FAtom, Vector{Union{FAtom, FSum}}}}}, Vector{Vector{Int}}}
+
+Groups and combines `FAtom` and `FSum` objects in the input vector `ts` into composite structures that can be processed together. 
+Returns a tuple containing both the groups as (FFunction) elements of a Vector and the indexs corresponding to the elements in the groups. 
+The (FFunction) grouping is given either by a single FFunction element (either a single `FAtom` or a `FSum`) or by a tuple of an `FAtom` (F1) containing the shared factors, and a vector of FFunction elements (F2_i), so that 
+together they represent a term of the form: F1 * (F2_1 + ... + F2_n). 
+"""
+function how_to_combine_Fs(ts::Vector{Union{FAtom,FSum}}) #::Tuple{Vector{Union{FAtom,FSum, Tuple{FAtom, Vector{Union{FAtom, FSum}}}}}, Vector{Vector{Int}}}
+    if length(ts) == 1
+        return [ts[1]], [[1]]
+    elseif length(ts) > 1 
+        groups, indexes = simple_combinable_Fs(ts)
+        return [group_Fs(grp) for grp in groups], indexes
+    else
+        return [], []
+    end
+end

@@ -23,7 +23,7 @@ function is_numeric(t::qAbstract, statespace::StateSpace)::Bool
     return false 
 end
 function is_numeric(p::qAtomProduct)::Bool
-    return all(is_numeric(t, p.statespace) for t in p.terms)
+    return all(is_numeric(t, p.statespace) for t in p.expr)
 end
 function is_numeric(s::qSum)::Bool
     return is_numeric(s.expr)
