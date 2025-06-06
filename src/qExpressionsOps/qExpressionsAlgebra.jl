@@ -158,7 +158,7 @@ end
 
 #### Multiply ####################################################################
 function trivial_multiply(Q1::qAtomProduct, Q2::qAtomProduct)::qAtomProduct
-    return qAtomProduct(Q1.statespace, simplify(Q1.coeff_fun*Q2.coeff_fun), vcat(Q1.terms, Q2.terms))
+    return qAtomProduct(Q1.statespace, simplify(Q1.coeff_fun*Q2.coeff_fun), vcat(Q1.expr, Q2.expr))
 end
 # Multiplies two qTerm’s from the same statespace. Returns a vector of qTerm’s that are the result of this multiplication and corresponding ComplexRational coefficients. 
 function multiply_qterm(t1::qTerm, t2::qTerm, statespace::StateSpace)::Tuple{Vector{qTerm}, Vector{ComplexRational}}
@@ -197,14 +197,14 @@ function multiply_qterm(t1::qTerm, t2::qTerm, statespace::StateSpace)::Tuple{Vec
     end
     return new_terms, new_coeffs
 end            
-function *(t1::qTerm, t2::qTerm, statespace::StateSpace)
+function *(t1::qTerm, t2::qTerm, statespace::StateSpace)  # should never be called by the user!!
     return multiply_qterm(t1, t2, statespace)
 end
 
 #### Main Multiplication Functions ################################################
-function *(p1::qAtomProduct, p2::qAtomProduct)::qAtomProduct
-    p = trivial_multiply(p1, p2)  # append the terms of p1 and p2.
-    return simplify(p)    # simplify the product.
+function *(p1::qAtomProduct, p2::qAtomProduct)::Vector{qAtomProduct}
+    return [trivial_multiply(p1, p2)]  # append the terms of p1 and p2.
+    #return simplify(p)    # simplify the product.
 end
 function *(p1::qAtomProduct, num::Number)::qAtomProduct
     return qAtomProduct(p1.statespace, p1.coeff_fun*num, copy(p1.terms))
@@ -223,7 +223,7 @@ function *(Q1::qExpr, Q2::qExpr)::qExpr
             append!(new_terms, t1*t2)  
         end
     end
-    return simplify(qExpr(new_terms, Q1.statespace))
+    return simplify(qExpr(Q1.statespace, new_terms))
 end
 function *(Q1::qExpr, Q2::qComposite)::qExpr
     Q_new = copy(Q1)

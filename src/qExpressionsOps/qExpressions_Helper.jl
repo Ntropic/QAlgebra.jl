@@ -26,8 +26,9 @@ function pad_before_qAbstracts(p::qAtomProduct)::qAtomProduct
 end
 
 function qTerms2left(p::qAtomProduct)::Vector{qAtomProduct}
-    ss = p.statespace
+    statespace = p.statespace
     coeff_fun = p.coeff_fun
+    terms = copy(p.expr)
     last_atom_index = findlast(t -> isa(t, qTerm), terms)
     all_terms::Vector{Vector{qAtom}} = [copy(p.expr)]
     all_coeffs::Vector{ComplexRational} = [one(ComplexRational)]
@@ -47,8 +48,8 @@ function qTerms2left(p::qAtomProduct)::Vector{qAtomProduct}
             c_term = where_acting(curr_qterm, statespace)  # boolean vector
             if !any(c_term) 
                 deleteat!(terms, i)
-                push!(new_terms, term)
-                push!(new_coeffs, copy(coeff))
+                push!(new_all_terms, terms)
+                push!(new_all_coeffs, copy(coeff))
             elseif all([nand(a,b) for (a,b) in zip(c_abstract, c_term)])   # commutes 
                 prev_qterm = term[i-2]
                 new_terms, new_coeffs = multiply_qterm(prev_qterm, curr_qterm, statespace)
@@ -57,13 +58,13 @@ function qTerms2left(p::qAtomProduct)::Vector{qAtomProduct}
                 for (t,c) in zip(new_terms, new_coeffs)
                     new_term = copy(terms)
                     new_term[i-2] = t 
-                    push!(new_terms, new_term)
-                    push!(new_coeffs, coeff*c)
+                    push!(new_all_terms, new_term)
+                    push!(new_all_coeffs, coeff*c)
                 end
             else 
                 # split curr_qterm into 2, one that commutes with curr_qabstract and one that doesn't
-                commuting_qterm = copy(ss.neutral_op)
-                non_commuting_qterm = copy(ss.neutral_op)
+                commuting_qterm = copy(statespace.neutral_op)
+                non_commuting_qterm = copy(statespace.neutral_op)
                 # add at indexes that aren't in c_abstract
                 for (i, b, q_ind) in enumerate(c_abstract, curr_qterm.op_indices)
                     if b
@@ -78,25 +79,25 @@ function qTerms2left(p::qAtomProduct)::Vector{qAtomProduct}
                 for (t, c) in zip(new_terms, new_coeffs)
                     new_term = copy(terms)
                     new_terms[i-2] = t 
-                    push!(new_terms, new_term)
-                    push!(coeffs, coeff*c)
+                    push!(new_all_terms, new_term)
+                    push!(new_all_coeffs, coeff*c)
                 end
             end
         end
-        all_terms = copy(new_terms)
-        all_coeffs = copy(new_coeffs)
+        all_terms = copy(new_all_terms)
+        all_coeffs = copy(new_all_coeffs)
         new_terms = Vector{qAtom}[]
         new_coeffs = Vector{ComplexRational}[]
     end
     if length(p.expr) > 0
         for t in all_terms
-            if is_numeric(t.expr[1], ss)
-                deleteat!(t.expr, 1)
+            if is_numeric(t[1], statespace)
+                deleteat!(t, 1)
             end
         end
     end
     # create qAtomProduct for each 
-    return qAtomProduct[qAtomProduct(ss, c, t) for (c,t) in zip(all_coeffs, all_terms)]
+    return qAtomProduct[qAtomProduct(statespace, c, t) for (c,t) in zip(all_coeffs, all_terms)]
 end
 
 function reduce_qabstractpairs(p::qAtomProduct)::Tuple{qAtomProduct, Bool}

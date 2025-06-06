@@ -207,6 +207,9 @@ inv(a::FRational) = FRational(inv(a.numer), inv(a.denom))
 
 import Base: copy 
 function copy(x::FAtom)
+    println(x.coeff)
+    println(x.var_exponents)
+    
     return FAtom(copy(x.coeff), copy(x.var_exponents))
 end
 function copy(x::FSum)

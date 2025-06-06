@@ -68,6 +68,10 @@ function string2qabstract(statespace::StateSpace, operator_str::String)::qAbstra
         if length(b) > 0
             error("For an abstract operator, the Dagger symbol (') can only be followed up by an exponential, nothing else.")
         end
+    else 
+        if length(expstr) > 0
+            subindex = parse(Int, expstr)
+        end
     end
     operator_type = statespace.operatortypes[key_index]
     return qAbstract(operator_type, key_index, subindex, exp, conjugate) # subindex only printed if not -1 

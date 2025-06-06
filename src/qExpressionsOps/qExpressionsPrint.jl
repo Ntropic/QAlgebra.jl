@@ -57,31 +57,31 @@ function qAtom2string(q::qAbstract, statespace::StateSpace; do_latex::Bool=false
     type = q.operator_type
     name = type.name 
     if do_latex 
-        string = raw"\hat{" * name * "}"
+        curr_string = raw"\hat{" * name * "}"
         if q.sub_index != -1 
-            string *= "_"*string(q.sub_index)
+            curr_string *= "_"*string(q.sub_index)
         end
         if q.dag
-            string *= raw"^{\dagger}"
+            curr_string *= raw"^{\dagger}"
             if q.exponent != 1 
-                string = raw"\left("*string* raw"\right)^{"*string(q.exponent)*"}"
+                curr_string = raw"\left("*curr_string* raw"\right)^{"*string(q.exponent)*"}"
             end
         elseif q.exponent != 1 
-            exp_str *= "^{"*string(q.exponent)*"}"
+            curr_string *= "^{"*string(q.exponent)*"}"
         end
     else
-        string = name 
+        curr_string = name 
         if q.sub_index != -1 
-            string *= str2sub(string(q.sub_index))
+            curr_string *= str2sub(string(q.sub_index))
         end
         if q.dag 
-            string *= "'"
+            curr_string *= "'"
         end
         if q.exponent != 1 
-            string *= str2sup(string(q.exponent))
+            curr_string *= str2sup(string(q.exponent))
         end
     end
-    return string
+    return curr_string
 end 
 
 function variable_str_vec(q::qComposite; do_latex::Bool=true)::Vector{String}
@@ -121,6 +121,7 @@ function qComposites2string(terms::Vector{qComposite}; do_latex::Bool=false, do_
     end
     return string
 end
+
 import ..FFunctions: how_to_combine_Fs
 function group_qAtomProducts(qs::Vector{qAtomProduct})::Vector{Union{qAtomProduct, Tuple{Union{FAtom, FSum}, Vector{qAtomProduct}}}}
     coeffs_funs::Vector{Union{FAtom, FSum}} = [q.coeff_fun for q in qs]

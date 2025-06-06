@@ -32,7 +32,7 @@ function combine_term(s1::qSum, s2::qSum)::qSum
 end
 
 import ..FFunctions: simplify
-function simplify(p::qAtomProduct)::qExpr
+function simplify(p::qAtomProduct)::Vector{qAtomProduct}
     p_new = qAtomProduct[pad_before_qAbstracts(p)]
     did_any = true 
     while did_any
@@ -51,20 +51,24 @@ function simplify(p::qAtomProduct)::qExpr
             end
         end
     end
-    return qExpr(p.statespace, p_new)
+    return p_new
+    #return qExpr(p.statespace, p_new)
 end    
 
-function simplify(q::qExpr; var_first::Bool=false)::qExpr
+function simplify(q::qExpr)::qExpr
     # If there are no terms, return an empty qExpr.
     if isempty(q.terms)
         return qExpr(q.statespace, qComposite[])
     end
 
-    #expr = [simplify(t) for t in q.terms]
+    expr::Vector{qComposite} = qComposite[]
+    for t in q.terms 
+        append!(expr, simplify(t))
+    end
     q = qExpr(q.statespace, expr)
 
     # First, sort qExpr without modifying the original.
-    sorted_q = sort(q; var_first=var_first)
+    sorted_q = sort(q)
     sorted_terms = copy(sorted_q.terms)
 
     combined_terms = qComposite[]

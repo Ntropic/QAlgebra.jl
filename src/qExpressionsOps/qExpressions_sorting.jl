@@ -16,7 +16,7 @@ function qobj_sort_key(term::qAtomProduct)
     return (tuple(0, Int[], 0), sort_key(term.coeff_fun), qAtom_sort_key.(term.expr)...)
 end
 
-function qobj_sort_key(term::qSum; var_first::Bool=false)
+function qobj_sort_key(term::qSum)
     curr_space = term.expr.statespace
     return (tuple(term.subsystem_index, term.element_indexes, length(term.expr)), term.neq)
 end
@@ -37,8 +37,8 @@ function sort(qcomp::qComposite; kwargs...)
     return new_qcomp
 end
 
-function sort(qterms::Vector{qComposite}; kwargs...)
+function sort(qterms::AbstractVector{<:qComposite}; kwargs...)
     qterms2 = [sort(t) for t in qterms]  # recursive
-    sorted_terms = sort(qterms2, by= x-> qobj_sort_key(x), kwargs...)
+    sorted_terms = Base.sort(qterms2; by= x-> qobj_sort_key(x), kwargs...)
     return sorted_terms
 end

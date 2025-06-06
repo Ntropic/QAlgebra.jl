@@ -98,8 +98,7 @@ function base_operators(statespace::StateSpace, letter::String; do_fun::Bool=fal
                 return qExpr(statespace, qAbstract(operatortype, key_index))
             end
         elseif occursin(name, letter)
-            abstract = string2qabstract(statespace, replace(letter, "_" => ""))
-            return qExpr(statespace, abstract)
+            return qExpr(statespace, string2qabstract(statespace, replace(letter, "_" => "")))
         end
     end
     error("No variable, subspace component or abstract operator with key starting with '$letter' found in the state space.")
