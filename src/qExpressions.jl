@@ -88,11 +88,7 @@ mutable struct qAtomProduct <: qComposite
     statespace::StateSpace         # State space of the product.
     coeff_fun::FFunction            # function of scalar parameters => has +,-,*,/,^ defined 
     expr::Vector{qAtom}             # Vector of qAtoms (qTerms or qAbstract).
-    function qAtomProduct(statespace::StateSpace, coeff::FFunction, expr::Vector{<:qAtom}= [])
-        if isempty(expr)
-           # add neutral operator
-           expr = [statespace.neutral_op]
-        end
+    function qAtomProduct(statespace::StateSpace, coeff::FFunction, expr::AbstractVector{<:qAtom}= qAtom[])
         new(statespace, coeff, expr)
     end
     function qAtomProduct(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::qAtom)
@@ -266,7 +262,7 @@ function copy(q::qTerm)::qTerm
     return qTerm(copy(q.op_indices))
 end
 function copy(q::qAbstract)::qAbstract
-    return qAbstract(copy(q.key_index), copy(q.sub_index), copy(q.exponent), copy(q.dag), copy(q.operator_type), copy(q.index_map))
+    return qAbstract(copy(q.key_index), copy(q.sub_index), copy(q.exponent), copy(q.dag), q.operator_type, copy(q.index_map))
 end
 function copy(q::qAtomProduct)::qAtomProduct
     return qAtomProduct(q.statespace, copy(q.coeff_fun), copy(q.expr))

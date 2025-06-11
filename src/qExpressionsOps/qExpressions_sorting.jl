@@ -25,7 +25,7 @@ function sort(qeq::qExpr; kwargs...)
     # first the internal sort 
     terms = [sort(t) for t in qeq.terms]
     # now the outer sort 
-    sorted_terms = sort(terms, by= x-> qobj_sort_key(x), kwargs...)
+    sorted_terms = _sort(terms, kwargs...)
     return qExpr(qeq.statespace, sorted_terms)
 end
 function sort(qprod::qAtomProduct; kwargs...)  # cannot sort qprod 
@@ -33,11 +33,11 @@ function sort(qprod::qAtomProduct; kwargs...)  # cannot sort qprod
 end
 function sort(qcomp::qComposite; kwargs...)
     new_qcomp = copy(qcomp)
-    new_qcomp.expr = sort(qcomp.expr; kwargs...)
+    new_qcomp.expr = _sort(qcomp.expr; kwargs...)
     return new_qcomp
 end
 
-function sort(qterms::AbstractVector{<:qComposite}; kwargs...)
+function _sort(qterms::AbstractVector{<:qComposite}; kwargs...)
     qterms2 = [sort(t) for t in qterms]  # recursive
     sorted_terms = Base.sort(qterms2; by= x-> qobj_sort_key(x), kwargs...)
     return sorted_terms

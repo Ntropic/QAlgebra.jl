@@ -203,8 +203,8 @@ end
 
 #### Main Multiplication Functions ################################################
 function *(p1::qAtomProduct, p2::qAtomProduct)::Vector{qAtomProduct}
-    return [trivial_multiply(p1, p2)]  # append the terms of p1 and p2.
-    #return simplify(p)    # simplify the product.
+    p = trivial_multiply(p1, p2)  # append the terms of p1 and p2.
+    return simplify(p)    # simplify the product.
 end
 function *(p1::qAtomProduct, num::Number)::qAtomProduct
     return qAtomProduct(p1.statespace, p1.coeff_fun*num, copy(p1.terms))
@@ -337,7 +337,7 @@ function Identity(qspace::StateSpace)
     # Build a vector of neutral operator indexes.
     neutral_ops = [s.op_set.neutral_element for s in qspace.subspaces for key in s.keys]
     # Create a single-term qExpr.
-    return qExpr(qspace, qAtomProduct(qspace, qspace.fone, qspace.neutral_op))
+    return qExpr(qspace, qAtomProduct(qspace, qspace.fone, qAtom[qTerm(qspace.neutral_op)]))
 end
 
 """

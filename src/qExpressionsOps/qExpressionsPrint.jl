@@ -97,9 +97,10 @@ function qComposite2string(q::qAtomProduct; do_latex::Bool=true, do_sigma::Bool=
         curr_sign, curr_str = to_stringer(q.coeff_fun, variable_str_vec(q, do_latex=do_latex), braced=false, do_frac=do_frac)
         return curr_sign, curr_str
     else
-        curr_sign, curr_str = to_stringer(q.coeff_fun, variable_str_vec(q, do_latex=do_latex), braced=true, do_frac=do_frac)
+        curr_sign, curr_str = to_stringer(q.coeff_fun, variable_str_vec(q, do_latex=do_latex), braced=true, do_frac=do_frac, has_op=true)
         operator_str = join([qAtom2string(t, q.statespace, do_latex=do_latex, do_sigma=do_sigma) for t in q.expr], "")
-        connector =do_latex ? raw"\cdot" : "*"
+        #connector =do_latex ? raw"\cdot" : "*"
+        connector =do_latex ? raw" " : "*"
         return curr_sign, curr_str * connector * operator_str
     end
 end

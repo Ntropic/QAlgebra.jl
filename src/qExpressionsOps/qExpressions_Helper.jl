@@ -35,9 +35,11 @@ function qTerms2left(p::qAtomProduct)::Vector{qAtomProduct}
     # for storing intermediate creations 
     new_all_terms::Vector{Vector{qAtom}} = []
     new_all_coeffs::Vector{ComplexRational} = []
-
     # Find the last qAtom position
     last_atom_index = findlast(t -> isa(t, qTerm), terms)
+    if isnothing(last_atom_index) 
+        return qAtomProduct[qAtomProduct(statespace, coeff_fun, all_terms[1])]
+    end
     for i in last_atom_index:-2:3
         for k in 1:length(all_terms)
             terms = all_terms[k]
@@ -97,9 +99,12 @@ function qTerms2left(p::qAtomProduct)::Vector{qAtomProduct}
         end
     end
     # create qAtomProduct for each 
-    return qAtomProduct[qAtomProduct(statespace, c, t) for (c,t) in zip(all_coeffs, all_terms)]
+    return qAtomProduct[qAtomProduct(statespace, coeff_fun*c, t) for (c,t) in zip(all_coeffs, all_terms)]
 end
 
+function same_term_types(t1::qAbstract, t2::qAbstract)::Bool
+    return t1.key_index == t2.key_index && t1.sub_index == t2.sub_index
+end
 function reduce_qabstractpairs(p::qAtomProduct)::Tuple{qAtomProduct, Bool}
     # remove pairs of qAbstract if possible 
     ss = p.statespace
@@ -108,7 +113,7 @@ function reduce_qabstractpairs(p::qAtomProduct)::Tuple{qAtomProduct, Bool}
     did_any = false
     while i < length(terms)
         did_this = false
-        if is_qAbstract(terms[i]) && is_qAbstract(terms[i+1])
+        if isa(terms[i], qAbstract) && isa(terms[i+1], qAbstract)
             # check if they are of the same subtypes
             # could probably reduce this to same_term_type function call!
             if same_term_types(terms[i], terms[i+1]) 

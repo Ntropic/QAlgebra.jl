@@ -207,9 +207,6 @@ inv(a::FRational) = FRational(inv(a.numer), inv(a.denom))
 
 import Base: copy 
 function copy(x::FAtom)
-    println(x.coeff)
-    println(x.var_exponents)
-    
     return FAtom(copy(x.coeff), copy(x.var_exponents))
 end
 function copy(x::FSum)
@@ -803,7 +800,7 @@ function stringer(r::FRational, vars::Vector{String}; do_latex::Bool=false, do_f
 end
 
 include("FFunctionOps/FFunctionHelper.jl")
-function to_stringer(f::FFunction, vars::Vector{String}; do_latex::Bool=false, braced::Bool=false, do_frac::Bool=true)::Tuple{Bool, String}
+function to_stringer(f::FFunction, vars::Vector{String}; do_latex::Bool=false, braced::Bool=false, do_frac::Bool=true, has_op::Bool=false)::Tuple{Bool, String}
     if braced && f isa FSum && length(f) > 1
         sig, body = stringer(f, vars; do_latex=do_latex, braced=braced)
         # Apply braces if necessary
@@ -827,6 +824,18 @@ function to_stringer(f::FFunction, vars::Vector{String}; do_latex::Bool=false, b
         end
     else
         sig, body = stringer(f, vars; do_latex=do_latex, do_frac=do_frac)
+        if has_op && isnumeric(f) && !isa(f, FRational) 
+            if isa(f, FAtom)
+                f_pre =  f.coeff
+            elseif isa(f, FSum)
+                f_pre = f[1].coeff
+            else 
+                error("Unsupported type for FFunction")
+            end
+            if isonelike(f_pre)  
+                return sig, "" 
+            end
+        end
     end
     return sig, body
 end
