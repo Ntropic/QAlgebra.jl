@@ -59,27 +59,42 @@ function Ladder()
         end
         return new_exp
     end
-    function ladder2str(a::Vector{Int}, sym::String)::String
+    function ladder2str(a::Vector{Int}, sym::String; formatted::Bool=true)::String
         curr_str = ""
-        if a[1] > 0
-            curr_str *= sym * "†"
-            if a[1] > 1
-                curr_str *= str2sup(string(a[1]))
+        if formatted
+            if a[1] > 0
+                curr_str *= sym * "†"
+                if a[1] > 1
+                    curr_str *= str2sup(string(a[1]))
+                end
             end
-        end
-        if a[2] > 0
-            curr_str *= sym
-            if a[2] > 1
-                curr_str *= str2sup(string(a[2]))
+            if a[2] > 0
+                curr_str *= sym
+                if a[2] > 1
+                    curr_str *= str2sup(string(a[2]))
+                end
+            end
+        else
+            if a[1] > 0
+                curr_str *= sym * "'"
+                if a[1] > 1
+                    curr_str *= "^"* string(a[1])
+                end
+            end
+            if a[2] > 0
+                curr_str *= sym
+                if a[2] > 1
+                    curr_str *= "^"* str2supstring(a[2])
+                end
             end
         end
         return curr_str
     end
-    function ladder2str(a::Int, sym::String)::String
+    function ladder2str(a::Int, sym::String; formatted::Bool=true)::String
         if a == 1
-            return ladder2str([1, 0], sym)
+            return ladder2str([1, 0], sym, formatted=formatted)
         else
-            return ladder2str([0, 1], sym)
+            return ladder2str([0, 1], sym, formatted=formatted)
         end
     end
     function ladder2latex(a::Vector{Int}, sym::String, do_sigma::Bool=false)::String

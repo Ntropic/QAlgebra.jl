@@ -5,8 +5,7 @@ using ..StringUtils
 using ComplexRationals
 import Base: show, adjoint, conj, iterate, length, eltype, +, -, sort, *, ^, product, iszero, copy
 
-export qObj, qAtom, qComposite, qMultiComp, qTerm, qAtomProduct, qExpr, qSum, Sum, ∑, diff_qEQ, term, base_operators,simplify, flatten, neq, d_dt
-
+export qObj, qAtom, qComposite, qMultiComp, qTerm, qAtomProduct, qExpr, qSum, Sum, ∑, diff_qEQ, base_operators,simplify, flatten, neq, d_dt
 
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
@@ -108,6 +107,18 @@ mutable struct qAtomProduct <: qComposite
         return new(statespace, f_fun, [expr]) 
     end
 end
+function show(io::IO, q::qAtomProduct)
+    print(io, "qAtomProduct(")
+    print(io, q.coeff_fun)
+    print(io, ", [")
+    for (i, t) in enumerate(q.expr)
+        if i > 1 
+            print(io, ", ")
+        end
+        print(io, t)
+    end
+    print(io, "])")
+end
 
 """
     qExpr
@@ -121,7 +132,7 @@ mutable struct qExpr
     function qExpr(statespace::StateSpace, terms::Vector{<:qComposite})
         if isempty(terms) 
             # add neotral zero term
-            zero_term = qAtomProduct(statespace.fone*0, qTerm(statespace.neutral_op))
+            zero_term = qAtomProduct(statespace, statespace.fone*0, qAtom[])
             push!(terms, zero_term)
         end
         return new(statespace, terms)
@@ -279,7 +290,7 @@ function copy(q::diff_qEQ)::diff_qEQ
 end
 
 
-include("qExpressionsOps/qExpressions_Helper.jl") # Helper functions for qAtomProduct simplify
+include("qExpressionsOps/qExpressions_helper.jl") # Helper functions for qAtomProduct simplify
 
 include("qExpressionsOps/qExpressions_string2term.jl")
 include("qExpressionsOps/qExpressions_base_operators.jl")

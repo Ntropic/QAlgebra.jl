@@ -139,13 +139,13 @@ function simple_combinable_F(t1::Union{FAtom, FSum}, t2::Union{FAtom, FSum})::Tu
     @assert length(t1) == length(t2) "Cannot separate pair terms with different lengths."
 
     # check if corresponding terms have the similar exponents (i.e. the difference of exponents has to be the same for each term in FSum)
-    exponents_diff = a1.terms[1].var_exponents .- a2.terms[1].var_exponents
+    exponents_diff = t1.terms[1].var_exponents .- t2.terms[1].var_exponents
     if !all([diff == 0 for diff in exponents_diff])
-        return false, ComplexRational(0, 0, 0)
+        return false, ComplexRational(0, 0, 1)
     end
     for (a1, a2) in zip(t1.terms[2:end], t2.terms[2:end])
         if a1.var_exponents .- a2.var_exponents != exponents_diff
-            return false, ComplexRational(0, 0, 0)
+            return false, ComplexRational(0, 0, 1)
         end
     end
     
@@ -162,7 +162,7 @@ function simple_combinable_F(t1::Union{FAtom, FSum}, t2::Union{FAtom, FSum})::Tu
     return true, ratio
 end
 # check for multiple elements in a Vector of FSum 
-function simple_combinable_Fs(ts::Vector{Union{FAtom,FSum}})::Tuple{Vector{Vector{Union{FAtom, FSum}}}, Vector{Vector{Int}}}
+function simple_combinable_Fs(ts::AbstractVector{Union{FAtom,FSum}})::Tuple{Vector{Vector{Union{FAtom, FSum}}}, Vector{Vector{Int}}}
     groups = Vector{Vector{Union{FAtom,FSum}}}()
     indexes = Vector{Vector{Int}}()
     for (i, t) in enumerate(ts)
@@ -184,7 +184,7 @@ function simple_combinable_Fs(ts::Vector{Union{FAtom,FSum}})::Tuple{Vector{Vecto
     return groups, indexes
 end
 
-function ratios_Fs(ts::Vector{Union{FAtom,FSum}})::Vector{ComplexRational}
+function ratios_Fs(ts::AbstractVector{Union{FAtom,FSum}})::Vector{ComplexRational}
     if ts[1] isa FAtom 
         c1 = ts[1].coeff
     else 
@@ -201,7 +201,7 @@ function ratios_Fs(ts::Vector{Union{FAtom,FSum}})::Vector{ComplexRational}
     end
     return ratios
 end
-function group_Fs(ts::Vector{Union{FAtom,FSum}})::Union{FAtom,FSum, Tuple{FAtom, Vector{Union{FAtom, FSum}}}}
+function group_Fs(ts::AbstractVector{Union{FAtom,FSum}})::Union{FAtom, FSum, Tuple{FAtom, AbstractVector{Union{FAtom, FSum}}}}
     # find the correct way to group a group of Fs (they must be groupable, create the input vector with simple_combinable_Fs)
     if length(ts) == 1
         return ts[1]
@@ -210,7 +210,13 @@ function group_Fs(ts::Vector{Union{FAtom,FSum}})::Union{FAtom,FSum, Tuple{FAtom,
         ratios = ratios_Fs(ts)
         base, multiples = common_denominator_form(ratios)
         pre_F = ts[1]*base 
-        post_Fs = [ t*m for (t,m) in zip(ts, multiples)]
+
+        if isa(pre_F, FAtom)
+            curr_var_exponents = zeros(Int, length(ts[1].var_exponents))
+        else
+            curr_var_exponents = zeros(Int, length(ts[1].terms[1].var_exponents))
+        end
+        post_Fs = Union{FAtom, FSum}[ FAtom(m, curr_var_exponents) for m in multiples ]
         return (pre_F, post_Fs)
     end
 end

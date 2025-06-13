@@ -91,6 +91,13 @@ function variable_str_vec(q::qComposite; do_latex::Bool=true)::Vector{String}
         return String[t.var_str for t in q.statespace.vars]
     end
 end
+function variable_str_vec(statespace::StateSpace; do_latex::Bool=true)::Vector{String}
+    if do_latex 
+        return String[t.var_latex for t in statespace.vars]
+    else
+        return String[t.var_str for t in statespace.vars]
+    end
+end
 # braced not used here as an argument use, it in other qComposites that contain qExpr to determine groupings!
 function qComposite2string(q::qAtomProduct; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=false)::Tuple{Bool, String}
     if is_numeric(q)
@@ -99,14 +106,13 @@ function qComposite2string(q::qAtomProduct; do_latex::Bool=true, do_sigma::Bool=
     else
         curr_sign, curr_str = to_stringer(q.coeff_fun, variable_str_vec(q, do_latex=do_latex), braced=true, do_frac=do_frac, has_op=true)
         operator_str = join([qAtom2string(t, q.statespace, do_latex=do_latex, do_sigma=do_sigma) for t in q.expr], "")
-        #connector =do_latex ? raw"\cdot" : "*"
-        connector =do_latex ? raw" " : "*"
+        connector =do_latex ? raw" " : ""
         return curr_sign, curr_str * connector * operator_str
     end
 end
 
 
-function qComposites2string(terms::Vector{qComposite}; do_latex::Bool=false, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, separate_sign::Bool=false)::String
+function qComposites2string(terms::AbstractVector{<: qComposite}; do_latex::Bool=false, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, separate_sign::Bool=false)::String
     substrings::Vector{Tuple{Bool, String}} = [qComposite2string(t, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac) for t in terms]
     # connect substrings  
     if separate_sign
@@ -137,9 +143,9 @@ function group_qAtomProducts(qs::Vector{qAtomProduct})::Vector{Union{qAtomProduc
             post_q = qAtomProduct[]
             for (F, i) in zip(post_F, indexes) 
                 new_p = copy(qs[i]) 
-                new_p.coeff_fun *= F 
+                new_p.coeff_fun = F 
                 push!(post_q, new_p) 
-            end 
+            end
             push!(new_qs, (pre_F, post_q)) 
         end
     end 
@@ -150,11 +156,12 @@ function qAtomProduct_group2string(qs::qAtomProduct; do_latex::Bool=true, do_sig
     curr_sign, operator_str = qComposite2string(qs, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
     return curr_sign, "", operator_str
 end
-function qAtomProduct_group2string(qs::Tuple{Union{FAtom, FSum}, Vector{qAtomProduct}}; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true)::String
+function qAtomProduct_group2string(qs::Tuple{Union{FAtom, FSum}, Vector{qAtomProduct}}; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true)::Tuple{Bool, String, String}
     # assume the qs can be simple grouped (see the functions: simple_combinable_Fs, group_Fs)
     F = qs[1]
     qs = qs[2]
-    f_sign, f_str = to_stringer(F; do_latex=do_latex, braced=braced, do_frac=do_frac)
+    has_op = any([!is_numeric(s) for s in qs])
+    f_sign, f_str = to_stringer(F, variable_str_vec(qs[1], do_latex=do_latex); do_latex=do_latex, braced=braced, do_frac=do_frac, has_op=has_op)
     q_str = qComposites2string(qs; do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac, separate_sign=false)  # don't worry about internal signs, this has already been taken care off by the sign handling of the grouping 
     return f_sign, f_str, q_str
 end 
@@ -176,6 +183,7 @@ function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, brace
     # outputs sign, string, {optional return_grouping:} single_group::Bool   => return grouping implies that the expression will be braced if it isn't already! , hence the outputted sign is handled differently 
     # first sort terms 
     q_sorted = sort(q)
+    #q_sorted = simplify(q)
     if !braced # outside (not inside of a qComposite)
         if !return_grouping
             return qComposites2string(q_sorted.terms, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac, separate_sign=true)
@@ -195,6 +203,7 @@ function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, brace
         # create strings for each element 
         all_strings = []
         for group in groups
+            #if isonelike(group[1])  # => remove grouping with brace 
             curr_sign, first, second = qAtomProduct_group2string(group, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
             if length(group) > 1
                 push!(all_strings, (curr_sign, first*brace(second, do_latex=do_latex)))
@@ -205,7 +214,7 @@ function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, brace
         for term in other_terms
             push!(all_strings, qComposite2string(term, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac))
         end
-        
+
         # make qComposites2string better, by allowing a third output in case of single group. to traverse multiple layers of Composites within composites. 
         if return_grouping 
             # do we switch the sign? 
@@ -216,10 +225,16 @@ function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, brace
             else
                 first_sign = false
             end
+            if length(groups) == 1 && length(all_strings) == 1
+                total_string = all_strings[1][2]
+            else
+                total_string = all_strings[1][1] ? "-" : ""
+                total_string *= all_strings[1][2]
+            end
         else
             first_sign = all_strings[1][1]
+            total_string = all_strings[1][2]
         end
-        total_string = all_strings[1][1] ? "-" * all_strings[1][2] : all_strings[1][2]
         for (sign, s) in all_strings[2:end]
             if sign 
                 total_string *= "-" * s

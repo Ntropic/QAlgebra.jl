@@ -474,7 +474,7 @@ end
 #alpha, beta = base_operators("vars", qs)
 
 Is = Union{Int,Vector{Int}}
-function cleanup_terms(terms::Vector{Tuple{T,S}}; tol::Real=1e-12)::Vector{Tuple{T,S}} where {T<:Number,S}
+function cleanup_terms(terms::Vector{Tuple{T,S}})::Vector{Tuple{T,S}} where {T<:Number,S}
 
     sort!(terms, by=x -> x[2])  # Sort by the index vector
 
@@ -488,7 +488,7 @@ function cleanup_terms(terms::Vector{Tuple{T,S}}; tol::Real=1e-12)::Vector{Tuple
             coeff_sum += terms[j][1]
             j += 1
         end
-        if abs(coeff_sum) > tol
+        if !iszero(coeff_sum) 
             push!(cleaned, (coeff_sum, idx_vec))
         end
         i = j

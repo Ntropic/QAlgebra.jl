@@ -57,9 +57,13 @@ function QubitPauli()
         end
         return [(coeff, inds[1])]
     end
-    function pauli2str(ind::Int, sym::String="")::String
+    function pauli2str(ind::Int, sym::String=""; formatted::Bool=true)::String
         # create underscored string representation of sym using subscript_indexes
-        return ops[ind] * str2sub(sym)
+        if formatted
+            return ops[ind] * str2sub(sym)
+        else
+            return ops[ind] * "_" * sym
+        end
     end
     function pauli2latex(ind::Int, sym::String, do_sigma::Bool=false)::String
         # create underscored string representation of sym using subscript_indexes

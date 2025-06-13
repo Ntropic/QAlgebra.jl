@@ -1,3 +1,5 @@
+export term
+
 # ==========================================================================================================================================================
 # --------> Terms from Strings <----------------------------------------------------------------------------------------------------------------------------
 # ==========================================================================================================================================================
@@ -14,7 +16,9 @@ end
 function string2qterm(statespace::StateSpace, operator_str::String="")::Tuple{Vector{qTerm}, Vector{Number}, Vector{Int}}
     # Initialize exponents for each state variable.
     var_exponents = zeros(Int, length(statespace.vars))
-    res_strings = separate_terms(operator_str, statespace.vars_str, statespace.fermionic_keys, statespace.bosonic_keys)
+    var_strs = statespace.vars_str
+    alt_var_strs = [p.var_name for p in statespace.vars]
+    res_strings = separate_terms(operator_str, var_strs, alt_var_strs, statespace.fermionic_keys, statespace.bosonic_keys)
     for var_ind in 1:length(var_exponents)
         curr_res_str = res_strings[1][var_ind]
         var_exponents[var_ind] = sum([expstr_separate(curr_res_str[res])[2] for res in 1:length(curr_res_str)])

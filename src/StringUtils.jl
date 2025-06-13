@@ -72,14 +72,14 @@ function term_pre_split(input::String, operator_names::Vector{String})::Tuple{Ve
     return out_strings, out_type
 end
 
-function separate_terms(input::String, total_tokens::Vector{String}, tokens_at_end::Vector{String}, tokens_at_begin::Vector{String})::Tuple{Vector{Vector{String}},Vector{Vector{String}},Vector{Vector{String}}}
+function separate_terms(input::String, total_tokens::Vector{String}, total_tokens2::Vector{String}, tokens_at_end::Vector{String}, tokens_at_begin::Vector{String})::Tuple{Vector{Vector{String}},Vector{Vector{String}},Vector{Vector{String}}}
     # Prepare output vectors:
     output_total = [String[] for _ in 1:length(total_tokens)]
     output_at_end = [String[] for _ in 1:length(tokens_at_end)]
     output_at_begin = [String[] for _ in 1:length(tokens_at_begin)]
 
     # Sort each list by descending length (to prioritize longer tokens when there is overlap).
-    tokens_total_with_idx = collect(enumerate(total_tokens))
+    tokens_total_with_idx = collect(enumerate(zip(total_tokens, total_tokens2)))
     tokens_at_end_with_idx = collect(enumerate(tokens_at_end))
     tokens_at_begin_with_idx = collect(enumerate(tokens_at_begin))
     # Preprocess the input: remove underscores and replace spaces with asterisks.
@@ -93,9 +93,15 @@ function separate_terms(input::String, total_tokens::Vector{String}, tokens_at_e
         end
         # First, check for a match with total_tokens.
         found_total = nothing
-        for (orig_idx, token) in tokens_total_with_idx
-            if startswith(term, token)
-                rem = term[length(token)+1:end]
+        for (orig_idx, (token, alt_token)) in tokens_total_with_idx
+            condition1 = startswith(term, token)
+            condition2 = startswith(term, alt_token)
+            if condition1 || condition2
+                if condition1
+                    rem = term[length(token)+1:end]
+                else 
+                    rem = term[length(alt_token)+1:end]
+                end
                 # Accept if nothing follows...
                 if isempty(rem)
                     found_total = (orig_idx, token, rem)

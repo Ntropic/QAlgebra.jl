@@ -77,9 +77,13 @@ function QubitPM()
         end
         return [(coeff, inds[1])]
     end
-    function pm2str(ind::Int, sym::String="")::String
+    function pm2str(ind::Int, sym::String=""; formatted::Bool=true)::String
         # create underscored string representation of sym using subscript_indexes
-        return ops[ind] * str2sub(sym)
+        if formatted
+            return ops[ind] * str2sub(sym)
+        else
+            return ops[ind] * "_" * sym
+        end
     end
     function pm2latex(ind::Int, sym::String, do_sigma::Bool=false)::String
         # create underscored string representation of sym using subscript_indexes

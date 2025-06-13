@@ -24,8 +24,8 @@ function same_term_type(s1::qSum, s2::qSum)::Bool
     return s1.subsystem_index == s2.subsystem_index && s1.element_indexes == s2.element_indexes
 end
 
-function combine_term(t1::qAtomProduct, t2::qAtomProduct)::qTerm
-    return qAtomProduct(simplify(t1.coeff_fun + t2.coeff_fun), t1.expr)
+function combine_term(t1::qAtomProduct, t2::qAtomProduct)::qAtomProduct
+    return qAtomProduct(t1.statespace, simplify(t1.coeff_fun + t2.coeff_fun), t1.expr)
 end
 function combine_term(s1::qSum, s2::qSum)::qSum
     return qSum(s1.statespace, simplify(s1.expr + s2.expr), s1.indexes, s1.subsystem_index, s1.element_indexes, s1.neq)

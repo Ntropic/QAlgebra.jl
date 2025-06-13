@@ -4,7 +4,7 @@ using ..StringUtils
 using ComplexRationals
 using ..qAlgebra: get_default 
 
-export FFunction, FAtom, FSum, FRational, simplify, isnumeric, iszero, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string
+export FFunction, FAtom, FSum, FRational, simplify, isnumeric, iszero, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
 
 """
     FFunction
@@ -799,7 +799,7 @@ function stringer(r::FRational, vars::Vector{String}; do_latex::Bool=false, do_f
     end
 end
 
-include("FFunctionOps/FFunctionHelper.jl")
+include("FFunctionOps/FFunction_helper.jl")
 function to_stringer(f::FFunction, vars::Vector{String}; do_latex::Bool=false, braced::Bool=false, do_frac::Bool=true, has_op::Bool=false)::Tuple{Bool, String}
     if braced && f isa FSum && length(f) > 1
         sig, body = stringer(f, vars; do_latex=do_latex, braced=braced)

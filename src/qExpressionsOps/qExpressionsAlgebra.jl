@@ -204,6 +204,7 @@ end
 #### Main Multiplication Functions ################################################
 function *(p1::qAtomProduct, p2::qAtomProduct)::Vector{qAtomProduct}
     p = trivial_multiply(p1, p2)  # append the terms of p1 and p2.
+
     return simplify(p)    # simplify the product.
 end
 function *(p1::qAtomProduct, num::Number)::qAtomProduct
