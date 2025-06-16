@@ -7,7 +7,7 @@ function qAtom_sort_key(term::qTerm)
     return tuple(0, term.op_indices...)
 end
 function qAtom_sort_key(term::qAbstract)
-    return tuple(1, term.key_index, term.subindex, term.exponent, Int(term.dag))
+    return tuple(1, term.key_index, term.sub_index, term.exponent, Int(term.dag))
 end
 
 # Use your custom_sort_key for coefficients.
@@ -33,7 +33,7 @@ function sort(qprod::qAtomProduct; kwargs...)  # cannot sort qprod
 end
 function sort(qcomp::qComposite; kwargs...)
     new_qcomp = copy(qcomp)
-    new_qcomp.expr = _sort(qcomp.expr; kwargs...)
+    new_qcomp.expr = sort(qcomp.expr; kwargs...)
     return new_qcomp
 end
 

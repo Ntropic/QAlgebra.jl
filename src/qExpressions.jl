@@ -3,7 +3,7 @@ using ..qSpace
 using ..FFunctions
 using ..StringUtils
 using ComplexRationals
-import Base: show, adjoint, conj, iterate, length, eltype, +, -, sort, *, ^, product, iszero, copy
+import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, ^, product, iszero, copy
 
 export qObj, qAtom, qComposite, qMultiComp, qTerm, qAtomProduct, qExpr, qSum, Sum, ∑, diff_qEQ, base_operators,simplify, flatten, neq, d_dt
 
@@ -258,7 +258,22 @@ Alternative way to call the `Sum` constructor. Sum(index, expr; neq) = ∑(index
 # Define iteration for qExpr so that iterating over it yields its qTerm's.
 function iterate(q::qExpr, state::Int=1)
     state > length(q.terms) && return nothing
-    return (q.terms[state], state + 1)
+    return q.terms[state], state + 1
+end
+function iterate(q::T, state::Int=1) where T <: qComposite
+    #iterate the qExpr in qComposite 
+    state > length(q.expr) && return nothing
+    return q.expr[state], state + 1
+end
+function iterate(q::qAtomProduct) 
+    error("Cannot iterate over a qAtomProduct")
+end
+
+function getindex(q::qExpr, i::Int)
+    q.terms[i]
+end
+function getindex(q::T, i::Int) where T <: qComposite
+    q.expr[i]
 end
 
 # Optionally, define length and eltype.
@@ -279,7 +294,7 @@ function copy(q::qAtomProduct)::qAtomProduct
     return qAtomProduct(q.statespace, copy(q.coeff_fun), copy(q.expr))
 end
 function copy(q::qSum)::qSum
-    return qSum(copy(q.statespace), copy(q.expr), copy(q.indexes), copy(q.subsystem_index), copy(q.element_indexes), copy(q.neq))
+    return qSum(q.statespace, copy(q.expr), copy(q.indexes), copy(q.subsystem_index), copy(q.element_indexes), copy(q.neq))
 end
 function copy(q::qExpr)::qExpr
     return qExpr(q.statespace, copy(q.terms))

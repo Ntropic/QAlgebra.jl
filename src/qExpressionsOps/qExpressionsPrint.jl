@@ -182,8 +182,8 @@ end
 function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_grouping::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     # outputs sign, string, {optional return_grouping:} single_group::Bool   => return grouping implies that the expression will be braced if it isn't already! , hence the outputted sign is handled differently 
     # first sort terms 
-    q_sorted = sort(q)
-    #q_sorted = simplify(q)
+    #q_sorted = sort(q)
+    q_sorted = simplify(q)
     if !braced # outside (not inside of a qComposite)
         if !return_grouping
             return qComposites2string(q_sorted.terms, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac, separate_sign=true)
@@ -195,10 +195,10 @@ function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, brace
         # then group qAtomProducts by their factors 
         first_non_qAtomProduct = findfirst(x -> !isa(x, qAtomProduct), q_sorted.terms)
         if first_non_qAtomProduct === nothing
-            first_non_qAtomProduct = length(q_sorted.terms)
+            first_non_qAtomProduct = length(q_sorted.terms) + 1
         end
-        qAtomProduct_terms::Vector{qAtomProduct} = q_sorted.terms[1:first_non_qAtomProduct]
-        other_terms = q_sorted.terms[first_non_qAtomProduct+1:end]
+        qAtomProduct_terms::Vector{qAtomProduct} = q_sorted.terms[1:first_non_qAtomProduct-1]
+        other_terms = q_sorted.terms[first_non_qAtomProduct:end]
         groups = group_qAtomProducts(qAtomProduct_terms)
         # create strings for each element 
         all_strings = []
@@ -214,7 +214,7 @@ function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, brace
         for term in other_terms
             push!(all_strings, qComposite2string(term, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac))
         end
-
+        
         # make qComposites2string better, by allowing a third output in case of single group. to traverse multiple layers of Composites within composites. 
         if return_grouping 
             # do we switch the sign? 
