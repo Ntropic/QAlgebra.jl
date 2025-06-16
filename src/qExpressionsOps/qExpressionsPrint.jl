@@ -205,13 +205,14 @@ function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, brace
         for group in groups
             #if isonelike(group[1])  # => remove grouping with brace 
             curr_sign, first, second = qAtomProduct_group2string(group, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
-            if length(group) > 1
+            if isa(group, Tuple)
                 push!(all_strings, (curr_sign, first*brace(second, do_latex=do_latex)))
             else
                 push!(all_strings, (curr_sign, first*second))
             end
         end
         for term in other_terms
+            println("other term: ", term)
             push!(all_strings, qComposite2string(term, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac))
         end
         

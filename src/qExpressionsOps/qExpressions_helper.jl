@@ -74,7 +74,7 @@ function qTerms2left(p::qAtomProduct)::Vector{qAtomProduct}
     # Find the last qAtom position
     last_atom_index = findlast(t -> isa(t, qTerm), terms)
     if isnothing(last_atom_index) 
-        return qAtomProduct[qAtomProduct(statespace, all_coeffs[i], all_terms[i]) for i in 1:length(all_coeffs)]
+        return qAtomProduct[qAtomProduct(statespace, all_coeffs[i]*coeff_fun, all_terms[i]) for i in 1:length(all_coeffs)]
     end
     for i in last_atom_index:-2:3
         for k in 1:length(all_terms)

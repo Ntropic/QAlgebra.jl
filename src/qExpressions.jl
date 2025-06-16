@@ -128,8 +128,8 @@ It also contains a reference to the state space in which the equation is defined
 """
 mutable struct qExpr
     statespace::StateSpace
-    terms::Vector{qComposite}         # Vector of terms
-    function qExpr(statespace::StateSpace, terms::Vector{<:qComposite})
+    terms::AbstractVector{<:qComposite}         # Vector of terms
+    function qExpr(statespace::StateSpace, terms::AbstractVector{<:qComposite})
         if isempty(terms) 
             # add neotral zero term
             zero_term = qAtomProduct(statespace, statespace.fone*0, qAtom[])
