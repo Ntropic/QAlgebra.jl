@@ -98,6 +98,38 @@ function variable_str_vec(statespace::StateSpace; do_latex::Bool=true)::Vector{S
         return String[t.var_str for t in statespace.vars]
     end
 end
+
+function sum_symbol_str(s::qSum; do_latex::Bool=false)
+    if do_latex
+        s_index_str = join(s.indexes, ",")
+    else
+        s_index_str = join(s.indexes, "")
+    end
+    n = length(s.indexes)
+    equal_sign = "="
+    if !s.neq
+        if do_latex
+            return "\\sum_{$s_index_str}^{=}"
+        else
+            return "∑" * str2sub(s_index_str) * "⁼"
+        end
+    else
+        if n == 1
+            if do_latex
+                return "\\sum_{$s_index_str}^{\\neq}"
+            else
+                return "∑" * str2sub(s_index_str)
+            end
+        else
+            if do_latex
+                return "\\sum_{($s_index_str)}^{\\neq}"  # \\in \\mathcal{C}_N^{$n}
+            else
+                return "∑" * str2sub("(" * s_index_str * ")")
+            end
+        end
+    end
+end
+
 # braced not used here as an argument use, it in other qComposites that contain qExpr to determine groupings!
 function qComposite2string(q::qAtomProduct; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=false)::Tuple{Bool, String}
     if is_numeric(q)
@@ -111,6 +143,15 @@ function qComposite2string(q::qAtomProduct; do_latex::Bool=true, do_sigma::Bool=
     end
 end
 
+function qComposite2string(term::qSum; do_latex::Bool=false, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true)::Tuple{Bool, String}
+    sum_str = sum_symbol_str(term, do_latex=do_latex)
+    first_sign, total_string, single_group = qExpr2string(term.expr; do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac, return_grouping=true)
+    if single_group
+        return first_sign, sum_str * total_string
+    else
+        return false, sum_str * brace(total_string, do_latex=do_latex)
+    end
+end
 
 function qComposites2string(terms::AbstractVector{<: qComposite}; do_latex::Bool=false, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, separate_sign::Bool=false)::String
     substrings::Vector{Tuple{Bool, String}} = [qComposite2string(t, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac) for t in terms]
@@ -188,9 +229,10 @@ function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, brace
         if !return_grouping
             return qComposites2string(q_sorted.terms, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac, separate_sign=true)
         else
-            return qComposites2string(q_sorted.terms, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac, separate_sign=true), false
+            first_sign, total_string = qComposites2string(q_sorted.terms, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac, separate_sign=true)
+            return first_sign, total_string, false
         end
-    else  # iunside amnother qComposite
+    else  # inside amnother qComposite
         # separate into qAtomProduct and other qComposite terms -> sorting puts qAtomProducts first 
         # then group qAtomProducts by their factors 
         first_non_qAtomProduct = findfirst(x -> !isa(x, qAtomProduct), q_sorted.terms)
@@ -201,7 +243,7 @@ function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, brace
         other_terms = q_sorted.terms[first_non_qAtomProduct:end]
         groups = group_qAtomProducts(qAtomProduct_terms)
         # create strings for each element 
-        all_strings = []
+        all_strings::Vector{Tuple{Bool, String}} = []
         for group in groups
             #if isonelike(group[1])  # => remove grouping with brace 
             curr_sign, first, second = qAtomProduct_group2string(group, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
@@ -212,7 +254,6 @@ function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, brace
             end
         end
         for term in other_terms
-            println("other term: ", term)
             push!(all_strings, qComposite2string(term, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac))
         end
         

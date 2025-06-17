@@ -32,16 +32,16 @@ function combine_term(s1::qSum, s2::qSum)::qSum
 end
 
 import ..FFunctions: simplify
-function simplify(p::qAtomProduct)::Vector{qAtomProduct}
-    p_new = qAtomProduct[pad_before_qAbstracts(p)]
+function simplify(p::qAtomProduct)::Vector{qComposite}
+    p_new = qComposite[pad_before_qAbstracts(p)]
     did_any = true 
     while did_any
-        left_terms = qAtomProduct[] 
+        left_terms = qComposite[] 
         for curr_p in p_new 
             append!(left_terms, qTerms2left(curr_p)) 
         end 
         did_any = false 
-        p_new = qAtomProduct[] 
+        p_new = qComposite[] 
         
         for i in 1:length(left_terms)
             new_term, did_it = reduce_qabstractpairs(left_terms[i])
@@ -62,11 +62,12 @@ function simplify(q::qExpr)::qExpr
     end
 
     expr::Vector{qComposite} = qComposite[]
+    
     for t in q.terms 
         append!(expr, simplify(t))
     end
     q = qExpr(q.statespace, expr)
-
+    
     # First, sort qExpr without modifying the original.
     sorted_q = sort(q)
     sorted_terms = copy(sorted_q.terms)
@@ -100,7 +101,7 @@ function simplify(q::qExpr)::qExpr
         if isa(curr_term, qSum)
             simplified_curr_term = simplify(curr_term)
             if !iszero(simplified_curr_term)
-                push!(combined_terms, copy(simplified_curr_term))
+                append!(combined_terms, simplified_curr_term)
             end
         else
             push!(combined_terms, copy(curr_term))
@@ -108,9 +109,9 @@ function simplify(q::qExpr)::qExpr
     end
     return qExpr(q.statespace, combined_terms)
 end
-function simplify(s::qSum)::qSum
+function simplify(s::qSum)::Vector{qComposite}
     simplified_expr = simplify(s.expr)
-    return qSum(s.statespace, simplified_expr, s.indexes, s.subsystem_index, s.element_indexes, s.neq)
+    return [qSum(s.statespace, simplified_expr, s.indexes, s.subsystem_index, s.element_indexes, s.neq)]
 end
 
 

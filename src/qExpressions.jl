@@ -4,6 +4,7 @@ using ..FFunctions
 using ..StringUtils
 using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, ^, product, iszero, copy
+using ..qAlgebra: get_default 
 
 export qObj, qAtom, qComposite, qMultiComp, qTerm, qAtomProduct, qExpr, qSum, Sum, ∑, diff_qEQ, base_operators,simplify, flatten, neq, d_dt
 
