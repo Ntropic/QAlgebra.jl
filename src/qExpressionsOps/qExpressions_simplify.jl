@@ -19,9 +19,11 @@ function same_term_type(t1::qAtomProduct, t2::qAtomProduct)::Bool
     end
     return true
 end
-
 function same_term_type(s1::qSum, s2::qSum)::Bool
     return s1.subsystem_index == s2.subsystem_index && s1.element_indexes == s2.element_indexes
+end
+function same_term_type(t1::qComposite, t2::qComposite)::Bool   # term grouping either not implemented for this object or objects aren'T the same 
+    return false 
 end
 
 function combine_term(t1::qAtomProduct, t2::qAtomProduct)::qAtomProduct

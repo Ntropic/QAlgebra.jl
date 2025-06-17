@@ -131,7 +131,7 @@ function sum_symbol_str(s::qSum; do_latex::Bool=false)
 end
 
 # braced not used here as an argument use, it in other qComposites that contain qExpr to determine groupings!
-function qComposite2string(q::qAtomProduct; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=false)::Tuple{Bool, String}
+function qComposite2string(q::qAtomProduct; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true)::Tuple{Bool, String}
     if is_numeric(q)
         curr_sign, curr_str = to_stringer(q.coeff_fun, variable_str_vec(q, do_latex=do_latex), braced=false, do_frac=do_frac)
         return curr_sign, curr_str
@@ -293,10 +293,14 @@ function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, brace
     end
 end
 
-function diff_qEQ2string(q::diff_qEQ; do_latex::Bool=false, grouped::Bool=true)::String
-    expr = qeq_to_string(q.expr, do_latex=do_latex, do_sigma=q.do_sigma, braket=q.braket, grouped=grouped)
-    left_hand_side_op_str = qeq_to_string_ungrouped(qExpr([q.left_hand_side], q.statespace), do_latex=do_latex, do_sigma=q.do_sigma, braket=q.braket)
+function diff_qEQ2string(q::diff_qEQ; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true)::String
+    curr_sign, curr_string = qExpr2string(eq, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
+    right_hand_side = curr_sign ? "-" * curr_string : curr_string
+
+    curr_sign, curr_string = qComposite2string(eq, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
+    left_hand_side_op_str = curr_sign ? "-" * curr_string : curr_string
     left_hand_side_op_str = lstrip(left_hand_side_op_str, '+')
+
     if do_latex
         left_hand_side = raw"\frac{\text{d} \phantom{t}}{\text{d}t}\!" * left_hand_side_op_str
     else
@@ -308,28 +312,48 @@ end
 #### String ##########################################################################################################################
 """ 
     string(eq::qExpr) -> String
+    string(eq::qAtomProduct) -> String
     string(eq::diff_qEQ) -> String
 
-Returns a string representation of the qExpr, qSum, or diff_qEQ object. The string is formatted in a human-readable way, but without LaTeX formatting.
+Returns a string representation of the qExpr, qAtomProduct or diff_qEQ object. The string is formatted in a human-readable way, but without LaTeX formatting.
 """
 function string(eq::qExpr)::String
     # add default variables for do_Frac, do_sigma, braced and so on. take care of this by writing a single function called by every string and latex string function 
-    curr_sign, curr_string = qExpr2string(eq, do_latex=false, do_sigma=false)
+    curr_sign, curr_string = qExpr2string(eq, do_latex=false, do_sigma=get_default(:DO_SIGMA), braced=get_default(:DO_BRACED))
     total_string = curr_sign ? "-" * curr_string : curr_string
     return total_string
+end
+function string(eq::qAtomProduct)::String
+    # add default variables for do_Frac, do_sigma, braced and so on. take care of this by writing a single function called by every string and latex string function 
+    sign, total_string = qComposite2string(eq; do_latex=false, do_sigma=false, braced=get_default(:DO_BRACED))
+    total_string = sign ? "-" * total_string : total_string
+    return total_string
+end
+function string(eq::diff_qEQ)::String
+    return diff_qEQ2string(eq; do_latex=false, do_sigma=get_default(:DO_SIGMA), braced=get_default(:DO_BRACED))
 end
 
 #### LaTeX-String ##########################################################################################################################
 """ 
     latex_string(eq::qExpr) -> String
+    latex_string(eq::qAtomProduct) -> String
     latex_string(eq::diff_qEQ) -> String
 
-Returns a LaTeX string representation of the qExpr, qSum, or diff_qEQ object. 
+Returns a LaTeX string representation of the qExpr, qAtomProduct or diff_qEQ object. 
 """
 function latex_string(eq::qExpr)::String
-    curr_sign, curr_string = qExpr2string(eq, do_latex=true, do_sigma=false)
+    curr_sign, curr_string = qExpr2string(eq, do_latex=true, do_sigma=get_default(:DO_SIGMA), braced=get_default(:DO_BRACED))
     total_string = curr_sign ? "-" * curr_string : curr_string
     return total_string
+end
+function string(eq::qAtomProduct)::String
+    # add default variables for do_Frac, do_sigma, braced and so on. take care of this by writing a single function called by every string and latex string function 
+    sign, total_string = qComposite2string(eq; do_latex=true, do_sigma=get_default(:DO_SIGMA), braced=get_default(:DO_BRACED))
+    total_string = sign ? "-" * total_string : total_string
+    return total_string
+end
+function string(eq::diff_qEQ)::String
+    return diff_qEQ2string(eq; do_latex=true, do_sigma=get_default(:DO_SIGMA), braced=get_default(:DO_BRACED))
 end
 
 #### Show off #########################################################################################################################
@@ -340,11 +364,17 @@ function show(io::IO, ::MIME"text/latex", x::qExpr)
     print(io, latexstring(latex_string(x)))
 end
 
+function show(io::IO, x::qAtomProduct)
+    print(io, string(x))
+end
+function show(io::IO, ::MIME"text/latex", x::qAtomProduct)
+    print(io, latexstring(latex_string(x)))
+end
 
 function show(io::IO, q::diff_qEQ)
-    print(io, diff_qEQ2string(q, do_latex=false))
+    print(io, string(q))
 end
 function show(io::IO, ::MIME"text/latex", q::diff_qEQ)
-    print(io, latexstring(diff_qEQ2string(q, do_latex=true)))
+    print(io, latexstring(latex_string(q)))
 end
 
