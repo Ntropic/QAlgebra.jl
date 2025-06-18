@@ -6,7 +6,7 @@ using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, ^, product, iszero, copy
 using ..qAlgebra: get_default 
 
-export qObj, qAtom, qComposite, qMultiComp, qTerm, qAtomProduct, qExpr, qSum, Sum, ∑, diff_qEQ, base_operators,simplify, flatten, neq, d_dt
+export qObj, qAtom, qComposite, qMultiComposite, qTerm, qAtomProduct, qExpr, qSum, Sum, ∑, diff_qEQ, base_operators,simplify, flatten, neq, d_dt
 
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
@@ -32,6 +32,13 @@ such as qSum and qAtomProduct which consist of qAtom, qAbstract or qComposite ob
 """
 abstract type qComposite <: qObj end  # products and sums of operator definitions
 
+""" 
+    qMultiComposite 
+
+Abstract type for composite expressions that contain a Vector of qExpr objects.
+"""
+abstract type qMultiComposite <: qComposite end
+
 Is = Union{Int,Vector{Int}}
 
 """
@@ -40,7 +47,7 @@ Is = Union{Int,Vector{Int}}
 A `qTerm` represents a single term in a quantum expression. It contains:
     - `op_indices`: A vector of indices representing the operators in the term, which are also defined in a StateSpace.
 """
-mutable struct qTerm <: qAtom
+struct qTerm <: qAtom
     op_indices::Vector{Is}
 end
 
@@ -56,7 +63,7 @@ A purely‐symbolic abstract operator
     - index_map: Keeps track of indexes, that are equal (for neq transformations)
 Is an instance of an OperatorType 
 """
-mutable struct qAbstract <: qAtom
+struct qAbstract <: qAtom
     key_index::Int
     sub_index::Int
     exponent::Int
@@ -77,7 +84,7 @@ It contains:
     - `coeff_fun`: The function of parameters for the Operator product
     - `expr`: A vector of qAtoms (qTerms or qAbstract) that are multiplied together.
 """
-mutable struct qAtomProduct <: qComposite
+struct qAtomProduct <: qComposite
     statespace::StateSpace         # State space of the product.
     coeff_fun::FFunction            # function of scalar parameters => has +,-,*,/,^ defined 
     expr::Vector{qAtom}             # Vector of qAtoms (qTerms or qAbstract).
@@ -108,7 +115,7 @@ end
 A `qExpr` represents a quantum equation, consisting of a Vector of quantum Expressions representing the additive terms of the equation.
 It also contains a reference to the state space in which the equation is defined.
 """
-mutable struct qExpr
+struct qExpr
     statespace::StateSpace
     terms::AbstractVector{<:qComposite}         # Vector of terms
     function qExpr(statespace::StateSpace, terms::AbstractVector{<:qComposite})
@@ -120,13 +127,18 @@ mutable struct qExpr
         return new(statespace, terms)
     end
 end
+function qExpr(term::qComposite)
+    return qExpr(term.statespace, [term])
+end
 function qExpr(statespace::StateSpace, prod::qComposite)
     return qExpr(statespace, [prod])
 end
 function qExpr(statespace::StateSpace, terms::qAtom)
     return qExpr(statespace, qAtomProduct(statespace, statespace.fone, [terms]))
 end
-
+function qExpr(terms::AbstractVector{<:qComposite})
+    return qExpr(terms[1].statespace, terms)
+end
 
 """ 
     qCompositeProduct
@@ -164,6 +176,9 @@ mutable struct qSum <: qComposite
     element_indexes::Vector{Int}    # The position in that subspace.
     neq::Bool
 end
+
+
+
 
 """
     diff_qEQ
@@ -285,6 +300,9 @@ iszero(q::qExpr) = length(q.terms) == 0 || all(iszero, q.terms)
 iszero(q::qSum) = iszero(q.expr)
 iszero(q::qAtomProduct) = iszero(q.coeff_fun)
 iszero(q::qCompositeProduct) = false
+iszero(q::qComposite) = iszero(q.expr)
+iszero(q::qMultiComposite) = any(iszero, q.expr)
+
 
 function copy(q::qTerm)::qTerm
     return qTerm(copy(q.op_indices))
@@ -308,7 +326,7 @@ function copy(q::diff_qEQ)::diff_qEQ
     return diff_qEQ(copy(q.left_hand_side), copy(q.expr), copy(q.statespace), copy(q.braket), copy(q.do_sigma))
 end
 
-
+include("qExpressionsOps/qExpressions_functions.jl")
 include("qExpressionsOps/qExpressions_helper.jl") # Helper functions for qAtomProduct simplify
 
 include("qExpressionsOps/qExpressions_string2term.jl")

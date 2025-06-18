@@ -167,7 +167,7 @@ function qComposite2string(term::qSum; do_latex::Bool=false, do_sigma::Bool=fals
         end
     end
 end
-function qComposite2string(q::qCompositeProduct; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Tuple{Bool, String}
+function qComposite2string(q::qCompositeProduct; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     total_sign = false
     all_strings::Vector{String} = []
     for term in q.expr
@@ -185,6 +185,68 @@ function qComposite2string(q::qCompositeProduct; do_latex::Bool=true, do_sigma::
     else 
         return total_sign, total_string 
     end 
+end
+
+function do_return_braced_false(return_argument1::Bool, return_argument2::String, return_if_braced::Bool)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+    if return_if_braced 
+        return return_argument1, return_argument2, false
+    else 
+        return return_argument1, return_argument2
+    end 
+end
+
+function qComposite2string(q::qExp; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+    first_sign, total_str = qExpr2string(q.expr, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac) 
+    total_str = first_sign ? "-"*total_str : total_str 
+    prefix = do_latex ? raw"\exp" : "exp"
+    total_str = prefix * brace(total_str, do_latex=do_latex)
+    return do_return_braced_false(false, total_str, return_if_braced) 
+end
+function qComposite2string(q::qLog; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+    first_sign, total_str = qExpr2string(q.expr, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac) 
+    total_str = first_sign ? "-"*total_str : total_str 
+    prefix = do_latex ? raw"\log" : "log"
+    total_str = prefix * brace(total_str, do_latex=do_latex)
+    return do_return_braced_false(false, total_str, return_if_braced) 
+end
+function qComposite2string(q::qPower; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+    first_sign, total_str = qExpr2string(q.expr, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac) 
+    total_str = first_sign ? "-"*total_str : total_str 
+    total_str = brace(total_str, do_latex=do_latex)
+    if do_latex 
+        return do_return_braced_false(false, total_str * "^{"*string(q.n)*"}", return_if_braced)
+    else
+        return do_return_braced_false(false, total_str * str2sup(string(q.n)), return_if_braced)
+    end
+end
+function qComposite2string(q::qRoot; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+    first_sign, total_str = qExpr2string(q.expr, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac) 
+    total_str = first_sign ? "-"*total_str : total_str 
+    total_str = brace(total_str, do_latex=do_latex)
+    
+    if do_latex 
+        if q.n == 2
+            return do_return_braced_false(false, raw"\sqrt{" * total_str * "}", return_if_braced)
+        else
+            return do_return_braced_false(false, raw"\sqrt["*string(q.n)*"]{" * total_str * "}", return_if_braced)
+        end
+    else
+        return do_return_braced_false(false, total_str * str2sup("1="*string(q.n)), return_if_braced)
+    end
+end
+function qComposite2string(q::qCommutator; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+    my_strings::Vector{String} = []
+    for expr in q.expr
+        first_sign, total_str = qExpr2string(expr, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
+        total_str = first_sign ? "-"*total_str : total_str 
+        total_str = brace(total_str, do_latex=do_latex)
+        push!(my_strings, total_str)
+    end
+    if do_latex 
+        return do_return_braced_false(false, raw"\left["*join(my_strings, ", ") * raw"\right]", return_if_braced)
+    else
+        return do_return_braced_false(false, "["*join(my_strings, ", ") * "]", return_if_braced)
+    end
 end
 
 function qComposites2string(terms::AbstractVector{<: qComposite}; do_latex::Bool=false, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, separate_sign::Bool=false)::String

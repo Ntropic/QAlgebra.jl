@@ -58,7 +58,18 @@ function simplify(p::qAtomProduct)::Vector{qComposite}
 end  
 function simplify(p::qCompositeProduct)::Vector{qCompositeProduct}
     return [copy(p)]
-end      
+end         
+function simplify(qcomp::qMultiComposite; kwargs...)::Vector{qComposite}
+    new_exprs::Vector{qExpr} = [simplify(x; kwargs...) for x in qcomp.expr]
+    q = copy(qcomp)
+    q.expr = new_exprs
+    return [q]
+end
+function simplify(p::qComposite)::Vector{qComposite}
+    new_p = copy(p) 
+    new_p.expr = simplify(p.expr)
+    return [new_p]
+end 
 
 function simplify(q::qExpr)::qExpr
     # If there are no terms, return an empty qExpr.
