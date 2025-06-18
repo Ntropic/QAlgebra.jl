@@ -13,13 +13,15 @@ end
 # Use your custom_sort_key for coefficients.
 function qobj_sort_key(term::qAtomProduct)
     # Here we convert var_exponents (a Vector{Int}) to a tuple so that it compares lexicographically.
-    return (tuple(0, Int[], 0), sort_key(term.coeff_fun), qAtom_sort_key.(term.expr)...)
+    return (tuple(0, 0, Int[], 0), sort_key(term.coeff_fun), qAtom_sort_key.(term.expr)...)
+end
+function qobj_sort_key(term::qSum)
+    return (tuple(1, term.subsystem_index, term.element_indexes, length(term.expr)), term.neq)
+end
+function qobj_sort_key(term::qCompositeProduct)
+    return (tuple(2, 0, Int[], 0), qAtom_sort_key.(term.expr)...) # first component specifies the type of object we are dealing with 
 end
 
-function qobj_sort_key(term::qSum)
-    curr_space = term.expr.statespace
-    return (tuple(term.subsystem_index, term.element_indexes, length(term.expr)), term.neq)
-end
 # Sort the terms in a qExpr using the key above.
 function sort(qeq::qExpr; kwargs...)
     # first the internal sort 
@@ -28,9 +30,13 @@ function sort(qeq::qExpr; kwargs...)
     sorted_terms = _sort(terms, kwargs...)
     return qExpr(qeq.statespace, sorted_terms)
 end
-function sort(qprod::qAtomProduct; kwargs...)  # cannot sort qprod 
+function sort(qprod::qAtomProduct; kwargs...)  # don't sort qprod 
     return copy(qprod)
 end
+function sort(qprod::qCompositeProduct; kwargs...)  # don't sort qprod 
+    return copy(qprod)
+end
+
 function sort(qcomp::qComposite; kwargs...)
     new_qcomp = copy(qcomp)
     new_qcomp.expr = sort(qcomp.expr; kwargs...)

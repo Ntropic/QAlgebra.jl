@@ -55,7 +55,10 @@ function simplify(p::qAtomProduct)::Vector{qComposite}
     end
     return p_new
     #return qExpr(p.statespace, p_new)
-end    
+end  
+function simplify(p::qCompositeProduct)::Vector{qCompositeProduct}
+    return [copy(p)]
+end      
 
 function simplify(q::qExpr)::qExpr
     # If there are no terms, return an empty qExpr.
