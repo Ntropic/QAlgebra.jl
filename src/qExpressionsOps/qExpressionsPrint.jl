@@ -239,7 +239,7 @@ function qComposite2string(q::qCommutator; do_latex::Bool=true, do_sigma::Bool=f
     for expr in q.expr
         first_sign, total_str = qExpr2string(expr, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
         total_str = first_sign ? "-"*total_str : total_str 
-        total_str = brace(total_str, do_latex=do_latex)
+        #total_str = brace(total_str, do_latex=do_latex)
         push!(my_strings, total_str)
     end
     if do_latex 
