@@ -32,13 +32,6 @@ such as qSum and qAtomProduct which consist of qAtom, qAbstract or qComposite ob
 """
 abstract type qComposite <: qObj end  # products and sums of operator definitions
 
-"""
-    qMultiComp
-
-The abstract type `qMultiComposite` is a subtype of `qComposite` and represents composite expressions that contain multiple `qExpr` objects, such as `qCompositeProd` and `qCommutator`. 
-"""
-abstract type qMultiComposite <: qComposite end  
-
 Is = Union{Int,Vector{Int}}
 
 """
@@ -108,18 +101,6 @@ mutable struct qAtomProduct <: qComposite
         return new(statespace, f_fun, [expr]) 
     end
 end
-function show(io::IO, q::qAtomProduct)
-    print(io, "qAtomProduct(")
-    print(io, q.coeff_fun)
-    print(io, ", [")
-    for (i, t) in enumerate(q.expr)
-        if i > 1 
-            print(io, ", ")
-        end
-        print(io, t)
-    end
-    print(io, "])")
-end
 
 """
     qExpr
@@ -144,6 +125,23 @@ function qExpr(statespace::StateSpace, prod::qComposite)
 end
 function qExpr(statespace::StateSpace, terms::qAtom)
     return qExpr(statespace, qAtomProduct(statespace, statespace.fone, [terms]))
+end
+
+
+""" 
+    qCompositeProduct
+
+Represents a product of qComposites. 
+"""
+mutable struct qCompositeProduct <: qComposite
+    statespace::StateSpace         # State space of the product.
+    expr::AbstractVector{<:qComposite} 
+    function qCompositeProduct(statespace::StateSpace, expr::AbstractVector{<:qComposite} )
+        new(statespace, expr)
+    end
+    function qCompositeProduct(expr::AbstractVector{<:qComposite} )
+        new(expr[1].statespace, expr)
+    end
 end
 
 """ 
@@ -261,10 +259,13 @@ function iterate(q::qExpr, state::Int=1)
     state > length(q.terms) && return nothing
     return q.terms[state], state + 1
 end
+#function iterate(q::T, state::Int=1) where T <: qComposite
+#    #iterate the qExpr in qComposite 
+#    state > length(q.expr) && return nothing
+#    return q.expr[state], state + 1
+#end
 function iterate(q::T, state::Int=1) where T <: qComposite
-    #iterate the qExpr in qComposite 
-    state > length(q.expr) && return nothing
-    return q.expr[state], state + 1
+    error("Cannot iterate over a qComposite of type $(T).")
 end
 function iterate(q::qAtomProduct) 
     error("Cannot iterate over a qAtomProduct")
@@ -279,11 +280,11 @@ end
 
 # Optionally, define length and eltype.
 length(q::qExpr) = length(q.terms)
-length(q::qSum) = length(q.expr.terms)
-length(q::qAtomProduct) = length(q.expr)
-iszero(q::qAtomProduct) = iszero(q.coeff_fun)
+
 iszero(q::qExpr) = length(q.terms) == 0 || all(iszero, q.terms)
 iszero(q::qSum) = iszero(q.expr)
+iszero(q::qAtomProduct) = iszero(q.coeff_fun)
+iszero(q::qCompositeProduct) = false
 
 function copy(q::qTerm)::qTerm
     return qTerm(copy(q.op_indices))
@@ -294,13 +295,15 @@ end
 function copy(q::qAtomProduct)::qAtomProduct
     return qAtomProduct(q.statespace, copy(q.coeff_fun), copy(q.expr))
 end
+function copy(q::qCompositeProduct)::qCompositeProduct
+    return qCompositeProduct(q.statespace, copy(q.expr))
+end
 function copy(q::qSum)::qSum
     return qSum(q.statespace, copy(q.expr), copy(q.indexes), copy(q.subsystem_index), copy(q.element_indexes), copy(q.neq))
 end
 function copy(q::qExpr)::qExpr
     return qExpr(q.statespace, copy(q.terms))
 end
-
 function copy(q::diff_qEQ)::diff_qEQ
     return diff_qEQ(copy(q.left_hand_side), copy(q.expr), copy(q.statespace), copy(q.braket), copy(q.do_sigma))
 end

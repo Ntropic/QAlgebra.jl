@@ -88,7 +88,7 @@ function simplify(q::qExpr)::qExpr
                 if isa(curr_term, qSum)
                     simplified_curr_term = simplify(curr_term)
                     if !iszero(simplified_curr_term)
-                        push!(combined_terms, copy(simplified_curr_term))
+                        append!(combined_terms, simplified_curr_term)
                     end
                 else
                     push!(combined_terms, copy(curr_term))

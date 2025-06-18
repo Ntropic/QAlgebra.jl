@@ -206,24 +206,28 @@ function *(p1::qAtomProduct, p2::qAtomProduct)::Vector{qAtomProduct}
     p = trivial_multiply(p1, p2)  # append the terms of p1 and p2.
     return simplify(p)    # simplify the product.
 end
-function *(p1::qAtomProduct, num::Number)::qAtomProduct
-    return qAtomProduct(p1.statespace, p1.coeff_fun*num, copy(p1.terms))
+function *(p1::qAtomProduct, num::Number)::Vector{qAtomProduct}
+    return [qAtomProduct(p1.statespace, p1.coeff_fun*num, copy(p1.expr))]
 end
-function *(num::Number, p1::qAtomProduct)::qAtomProduct
-    return qAtomProduct(p1.statespace, p1.coeff_fun*num, copy(p1.terms))
+function *(num::Number, p1::qAtomProduct)::Vector{qAtomProduct}
+    return [qAtomProduct(p1.statespace, p1.coeff_fun*num, copy(p1.expr))]
+end
+function *(p1::T1, p2::T2)::Vector{qCompositeProduct} where {T1<:qComposite, T2<:qComposite}
+    return [qCompositeProduct(p1.statespace, [p1, p2])]
 end
 
 function *(Q1::qExpr, Q2::qExpr)::qExpr
     if Q1.statespace != Q2.statespace
         error("Cannot multiply qExpr’s from different statespaces.")
     end
-    new_terms = qComposite[]
+    new_terms::AbstractVector{qComposite} = []
     for t1 in Q1.terms
         for t2 in Q2.terms
-            append!(new_terms, t1*t2)  
+            append!(new_terms, t1*t2)   
         end
     end
-    return simplify(qExpr(Q1.statespace, new_terms))
+    return qExpr(Q1.statespace, new_terms)
+    # return simplify(qExpr(Q1.statespace, new_terms))
 end
 function *(Q1::qExpr, Q2::qComposite)::qExpr
     Q_new = copy(Q1)
@@ -242,13 +246,13 @@ function *(Q1::qComposite, Q2::qExpr)::qComposite
     Q_new.expr = Q1.expr * Q2
     return Q_new
 end
-function *(Q1::qComposite, num::Number)::qComposite
+function *(Q1::qComposite, num::Number)::Vector{qComposite}
     Q_new = copy(Q1)
     Q_new.expr = Q1.expr * num
-    return Q_new
+    return [Q_new]
 end
-function *(num::Number, Q2::qComposite)::qComposite
-    return Q2 * num
+function *(num::Number, Q2::qComposite)::Vector{qComposite}
+    return [Q2 * num]
 end
 
 ##### Exponentiation ###################################################
