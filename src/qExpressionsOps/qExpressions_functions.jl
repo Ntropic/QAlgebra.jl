@@ -1,6 +1,6 @@
 import Base: exp, log
 
-export qCommutator, qExp, qLog, qPower, power, qRoot
+export qCommutator, qExp, qLog, qPower, power, qRoot, root
 
 mutable struct qCommutator <: qMultiComposite
     statespace::StateSpace
@@ -30,7 +30,7 @@ end
 function log(q::qExpr)::qExpr
     return qExpr(qLog(q.statespace, q))
 end
-copy(q::qLog) = qExp(q.statespace, copy(q.expr))
+copy(q::qLog) = qLog(q.statespace, copy(q.expr))
 
 
 mutable struct qPower <: qComposite
@@ -38,7 +38,7 @@ mutable struct qPower <: qComposite
     n::Int
     expr::qExpr
 end
-copy(q::qPower) = qExp(q.statespace, n, copy(q.expr))
+copy(q::qPower) = qPower(q.statespace, q.n, copy(q.expr))
 
 function power(q::qExpr, n::Int)::qExpr
     if n == 1 
@@ -59,4 +59,4 @@ function root(q::qExpr, n::Int=2)::qExpr
     end
     return qExpr(qRoot(q.statespace, n, q))
 end
-copy(q::qRoot) = qExp(q.statespace, n, copy(q.expr))
+copy(q::qRoot) = qRoot(q.statespace, q.n, copy(q.expr))

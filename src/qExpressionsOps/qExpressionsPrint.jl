@@ -222,7 +222,6 @@ end
 function qComposite2string(q::qRoot; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     first_sign, total_str = qExpr2string(q.expr, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac) 
     total_str = first_sign ? "-"*total_str : total_str 
-    total_str = brace(total_str, do_latex=do_latex)
     
     if do_latex 
         if q.n == 2
@@ -231,6 +230,7 @@ function qComposite2string(q::qRoot; do_latex::Bool=true, do_sigma::Bool=false, 
             return do_return_braced_false(false, raw"\sqrt["*string(q.n)*"]{" * total_str * "}", return_if_braced)
         end
     else
+        total_str = brace(total_str, do_latex=do_latex)
         return do_return_braced_false(false, total_str * str2sup("1="*string(q.n)), return_if_braced)
     end
 end

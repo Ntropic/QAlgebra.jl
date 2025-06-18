@@ -81,7 +81,7 @@ export QubitPauli, QubitPM, Ladder
 include("qExpressions.jl")
 using .qExpressions
 export qObj, qAtom, qComposite, qMultiComp, qTerm, qAtomProduct, qExpr, qSum, Sum, ∑, diff_qEQ, base_operators, flatten, neq, d_dt
-export qCommutator, qExp, qLog, qPower, power, qRoot
+export qCommutator, qExp, qLog, qPower, power, qRoot, root
 export Dag, Commutator, isnumeric
 export string, latex_string
 export term
