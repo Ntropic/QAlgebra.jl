@@ -243,7 +243,7 @@ function qComposite2string(q::qCommutator; do_latex::Bool=true, do_sigma::Bool=f
         push!(my_strings, total_str)
     end
     if do_latex 
-        return do_return_braced_false(false, raw"\left["*join(my_strings, ", ") * raw"\right]", return_if_braced)
+        return do_return_braced_false(false, raw"\left["*join(my_strings, raw",\,") * raw"\right]", return_if_braced)
     else
         return do_return_braced_false(false, "["*join(my_strings, ", ") * "]", return_if_braced)
     end
