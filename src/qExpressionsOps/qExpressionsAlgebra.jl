@@ -385,11 +385,11 @@ end
 function Dag(qspace::StateSpace, t::qAbstract)::Vector{Tuple{qAbstract, ComplexRational}} 
     # check if is hermitian
     if t.operator_type.hermitian
-        return [t], [one(ComplexRational)]
+        return Tuple{qAbstract, ComplexRational}[(t, one(ComplexRational))]
     end 
     new_t = copy(t) 
     new_t.dag = !t.dag 
-    return [(new_t, one(ComplexRational))]
+    return Tuple{qAbstract, ComplexRational}[(new_t, one(ComplexRational))]
 end
 
 function Dag(p::qAtomProduct)::Vector{qAtomProduct} 

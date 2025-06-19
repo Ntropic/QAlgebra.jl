@@ -138,6 +138,10 @@ function simple_combinable_F(t1::Union{FAtom, FSum}, t2::Union{FAtom, FSum})::Tu
     end
     @assert length(t1) == length(t2) "Cannot separate pair terms with different lengths."
 
+    if all(a -> all(e == 0 for e in a.var_exponents), t1.terms)
+        return false, ComplexRational(0, 0, 1)
+    end
+    
     # check if corresponding terms have the similar exponents (i.e. the difference of exponents has to be the same for each term in FSum)
     exponents_diff = t1.terms[1].var_exponents .- t2.terms[1].var_exponents
     if !all([diff == 0 for diff in exponents_diff])

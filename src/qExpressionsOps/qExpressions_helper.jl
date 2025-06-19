@@ -1,6 +1,11 @@
-function reduce_qabstract_pair(a::qAbstract, b::qAbstract)::Tuple{Vector{qAbstract}, Bool}
+function reduce_qabstract_pair(a::qAbstract, b::qAbstract, statespace::StateSpace)::Tuple{Vector{qAbstract}, Bool}
     # must be exactly the same operator subtype
-    if !same_term_types(a, b)
+    if !same_term_type(a, b)
+        if qAtom_commute(a, b, statespace)
+            if qAtom_sort_key(b) < qAtom_sort_key(a)
+                return qAbstract[b, a], false
+            end
+        end
         return qAbstract[a,b], false
     end
 
@@ -10,18 +15,34 @@ function reduce_qabstract_pair(a::qAbstract, b::qAbstract)::Tuple{Vector{qAbstra
             t = copy(a)
             t.dag = false
             t.exponent += b.exponent
+            if t.exponent == 0
+                return qAbstract[], true
+            end
             return qAbstract[t], true
         elseif a.operator_type.unitary
             t = copy(a)
             t.dag = false
             # note: exponent^dag flips sign
             t.exponent = a.exponent * (-1)^Int(a.dag) + b.exponent * (-1)^Int(b.dag)
+            if t.exponent == 0
+                return qAbstract[], true
+            end
             return qAbstract[t], true
         end
-    elseif !(a.dag || b.dag)   # neither is dag
+        return qAbstract[a,b], false
+    else #if !xor(a.dag, b.dag)  # bath have same dag
         t = copy(a)
-        t.dag = false
+        t.dag = a.dag
         t.exponent += b.exponent
+        if a.operator_type.hermitian
+            t.dag = false 
+        elseif a.operator_type.unitary
+            t.dag = false
+            t.exponent = .-t.exponent
+        end
+        if t.exponent == 0
+            return qAbstract[], true
+        end
         return qAbstract[t], true
     end
 
@@ -32,7 +53,7 @@ end
 function simplify_pair(x::qAtom, y::qAtom, ss::StateSpace)::Tuple{Vector{Tuple{ComplexRational, Vector{qAtom}}}, Bool}
     if isa(x, qAbstract) 
         if isa(y, qAbstract) # 1) two abstracts → try reduction
-            new_abs, did = reduce_qabstract_pair(x, y)
+            new_abs, did = reduce_qabstract_pair(x, y, ss)
             if did
                 out = Vector{Tuple{ComplexRational, Vector{qAtom}}}()
                 for t in new_abs
@@ -40,6 +61,7 @@ function simplify_pair(x::qAtom, y::qAtom, ss::StateSpace)::Tuple{Vector{Tuple{C
                 end
                 return out, true
             end
+            return Tuple{ComplexRational, Vector{qAtom}}[(one(ComplexRational), Vector{qAtom}([x,y]))], false
         else  # 1) qAbstract * qTerm → try (partial) commutation
             commuting_qterm = copy(ss.neutral_op)
             non_commuting_qterm = copy(ss.neutral_op)
