@@ -4,7 +4,7 @@ using ..StringUtils
 using ComplexRationals
 using ..qAlgebra: get_default 
 
-export FFunction, FAtom, FSum, FRational, simplify, isnumeric, iszero, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
+export FFunction, FAtom, FSum, FRational, simplify, isnumeric, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
 
 """
     FFunction

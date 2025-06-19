@@ -9,6 +9,9 @@ export Dag, Commutator, is_numeric, same_statespace
 
 Returns true if only the coefficient of the term(s) is non-zero.
 """
+function is_numeric(op_indices::Vector{Is}, statespace::StateSpace)::Bool
+    return statespace.neutral_op == op_indices
+end
 function is_numeric(e::qAtom, statespace::StateSpace)
     error("is_numeric (with given statespace) not implemented for qAbstract subtype $(typeof(e))")
 end
@@ -204,7 +207,8 @@ end
 #### Main Multiplication Functions ################################################
 function *(p1::qAtomProduct, p2::qAtomProduct)::Vector{qAtomProduct}
     p = trivial_multiply(p1, p2)  # append the terms of p1 and p2.
-    return simplify(p)    # simplify the product.
+    return [p]
+    #return simplify(p)    # simplify the product.   # return to this return argument after fixing simplify 
 end
 function *(p1::qAtomProduct, num::Number)::Vector{qAtomProduct}
     return [qAtomProduct(p1.statespace, p1.coeff_fun*num, copy(p1.expr))]
@@ -345,14 +349,14 @@ function Identity(qspace::StateSpace)
 end
 
 """
-    Dag(t::qTerm, qspace::StateSpace) -> qTerm
+    Dag(qspace::StateSpace, t::qTerm) -> qTerm
     Dag(t::qExpr) -> qExpr
     Dag(t::qComposite) -> qComposite
     
 Returns the Hermitian conjugate (dagger) of a qTerm, qExpr or qSum.
 Overloads the adjoint function, which can be called via `t′`.
 """
-function Dag(t::qTerm, qspace::StateSpace)::Tuple{Vector{qTerm}, Vector{ComplexRational}}
+function Dag(qspace::StateSpace, t::qTerm)::Vector{Tuple{qTerm, ComplexRational}}
     # Build a vector of the op_set for each operator factor, in the same order as t.op_indices.
     new_op_inds::Vector{Vector{Tuple{ComplexRational,Is}}} = []
     curr_op_inds = t.op_indices
@@ -369,7 +373,7 @@ function Dag(t::qTerm, qspace::StateSpace)::Tuple{Vector{qTerm}, Vector{ComplexR
     coeffs::Vector{ComplexRational} = ComplexRational[]
     for combo in product(new_op_inds...)
         curr_inds::Vector{Is} = []
-        curr_coeff::ComplexRational = new_coeff
+        curr_coeff::ComplexRational = ComplexRational(1,0,1)
         for i in 1:length(combo)
             curr_coeff *= combo[i][1]
             push!(curr_inds, combo[i][2])
@@ -377,37 +381,57 @@ function Dag(t::qTerm, qspace::StateSpace)::Tuple{Vector{qTerm}, Vector{ComplexR
         push!(terms, qTerm(curr_inds))
         push!(coeffs, curr_coeff)
     end
-    return terms, coeffs
+    return collect(zip(terms, coeffs))
 end
-function Dag(t::qAbstract, qspace::StateSpace)::Tuple{Vector{qAbstract}, Vector{ComplexRational}} 
+function Dag(qspace::StateSpace, t::qAbstract)::Vector{Tuple{qAbstract, ComplexRational}} 
     # check if is hermitian
     if t.operator_type.hermitian
         return [t], [one(ComplexRational)]
     end 
-    # check if is daggered already 
-    if t.operator_type.daggered 
-        new_t = copy(t) 
-        new_t.dag = !t.dag 
-        return [new_t], [one(ComplexRational)]
-    end 
+    new_t = copy(t) 
+    new_t.dag = !t.dag 
+    return [(new_t, one(ComplexRational))]
 end
 
-function Dag(p::qAtomProduct)::qExpr 
+function Dag(p::qAtomProduct)::Vector{qAtomProduct} 
     # reverse order elementwise Dag 
-    terms = []
+    terms::Vector{Vector{Tuple{qAtom, ComplexRational}}} = []
     for t in reverse(p.expr)
-        push!(terms, Dag(t))
+        push!(terms, Dag(p.statespace, t))
     end
-    return qAtomProduct(p.statespace, conj(p.coeff_fun), terms)
+    coeff_fun = p.coeff_fun
+    new_atom_products::Vector{qAtomProduct} = []
+    for combo in Iterators.product(terms...)
+        curr_atoms = [a[1] for a in combo]
+        curr_coeff = [a[2] for a in combo]
+        coeff = reduce(*, curr_coeff)
+        if !iszero(coeff)
+            push!(new_atom_products, qAtomProduct(p.statespace, coeff_fun*coeff, curr_atoms))
+        end
+    end
+    return new_atom_products 
 end
 
 function Dag(Q::qExpr)::qExpr
-    return qExpr([Dag(t, Q.statespace) for t in Q.terms])
+    q_comps::Vector{qComposite} = []
+    for q in Q.terms
+        append!(q_comps, Dag(q))
+    end
+    return qExpr(q_comps)
 end
-function Dag(t::qComposite)::qComposite
+function Dag(t::qComposite)::Vector{qComposite}
     t_new = copy(t) 
     t_new.expr = Dag(t.expr)
-    return t_new 
+    return [t_new]
+end
+function Dag(t::qMultiComposite)::Vector{qMultiComposite}
+    t_new = copy(t) 
+    dag_exprs::Vector{qExpr} = []
+    for expr in reverse(t.expr)
+        append!(dag_exprs, Dag(expr))
+    end
+    t_new.expr = dag_exprs 
+    return [t_new]
 end
 
 adjoint(Q::qExpr) = Dag(Q)

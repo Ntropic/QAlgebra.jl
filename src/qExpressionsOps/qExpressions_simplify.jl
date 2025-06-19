@@ -35,26 +35,27 @@ end
 
 import ..FFunctions: simplify
 function simplify(p::qAtomProduct)::Vector{qComposite}
-    p_new = qComposite[pad_before_qAbstracts(p)]
-    did_any = true 
+    current_products = [(one(ComplexRational), p.expr)]
+    did_any = true
+
     while did_any
-        left_terms = qComposite[] 
-        for curr_p in p_new 
-            append!(left_terms, qTerms2left(curr_p)) 
-        end 
-        did_any = false 
-        p_new = qComposite[] 
-        
-        for i in 1:length(left_terms)
-            new_term, did_it = reduce_qabstractpairs(left_terms[i])
-            push!(p_new, new_term)
-            if did_it
+        new_products = Tuple{ComplexRational, Vector{qAtom}}[]
+        did_any = false
+
+        for (coeff, terms) in current_products
+            simplified_terms, changed = simplify_pairs(terms, p.statespace)
+            if changed
                 did_any = true
             end
+            for (c, t) in simplified_terms
+                push!(new_products, (coeff * c, t))
+            end
         end
+        current_products = new_products
     end
-    return p_new
-    #return qExpr(p.statespace, p_new)
+
+    # Wrap in qComposite or qAtomProduct
+    return [qAtomProduct(p.statespace, c * p.coeff_fun, t) for (c, t) in current_products]
 end  
 function simplify(p::qCompositeProduct)::Vector{qCompositeProduct}
     return [copy(p)]

@@ -5,12 +5,13 @@ using ..StringUtils
 using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, ^, product, iszero, copy
 using ..qAlgebra: get_default 
-
-export qObj, qAtom, qComposite, qMultiComposite, qTerm, qAtomProduct, qExpr, qSum, Sum, ∑, diff_qEQ, base_operators,simplify, flatten, neq, d_dt
+using ..FFunctions: isnumeric
+export qObj, qAtom, qAbstract, qComposite, qMultiComposite, qTerm, qAtomProduct, qExpr, qSum, Sum, ∑, diff_qEQ, base_operators,simplify, flatten, neq, d_dt
 
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
 # ==========================================================================================================================================================
+Is = Union{Int,Vector{Int}}
 
 """ 
     qObj
@@ -39,8 +40,6 @@ Abstract type for composite expressions that contain a Vector of qExpr objects.
 """
 abstract type qMultiComposite <: qComposite end
 
-Is = Union{Int,Vector{Int}}
-
 """
     qTerm
 
@@ -63,7 +62,7 @@ A purely‐symbolic abstract operator
     - index_map: Keeps track of indexes, that are equal (for neq transformations)
 Is an instance of an OperatorType 
 """
-struct qAbstract <: qAtom
+mutable struct qAbstract <: qAtom
     key_index::Int
     sub_index::Int
     exponent::Int
@@ -197,9 +196,9 @@ It represents time evolution of operator expectation values, and wraps the symbo
 - `do_sigma::Bool`: Whether to display Pauli operators as `σₓ`, etc. (default = `true`).
 """
 mutable struct diff_qEQ <: qComposite
+    statespace::StateSpace
     left_hand_side::qAtomProduct
     expr::qExpr
-    statespace::StateSpace
     braket::Bool
     do_sigma::Bool
 end
@@ -211,9 +210,9 @@ Construct a [`diff_qEQ`](@ref) that represents the time derivative of ⟨lhs⟩ 
 
 Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
-function diff_qEQ(left_hand_side::qAtomProduct, expr::qExpr, statespace::StateSpace; braket::Bool=true, do_sigma::Bool=false)
+function diff_qEQ(statespace::StateSpace, left_hand_side::qAtomProduct, expr::qExpr; braket::Bool=true, do_sigma::Bool=false)
     new_rhs = neq(expr)
-    return diff_qEQ(left_hand_side, new_rhs, statespace, braket, do_sigma)
+    return diff_qEQ(statespace, left_hand_side, new_rhs, braket, do_sigma)
 end
 
 """
@@ -367,14 +366,17 @@ function d_dt(left_hand::Union{qAtomProduct,qExpr}, right_hand::qExpr)::diff_qEQ
             error("Left-hand side of the equation must consist of a single qTerm.")
         end
         left_hand = left_hand.terms[1]
+        if !isa(left_hand, qAtomProduct)
+            error("Left-hand side of the equation must be a qAtomProduct. Or a qAtomProduct wrapped in a qExpr. ")
+        end
     end
-    if abs(left_hand.coeff - 1) > 1e-10
-        error("Left-hand side of the equation must be a qTerm with coeff 1.")
+    if !isnumeric(left_hand.coeff_fun) && abs(left_hand.coeff_fun - 1) != 0
+        error("Left-hand side of the equation must be a qTerm with a purely numeric coefficient of 1.")
     end
     if !iszero(left_hand.coeff_fun.var_exponents)
         error("Left-hand side of the equation must be a qTerm with no variable exponents.")
     end
     # Return a diff_qEQ constructed from these sides.
-    return diff_qEQ(left_hand, right_hand, qstate)
+    return diff_qEQ(qstate, left_hand, right_hand, )
 end
 end

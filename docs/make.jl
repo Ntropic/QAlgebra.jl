@@ -8,7 +8,7 @@ makedocs(;
     pages=[
         "Home" => "index.md",
         "API Reference" => [
-            "Operator Spaces" => "api/statespace.md",
+            "Operator Spaces" => "api/qSpace.md",
             "qExpressions" => "api/qExpressions.md",
             "Defaults" => "api/defaults.md"
         ]

@@ -390,11 +390,11 @@ function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, brace
     end
 end
 
-function diff_qEQ2string(q::diff_qEQ; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true)::String
-    curr_sign, curr_string = qExpr2string(eq, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
+function diff_qEQ2string(eq::diff_qEQ; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true)::String
+    curr_sign, curr_string = qExpr2string(eq.expr, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
     right_hand_side = curr_sign ? "-" * curr_string : curr_string
 
-    curr_sign, curr_string = qComposite2string(eq, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
+    curr_sign, curr_string = qComposite2string(eq.left_hand_side, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
     left_hand_side_op_str = curr_sign ? "-" * curr_string : curr_string
     left_hand_side_op_str = lstrip(left_hand_side_op_str, '+')
 
@@ -403,7 +403,7 @@ function diff_qEQ2string(q::diff_qEQ; do_latex::Bool=true, do_sigma::Bool=false,
     else
         left_hand_side = "d(" * left_hand_side_op_str * ") / dt"
     end
-    return left_hand_side * " = " * expr
+    return left_hand_side * " = " * right_hand_side
 end
 
 #### String ##########################################################################################################################

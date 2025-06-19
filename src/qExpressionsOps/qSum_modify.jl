@@ -138,7 +138,7 @@ Considers all cases of the sums, simplifying the cases in which indexes are the 
 function neq(qeq::qExpr)::qExpr
     # flatten first 
     qeq = flatten(qeq)
-    out = qExpr(qeq.statespace, qTerm[])
+    out = qExpr(qeq.statespace, qComposite[])
     for t in qeq.terms
         if t isa qSum
             # expand this sum into distinct + diag parts

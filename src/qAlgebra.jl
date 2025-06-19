@@ -71,7 +71,7 @@ include("StringUtils.jl")
 
 include("FFunctions.jl")
 using .FFunctions
-export FFunction, FAtom, FSum, FRational, simplify, isnumeric, iszero, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
+export FFunction, FAtom, FSum, FRational, simplify, isnumeric, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
 
 include("qSpace.jl")
 using .qSpace
@@ -80,7 +80,7 @@ export QubitPauli, QubitPM, Ladder
 
 include("qExpressions.jl")
 using .qExpressions
-export qObj, qAtom, qComposite, qMultiComp, qTerm, qAtomProduct, qExpr, qSum, Sum, ∑, diff_qEQ, base_operators, flatten, neq, d_dt
+export qObj, qAtom, qAbstract, qComposite, qMultiComp, qTerm, qAtomProduct, qExpr, qSum, Sum, ∑, diff_qEQ, base_operators, flatten, neq, d_dt
 export qCommutator, qExp, qLog, qPower, power, qRoot, root
 export Dag, Commutator, isnumeric
 export string, latex_string
