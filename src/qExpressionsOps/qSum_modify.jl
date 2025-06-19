@@ -138,13 +138,20 @@ Considers all cases of the sums, simplifying the cases in which indexes are the 
 function neq(qeq::qExpr)::qExpr
     # flatten first 
     qeq = flatten(qeq)
-    out = qExpr(qeq.statespace, qComposite[])
-    for t in qeq.terms
-        if t isa qSum
+    if length(qeq) == 0
+        return qeq
+    end
+    if isa(qeq.terms[1], qSum) 
+        out = neq_sum(qeq.terms[1])
+    else
+        out = qExpr(qeq.statespace, copy(qeq.terms[1]))
+    end
+    for t in qeq.terms[2:end]
+        if isa(t, qSum)
             # expand this sum into distinct + diag parts
             out += neq_qsum(t)
         else
-            out += t
+            out += copy(t)
         end
     end
     for t in out.terms

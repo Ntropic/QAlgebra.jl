@@ -84,27 +84,46 @@ function simplify_pair(x::qAtom, y::qAtom, ss::StateSpace)::Tuple{Vector{Tuple{C
 end
 
 function simplify_pairs(expr::Vector{qAtom}, ss::StateSpace)::Tuple{Vector{Tuple{ComplexRational, Vector{qAtom}}}, Bool}
-    results = [(one(ComplexRational), copy(expr))]
+    # We're going to track triples (coeff, terms, i)
+    # where i is the next index at which to apply simplify_pair.
+    results = Tuple{ComplexRational, Vector{qAtom}, Int}[(one(ComplexRational), copy(expr), length(expr)-1)]
     changed = false
-    for i in (length(expr)-1):-1:1
-        new_results = Vector{Tuple{ComplexRational, Vector{qAtom}}}()
-        for (c, terms) in results
-            x, y = terms[i], terms[i+1]
-            outs, did = simplify_pair(x, y, ss)
-            if did
-                changed = true
-                for (dc, pair) in outs
-                    new_expr = Vector{qAtom}()
-                    append!(new_expr, terms[1:i-1])
-                    append!(new_expr, pair)
-                    append!(new_expr, terms[i+2:end])
-                    push!(new_results, (c * dc, new_expr))
+    # Keep going until every triple has i == 0
+    while any(triple -> triple[3] > 0, results)
+        new_results = Vector{Tuple{ComplexRational, Vector{qAtom}, Int}}()
+        for (c, terms, i) in results
+            if i > 0
+                # try a single-pair rewrite at position i
+                x, y = terms[i], terms[i+1]
+                outs, did = simplify_pair(x, y, ss)
+                
+                if did
+                    changed = true
+                    # for each rewrite, build the new terms and decrement i
+                    for (dc, pair) in outs
+                        new_terms = Vector{qAtom}()
+                        append!(new_terms, terms[1:i-1])
+                        append!(new_terms, pair)
+                        append!(new_terms, terms[i+2:end])
+                        if length(pair) == 0
+                            push!(new_results, (c * dc, new_terms, i-2))
+                        else
+                            push!(new_results, (c * dc, new_terms, i-1))
+                        end
+                    end
+                else
+                    # no change here, just move on
+                    push!(new_results, (c, terms, i-1))
                 end
             else
-                push!(new_results, (c, terms))
+                # already at i==0, carry forward unchanged
+                push!(new_results, (c, terms, 0))
             end
         end
+        
         results = new_results
     end
-    return results, changed 
+    
+    # strip off the index and return just (coeff, terms)
+    return [(c, terms) for (c, terms, _) in results], changed
 end

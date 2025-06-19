@@ -91,7 +91,6 @@ function simplify(q::qExpr)::qExpr
     combined_terms = qComposite[]
     i = 1
     curr_term = sorted_terms[1]
-    curr_i = 1
     while i < length(sorted_terms)
         # Combine adjacent like terms.
         next_term = sorted_terms[i+1]
@@ -100,9 +99,8 @@ function simplify(q::qExpr)::qExpr
         else
             if !iszero(curr_term)
                 push!(combined_terms, copy(curr_term))
-                curr_term = next_term
-                curr_i = i + 1
             end
+            curr_term = next_term
         end
         i += 1
     end

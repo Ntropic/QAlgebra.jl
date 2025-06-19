@@ -399,7 +399,8 @@ function diff_qEQ2string(eq::diff_qEQ; do_latex::Bool=true, do_sigma::Bool=false
     left_hand_side_op_str = lstrip(left_hand_side_op_str, '+')
 
     if do_latex
-        left_hand_side = raw"\frac{\text{d} \phantom{t}}{\text{d}t}\!" * left_hand_side_op_str
+        #left_hand_side = raw"\frac{\text{d} \phantom{t}}{\text{d}t}\!" * left_hand_side_op_str
+        left_hand_side = raw"\frac{\text{d} "*left_hand_side_op_str*raw"}{\text{d}t}"
     else
         left_hand_side = "d(" * left_hand_side_op_str * ") / dt"
     end

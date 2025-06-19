@@ -201,7 +201,7 @@ function ratios_Fs(ts::AbstractVector{Union{FAtom,FSum}})::Vector{ComplexRationa
     end
     return ratios
 end
-function group_Fs(ts::AbstractVector{Union{FAtom,FSum}})::Union{FAtom, FSum, Tuple{FAtom, AbstractVector{Union{FAtom, FSum}}}}
+function group_Fs(ts::AbstractVector{Union{FAtom,FSum}})::Union{FAtom, FSum, Tuple{Union{FAtom, FSum}, AbstractVector{Union{FAtom, FSum}}}}
     # find the correct way to group a group of Fs (they must be groupable, create the input vector with simple_combinable_Fs)
     if length(ts) == 1
         return ts[1]
