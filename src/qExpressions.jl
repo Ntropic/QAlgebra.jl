@@ -83,7 +83,7 @@ It contains:
     - `coeff_fun`: The function of parameters for the Operator product
     - `expr`: A vector of qAtoms (qTerms or qAbstract) that are multiplied together.
 """
-struct qAtomProduct <: qComposite
+mutable struct qAtomProduct <: qComposite
     statespace::StateSpace         # State space of the product.
     coeff_fun::FFunction            # function of scalar parameters => has +,-,*,/,^ defined 
     expr::Vector{qAtom}             # Vector of qAtoms (qTerms or qAbstract).

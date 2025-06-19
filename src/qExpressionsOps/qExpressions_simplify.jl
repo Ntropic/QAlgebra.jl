@@ -10,7 +10,7 @@ end
 function same_term_type(t1::qAtomProduct, t2::qAtomProduct)::Bool
     # check operators individually -> must all be the same!
     if length(t1.expr) != length(t2.expr) 
-        same = false
+        return false
     end
     for (a,b) in zip(t1.expr, t2.expr) 
         if !same_term_type(a,b)
@@ -86,8 +86,7 @@ function simplify(q::qExpr)::qExpr
     q = qExpr(q.statespace, expr)
     
     # First, sort qExpr without modifying the original.
-    sorted_q = sort(q)
-    sorted_terms = copy(sorted_q.terms)
+    sorted_terms = _sort(expr)
 
     combined_terms = qComposite[]
     i = 1
@@ -100,14 +99,7 @@ function simplify(q::qExpr)::qExpr
             curr_term = combine_term(curr_term, next_term)
         else
             if !iszero(curr_term)
-                if isa(curr_term, qSum)
-                    simplified_curr_term = simplify(curr_term)
-                    if !iszero(simplified_curr_term)
-                        append!(combined_terms, simplified_curr_term)
-                    end
-                else
-                    push!(combined_terms, copy(curr_term))
-                end
+                push!(combined_terms, copy(curr_term))
                 curr_term = next_term
                 curr_i = i + 1
             end
