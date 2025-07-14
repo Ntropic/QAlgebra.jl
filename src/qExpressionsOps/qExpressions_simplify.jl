@@ -33,7 +33,21 @@ function combine_term(s1::qSum, s2::qSum)::qSum
     return qSum(s1.statespace, simplify(s1.expr + s2.expr), s1.indexes, s1.subsystem_index, s1.element_indexes, s1.neq)
 end
 
-import ..FFunctions: simplify
+#import ..FFunctions: simplify
+"""
+    simplify(q) -> simplified
+
+Simplifies `qExpr`-based symbolic quantum expressions by recursively reducing internal structures:
+
+- `qAtomProduct`: Applies pairwise simplifications repeatedly and merges results into canonical `qAtomProduct`s.
+- `qMultiComposite`: Simplifies each expression element-wise.
+- `qComposite`: Simplifies its internal expression and returns a new `qComposite`.
+- `qExpr`: Flattens and simplifies terms, then combines like terms where possible.
+- `qSum`: Simplifies its expression array and returns a new `qSum`.
+- `diff_qEQ`: Replaces its right-hand side with a simplified version.
+
+Returns either a single simplified object or a list of canonical components depending on input type.
+"""
 function simplify(p::qAtomProduct)::Vector{qComposite}
     current_products = [(one(ComplexRational), p.expr)]
     did_any = true
@@ -120,7 +134,6 @@ function simplify(s::qSum)::Vector{qComposite}
     simplified_expr = simplify(s.expr)
     return [qSum(s.statespace, simplified_expr, s.indexes, s.subsystem_index, s.element_indexes, s.neq)]
 end
-
 
 function simplify(q::diff_qEQ)::diff_qEQ
     simp_rhs = simplify(q.expr)

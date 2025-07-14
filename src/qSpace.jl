@@ -80,8 +80,9 @@ mutable struct Parameter
     var_of_t::Bool
     var_of_continuum::Bool
     var_continuum_index::Int
+    var_subspace_indexes::Vector{Int}
 
-    function Parameter(var_name::String, var_of_t::Bool, var_of_continuum::Bool, var_continuum_index::Int=0; var_val::Union{Nothing,Number,Vector{Number},Function}=nothing, var_suffix::String="")
+    function Parameter(var_name::String, var_of_t::Bool, var_of_continuum::Bool, var_continuum_index::Int=0; var_val::Union{Nothing,Number,Vector{Number},Function}=nothing, var_suffix::String="", var_subspace_indexes::Vector{Int}=[])
         var_suffix_str = str2sub(var_suffix)
         var_str = ""
         if haskey(var_substitution, var_name)
@@ -107,7 +108,7 @@ mutable struct Parameter
         if length(var_suffix) > 0
             var_name_mod *= "_" * var_suffix
         end
-        new(var_name_mod, var_str, var_latex, var_val, var_of_t, var_of_continuum, var_continuum_index)
+        new(var_name_mod, var_str, var_latex, var_val, var_of_t, var_of_continuum, var_continuum_index, var_subspace_indexes)
     end
 end
 

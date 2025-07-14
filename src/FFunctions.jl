@@ -271,6 +271,14 @@ import Base: sort!, sort
 #    return [a.a, a.b, a.c]
 #end
 
+"""
+    sort_key(f::FFunction) -> Vector{<:Real}
+
+Returns a vector used to sort symbolic expressions in a canonical order:
+- `FAtom`: variable exponents followed by a coefficient key.
+- `FSum`: length and keys of terms.
+- `FRational`: denominator keys first (priority), then numerator.
+"""
 function sort_key(a::FAtom)
     return vcat(a.var_exponents, custom_sort_key(a.coeff))
 end
@@ -572,6 +580,14 @@ function is_abs_one(c::FFunction)
 end
 
 # --- Generic string constructor ---
+"""
+    stringer(f::FFunction, vars::Vector{String};
+             do_latex::Bool = false,
+             do_frac::Bool = true) -> (sign::Bool, body::String)
+
+Internal helper that converts an `FFunction` into a signed string using provided variable names.
+Used by `to_string`; returns a sign flag and a formatted string (in LaTeX or plain text).
+"""
 function stringer(f::FFunction)::Tuple{String,String}
     error("No fallback method for FFunction type: $(typeof(f))")
 end

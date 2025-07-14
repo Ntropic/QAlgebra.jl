@@ -13,7 +13,13 @@ The following additional types represent the building blocks of a composite quan
 OperatorSet
 SubSpace
 Parameter
+OperatorType
 StateSpace
+```
+
+If a global state space is defined via the `make_global` parameter in the `StateSpace` constructor, it will be stored in the global variable 
+```@docs
+GLOBAL_STATE_SPACE
 ```
 
 ---
@@ -25,13 +31,5 @@ The package includes three standard operator sets for immediate use:
 - `QubitPauli` defines a qubit in the standard Pauli basis ($\sigma_x$, $\sigma_y$, $\sigma_z$)
 - `QubitPM` defines a qubit with aising/lowering basis (`σ⁺`, `σ⁻`, `σᶻ`)
 - `Ladder` defines a bosonic mode via ladder operators (`b`, `b†`)
-
-These are loaded from:
-
-```julia
-include("OperatorSets/Qubit_Pauli.jl")
-include("OperatorSets/Qubit_PM.jl")
-include("OperatorSets/Ladder.jl")
-```
 
 They each provide appropriate `op_product`, `op_dag`, and rendering functions, and can be passed as values to the `StateSpace` constructor.

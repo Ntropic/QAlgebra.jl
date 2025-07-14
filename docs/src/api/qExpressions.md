@@ -12,7 +12,7 @@ qAlgebra organizes expressions into:
 
 ---
 
-## 1. Expression Types
+## Expression Types
 We define the main types:
 ```@docs
 qObj
@@ -26,16 +26,16 @@ For the atomic operators we have
 qTerm
 qAbstract
 ```
-- [`qTerm`](@ref) r specifies a concrete operator, with components on one or multiple of the subsystems defined in a state space.
+- [`qTerm`](@ref) specifies a concrete operator, with components on one or multiple of the subsystems defined in a state space.
 - [`qAbstract`](@ref) is an abstract type for all quantum operators, which can later be substituted for a concrete operator, but is now only known by its properties, such as its name, types (Hermitian, unitary, and the subspaces on which it acts etc.).
 
 For composite operators we have
 ```@docs
 qAtomProduct
+qCompositeProduct
+qMultiComposite
 qSum
 ```
-- [`qTerm`](@ref) represents a single operator term with a coefficient.
-- [`qSum`](@ref) represents a symbolic summation over indices.
 
 Finally we have quantum expressions that are constructed as linear combinations of composite operators and differential equations in time \( d/dt \langle \text{Op} \rangle \) which define the time derivative (of the expectation value) of a composite operator as a quantum expression
 ```@docs
@@ -45,32 +45,23 @@ diff_qEQ
 
 ---
 
-## 2. Basic Construction and Simplification
+## Basic Construction and Simplification
 
 ```@docs
 term
-simplify
+qAlgebra.qExpressions.simplify
 base_operators
 Sum
 ∑
 flatten
 neq
 d_dt
-isnumeric
+qAlgebra.qExpressions.is_numeric
 ```
-
-- [`term`](@ref) constructs a single `qTerm` manually.
-- [`simplify`](@ref) combines like terms and removes near-zero terms.
-- [`base_operators`](@ref) extracts symbolic variables and operators from a [`StateSpace`](@ref).
-- [`Sum`](@ref) and [`∑`](@ref) construct symbolic sums.
-- [`flatten`](@ref) expands nested sums.
-- [`neq`](@ref) enforces distinctness between summation indices.
-- [`d_dt`](@ref) builds time derivatives (`diff_qEQ`).
-- [`isnumeric`](@ref) checks if an expression simplifies to a pure number or neutral operator.
 
 ---
 
-## 3. Printing and Output Formatting
+##  Printing and Output Formatting
 
 ```@docs
 string
