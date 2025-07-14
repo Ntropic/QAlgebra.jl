@@ -4,7 +4,7 @@ using ..StringUtils
 using ComplexRationals
 using ..qAlgebra: get_default 
 
-export FFunction, FAtom, FSum, FRational, simplify, isnumeric, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
+export FFunction, FAtom, FSum, FRational, isnumeric, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
 
 """
     FFunction
@@ -375,29 +375,7 @@ adjoint(f::FSum) = FSum([adjoint(t) for t in f.terms])
 adjoint(f::FRational) = FRational(adjoint(f.numer), adjoint(f.denom))
 conj(f::FFunction) = adjoint(f)
 
-"""
-For FFunction objects we have
-
-    simplify(a::FAtom) -> FAtom
-    simplify(s::FSum)  -> FSum
-    simplify(r::FRational) -> FFunction
-
-Simplifies symbolic expressions:
-- **Atom**: returns unchanged.
-- **Sum**: recursively simplifies terms, sorts them, and combines like terms (unifies coefficients).
-- **Rational**: simplifies numerator and denominator, cancels common factors in coefficients and exponents, and collapses to a sum if the denominator becomes a single term.
-
-And for qOperator based objects
-
-    simplify(q::qAtomProduct, statespace::StateSpace) -> qAtomProduct
-    simplify(q::qExpr) -> qExpr
-    simplify(q::qSum) -> qSum
-    simplify(q::diff_qEQ) -> diff_qEQ
-
-Simplify a qAtomProduct, qExpr, qSum or diff_qEQ by sorting terms and ading up terms that are equal (up to a coefficient). 
-"""
 function simplify end
-
 function simplify(s::FAtom)
     return s 
 end

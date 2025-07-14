@@ -5,6 +5,7 @@ using Documenter
 makedocs(;
     modules=[qAlgebra, qAlgebra.FFunctions],
     sitename="qAlgebra.jl Documentation",
+    format = Documenter.HTML(prettyurls = get(ENV, "CI", nothing) == "true"),
     pages=[
         "Home" => "index.md",
         "API Reference" => [

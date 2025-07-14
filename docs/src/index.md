@@ -1,63 +1,121 @@
 # qAlgebra.jl
 
-**qAlgebra.jl** provides symbolic tools for building and manipulating quantum operator expressions  
-on structured composite systems of qubits, spins, or bosonic modes.
+**qAlgebra.jl** provides symbolic tools for constructing and manipulating quantum operator expressions  
+on structured composite systems of qubits, spins, and bosonic modes.
 
-The core idea is to first define a [`StateSpace`](@ref), which encodes the variables, subsystems, and operator bases.  
-From this space, symbolic expressions can be constructed and manipulated. Our expression types are
+The core abstraction is the [`StateSpace`](@ref), which defines:
+- the symbolic variables (e.g. coupling constants),
+- the operator bases (e.g. Pauli, ladder, raising/lowering),
+- and the indexed structure of composite systems.
 
-- [`qTerm`](@ref): individual operator terms
-- [`qExpr`](@ref): linear combination of other composite expressions
-- [`qSum`](@ref): symbolic sums over indices
-- [`diff_qEQ`](@ref): symbolic time evolution equations
+---
 
-## Key Features
+## Example: Constructing a State Space
 
-- Composite operator algebra over structured subsystems
-- Indexed sums with support for distinct (`neq`) indices
-- Expression simplification, and expansion
-- LaTeX output
-
-## Example
-
-```julia
+```@example qalgebra
 using qAlgebra
-
-# Generate the State Space consisting of a spin h using the raising and lowering basis (QubitPM), a spin bath in the Pauli Bases (QubitPauli) and a bosonic mode (Ladder).
-qs = StateSpace("alpha", "beta(t)", "gamma_i", "delta_i", h=QubitPM(), i=(3, QubitPauli()), b=Ladder())
-
-# We can return a dictionary of the operators in the system
-var_dict, op_dict = base_operators(qs)
-
-# Or individually for each subsystem (or subsystem index, i.e. i,j, and k) and variable
-xi, yi, zi = base_operators("i", qs)
-xj, yj, zj = base_operators("j", qs)
-xk, yk, zk = base_operators("k", qs)
-ph, mh, zh = base_operators("h", qs)
-b = base_operators("b", qs)
-I = base_operators("I", qs)     # Identity operator
-alpha, beta, gamma_i, gamma_j, gamma_k, delta_i, delta_j, delta_k = base_operators("vars", qs)
-
-# A simple expression can then be constructed from the operators 
-expr = 2 * alpha * im * xi + alpha * Dag(b) * xi * yi
-
-# It can be simplified via
-simplified_expr = simplify(expr)
-
-# Sums can be constructed via 
-qsum = Sum("j", alpha*yi*yj+Sum("k", beta*alpha^2*xi*xj*xk))
-
-# and the nested sum flattened via 
-flat_qsum = flatten(qsum)
-
-# The sum still covers all combinations of indexes j,k
-# We can transform it into a neq sum, in which the indexes j and k are distinct. the following function then expands into all possible cases
-neq_sum = neq_sum(qsum) # this also flattens the sum
-
-# A differential equation of expectation values can be constructed via
-diff_eq = d_dt(zi, alpha*expr+sum) # this simplifies, flattens and neq's the quantum equation
+qspace = StateSpace("alpha", "beta(t)", "gamma_i", "delta_i",
+                    operators=["A(!i)", "B(U,H,i)"],
+                    h=QubitPM(), i=(3, QubitPauli()), b=Ladder())
 ```
 
-## Author 
+You can access variables and operators from this space in several ways.
+By creating dictionaries of all variables, operators and abstract operators
+```@example qalgebra ; output = false
+var_dict, op_dict, abstract_dict = base_operators(qspace)
+```
+Individual variables 
+```@example qalgebra ; output = false
+alpha = base_operators(qspace, "alpha")
+beta  = base_operators(qspace, "beta")
+```
+
+Individual subsystem bases (`do_dict=true` would return the entries as a dictionary):
+```@example qalgebra ; output = false
+ph, mh, zh = base_operators(qspace, "h", do_dict=false)
+xi, yi, zi, pi, mi = base_operators(qspace, "i", do_dict=false)
+b, n = base_operators(qspace, "b", do_dict=false)
+```
+
+Or specific abstract operators:
+```@example qalgebra ; output = false
+A = base_operators(qspace, "A")
+```
+
+---
+
+## Building and Simplifying Expressions
+
+You can build symbolic expressions using variables and operators:
+
+```@example qalgebra
+expr = 2 * (alpha + beta) * im * xi + alpha * Dag(b) * xi * yi
+```
+
+If you want to render it as math:
+
+```@jldoctest
+eq = latexify(simplify(alpha * (beta + beta^2)))
+"$$" * String(eq) * "$$"
+```
+
+---
+
+## Indexed and Nested Sums
+
+```@jldoctest
+qsum = Sum("j", alpha * yi * yj + Sum("k", beta * alpha^2 * xi * xj * xk))
+flatten(qsum)
+```
+
+Force index distinction (i.e. $j \ne k$):
+
+```@jldoctest
+neq_sum(qsum)
+```
+
+---
+
+## Differential Equations
+
+```@jldoctest
+diff_eq = d_dt(zi, alpha * expr + qsum)
+```
+
+---
+
+## Operator Functions
+
+```@jldoctest
+d_dt(A, xi * Dag(A) * A + alpha * b * Dag(b))
+```
+
+```@jldoctest
+simplify(qCommutator(Sum("i", alpha * ph * xi * yi) + zj, zh))
+```
+
+```@jldoctest
+exp(Sum("i", alpha * ph * xi * yi) + zj) + zh
+```
+
+```@jldoctest
+log(Sum("i", alpha * ph * xi * yi) + zj)
+```
+
+```@jldoctest
+power(Sum("i", alpha * ph * xi * yi) + zj, 2) + zh
+```
+
+```@jldoctest
+root(Sum("i", alpha * ph * xi * yi) + zj, 2) + zh
+```
+
+```@jldoctest
+Sum("i", alpha * ph * xi * yi * A * xi + xi * yi) * Sum("j", zi)
+```
+
+---
+
+## Author
 
 - Michael Schilling

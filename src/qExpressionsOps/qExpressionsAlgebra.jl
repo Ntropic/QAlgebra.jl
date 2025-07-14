@@ -161,7 +161,7 @@ end
 
 #### Multiply ####################################################################
 function trivial_multiply(Q1::qAtomProduct, Q2::qAtomProduct)::qAtomProduct
-    return qAtomProduct(Q1.statespace, simplify(Q1.coeff_fun*Q2.coeff_fun), vcat(Q1.expr, Q2.expr))
+    return qAtomProduct(Q1.statespace, Q1.coeff_fun*Q2.coeff_fun, vcat(Q1.expr, Q2.expr))
 end
 # Multiplies two qTerm’s from the same statespace. Returns a vector of qTerm’s that are the result of this multiplication and corresponding ComplexRational coefficients. 
 function multiply_qterm(t1::qTerm, t2::qTerm, statespace::StateSpace)::Tuple{Vector{qTerm}, Vector{ComplexRational}}
@@ -234,14 +234,25 @@ function *(Q1::qExpr, Q2::qExpr)::qExpr
 end
 function *(Q1::qExpr, Q2::qComposite)::qExpr
     Q_new = copy(Q1)
-    Q_new.terms = qComposite[t * Q2 for t in Q1.terms]
+    terms = qComposite[]  # or Vector{qComposite}()
+    for q in Q1.terms
+        append!(terms, q * num)
+    end
+    Q_new.terms = terms
     return simplify(Q_new)
 end
 function *(Q1::qExpr, num::Number)::qExpr
-    return qExpr(Q1.statespace, qComposite[q*num for q in Q1.terms])
+    if num == 0
+        return qExpr(Q1.statespace, qComposite[])  # or Vector{qComposite}() if preferred
+    end
+    terms = qComposite[]  # or Vector{qComposite}()
+    for q in Q1.terms
+        append!(terms, q * num)
+    end
+    return qExpr(Q1.statespace, terms)
 end
 function *(num::Number, Q1::qExpr)::qExpr
-    return qExpr(Q1.statespace, qComposite[q*num for q in Q1.terms])
+    return Q1*num
 end
 
 function *(Q1::qComposite, Q2::qExpr)::qComposite

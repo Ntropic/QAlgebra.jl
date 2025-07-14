@@ -6,7 +6,7 @@ using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, ^, product, iszero, copy
 using ..qAlgebra: get_default 
 using ..FFunctions: isnumeric
-export qObj, qAtom, qAbstract, qComposite, qCompositeProduct, qMultiComposite, qTerm, qAtomProduct, qExpr, qSum, Sum, ∑, diff_qEQ, base_operators,simplify, flatten, neq, d_dt
+export qObj, qAtom, qAbstract, qComposite, qCompositeProduct, qMultiComposite, qTerm, qAtomProduct, qExpr, qSum, Sum, ∑, diff_qEQ, base_operators, simplify, flatten, neq, d_dt
 
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
@@ -147,9 +147,6 @@ Represents a product of qComposites.
 mutable struct qCompositeProduct <: qComposite
     statespace::StateSpace         # State space of the product.
     expr::AbstractVector{<:qComposite} 
-end
-function qCompositeProduct(statespace::StateSpace, expr::AbstractVector{<:qComposite} )
-    new(statespace, expr)
 end
 function qCompositeProduct(expr::AbstractVector{<:qComposite} )
     new(expr[1].statespace, expr)
