@@ -13,7 +13,7 @@ qAlgebra organizes expressions into:
 ---
 
 ## Expression Types
-We define the main types:
+We define the abstract types:
 ```@docs
 qObj
 qAtom
@@ -26,6 +26,7 @@ For the atomic operators we have
 qTerm
 qAbstract
 ```
+
 - [`qTerm`](@ref) specifies a concrete operator, with components on one or multiple of the subsystems defined in a state space.
 - [`qAbstract`](@ref) is an abstract type for all quantum operators, which can later be substituted for a concrete operator, but is now only known by its properties, such as its name, types (Hermitian, unitary, and the subspaces on which it acts etc.).
 

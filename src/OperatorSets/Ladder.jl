@@ -1,9 +1,9 @@
 export Ladder
 
-raw"""
+@doc raw"""
     Ladder() -> OperatorSet
 
-Creates the OperatorSet for a bosonic mode using creation and annihilation operators (Ladder operators: $a^\dagger$, $a$).
+Creates the OperatorSet for a bosonic mode using creation and annihilation operators (Ladder operators: ``a^\dagger``, ``a``).
 """
 function Ladder()
     ops = ["'", ""]  # (Creation, Annihilation)

@@ -179,7 +179,8 @@ import Base: -, +
 *(b::FRational, a::FSum) = FRational(a*b.numer, b.denom)
 # number 
 *(a::FFunction, b::Number)  = a*FAtom(b, zeros(Int, dims(a)))
-*(b::Number, a::FFunction)  = FAtom(b, zeros(Int, dims(a))) * a
+*(b::Number, a::FFunction)  = a * b
+
 multiply_one(a::FRational, b::Int) = (a.numer * b) / (a.denom * b)
 
 # division

@@ -7,8 +7,7 @@ These defaults are persistent across sessions using `Preferences.jl`.
 
 ```@docs
 get_default
-set_float_digits
-set_exp_digits
 set_flip_if_first_term_negative
+set_do_sigma
 set_do_braced
 ```

@@ -12,10 +12,10 @@ const PAULI_COEFF_TABLE = crationalize.([
     im -im 1 1;
     1 1 1 1])
 
-raw"""
+@doc raw"""
     QubitPauli() -> OperatorSet
 
-Creates the OperatorSet for a qubit using Pauli operators ($\sigma_x$, $\sigma_y$, $\sigma_z$, $\sigma_I$).
+Creates the OperatorSet for a qubit using Pauli operators (``\sigma_x``, ``\sigma_y``, ``\sigma_z``, ``\sigma_I``).
 """
 function QubitPauli()
     ops = ["x", "y", "z", "I"]

@@ -136,7 +136,10 @@ function simple_combinable_F(t1::Union{FAtom, FSum}, t2::Union{FAtom, FSum})::Tu
     if t2 isa FAtom
         t2 = FSum([t2])
     end
-    @assert length(t1) == length(t2) "Cannot separate pair terms with different lengths."
+    #@assert length(t1) == length(t2) "Cannot separate pair terms with different lengths."
+    if length(t1) != length(t2)
+        return false, ComplexRational(0, 0, 1)
+    end
 
     if all(a -> all(e == 0 for e in a.var_exponents), t1.terms)
         return false, ComplexRational(0, 0, 1)

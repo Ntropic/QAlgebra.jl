@@ -79,7 +79,7 @@ function base_operators(statespace::StateSpace; do_fun::Bool=false, formatted::B
     return var_dict, op_dict, abstract_dict
 end
 
-function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false, formatted::Bool=false, do_dict::Bool=true)::Union{Dict{String,qExpr}, Dict{String, Function}, qExpr, Vector{qExpr}}
+function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false, formatted::Bool=false, do_dict::Bool=true)::Union{Dict{String,qExpr}, Dict{String, Function}, qExpr, Vector{qExpr}, Function}
     # return 2 dicctionaries, one with the vars and one with the operators 
     CRone = one(ComplexRational)
     var_exponents = zeros(Int, length(statespace.vars))
@@ -252,7 +252,7 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
     for (key_index, (curr_name, operatortype)) in enumerate(zip(statespace.operator_names, statespace.operatortypes))
         if name == curr_name
             if do_fun 
-                return (subindex=-1) -> qExpr(statespace, qAbstract(operatortype, statespace.key_index, subindex))
+                return (subindex=-1) -> qExpr(statespace, qAbstract(operatortype, key_index, subindex))
             else
                 return qExpr(statespace, qAbstract(operatortype, key_index))
             end
