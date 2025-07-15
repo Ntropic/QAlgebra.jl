@@ -7,9 +7,24 @@ Flattens nested Sums in quantum Equations (qExpr).
 function flatten(qeq::qExpr)::qExpr
     new_terms = qComposite[]
     for t in qeq.terms
+        println(typeof(t))
         if t isa qSum
             flat_eq = flatten_qSum(t)
             append!(new_terms, flat_eq.terms)
+        elseif t isa qAtomProduct 
+            push!(new_terms, copy(t))
+        elseif t isa qCompositeProduct
+            push!(new_terms, copy(t))
+        elseif t isa qMultiComposite
+            new_t = copy(t) 
+            terms = t.expr 
+            flattened_terms = [flatten(s) for s in terms]
+            new_t.expr = flattened_terms 
+            push!(new_terms, new_t)
+        elseif t isa qComposite
+            new_t = copy(t) 
+            new_t.expr = flatten(t.expr)
+            push!(new_terms, new_t)
         else
             push!(new_terms, t)
         end
@@ -35,16 +50,21 @@ function flatten_qSum(s::qSum)::qExpr
     inner = flatten(s.expr)
 
     # pull out bare terms vs. sums
-    base_terms = [t for t in inner.terms if t isa qTerm]
-    nested_sums = [t for t in inner.terms if t isa qSum]
+    base_terms::Vector{qComposite} = []
+    nested_sums::Vector{qComposite} = []
+    for t in inner.terms
+        if t isa qSum
+            push!(nested_sums, t)
+        else
+            push!(base_terms, t)
+        end
+    end
 
     out_terms = qComposite[]
 
     # if there were any base qTerms directly under `s`, keep a sum
     if !isempty(base_terms)
-        push!(out_terms,
-            qSum(inner.statespace, qExpr(base_terms),
-                s.indexes, s.subsystem_index, s.element_indexes, s.neq))
+        push!(out_terms, qSum(inner.statespace, qExpr(base_terms), s.indexes, s.subsystem_index, s.element_indexes, s.neq))
     end
 
     # for each nested sum, merge its indexes onto `s`'s
@@ -53,7 +73,6 @@ function flatten_qSum(s::qSum)::qExpr
         if !isempty(dup)
             error("Unsupported: duplicate summation indexes detected: $(dup)")
         end
-
         merged_idxs = vcat(s.indexes, n.indexes)
         if n.subsystem_index != s.subsystem_index
             error("Unsupported: nested sum with different subsystem index: $(n.subsystem_index)")
@@ -61,9 +80,8 @@ function flatten_qSum(s::qSum)::qExpr
         merged_einds = vcat(s.element_indexes, n.element_indexes)
         push!(out_terms, qSum(s.statespace, n.expr, merged_idxs, s.subsystem_index, merged_einds, s.neq))
     end
-
     return qExpr(inner.statespace, out_terms)
-end
+end 
 
 # change from index1 to index2
 function term_equal_indexes(expr, args...)
