@@ -257,6 +257,7 @@ struct StateSpace
     vars::Vector{Parameter}
     vars_str::Vector{String}
     vars_cont::Vector{Tuple{Vector{Int},Tuple}}    # For continuum variables: (subspace indices, standardized tuple for distribution)
+    where_continuums::Vector{Int}
     how_many_by_continuum::Dict{Int,Int}   # for continuum subspaces, how many variables do we have 
     where_by_continuum::Dict{Int,Vector{Vector{Int}}}   # for continuum subspaces, how many variables do we have 
     where_by_time::Vector{Int}
@@ -266,6 +267,7 @@ struct StateSpace
     fermionic_keys::Vector{String}
     bosonic_keys::Vector{String}
     neutral_op::Vector{Is}
+    neutral_continuums_op::Vector{Is}
     fone::FAtom
     # Abstract operators
     operatortypes::Vector{OperatorType}
@@ -448,7 +450,11 @@ struct StateSpace
         end
         operator_names::Vector{String} = [ot.name for ot in operatortypes]
         operatortypes_commutator_mat = operatertypes2commutator_matrix(operatortypes)
-        qss = new(vars, vars_str, vars_cont, how_many_by_continuum, where_by_continuum, where_by_time, where_const, subspaces, fermionic_keys, bosonic_keys, neutral_op, fone, operatortypes, operator_names, operatortypes_commutator_mat)
+
+        where_continuum_subspaces::Vector{Int} = sort(collect(keys(how_many_by_continuum))) 
+        where_continuums::Vector{Int} = vcat([subspaces[i].statespace_inds for i in where_continuum_subspaces]...)
+        neutral_continuums_op::Vector{Is} = neutral_op[where_continuums]
+        qss = new(vars, vars_str, vars_cont, where_continuums, how_many_by_continuum, where_by_continuum, where_by_time, where_const, subspaces, fermionic_keys, bosonic_keys, neutral_op, neutral_continuums_op, fone, operatortypes, operator_names, operatortypes_commutator_mat)
         if make_global
             global GLOBAL_STATE_SPACE = qss
         end
@@ -473,8 +479,6 @@ end
 #xi, yi, zi = base_operators("i", qs)
 #I = base_operators("I", qs)
 #alpha, beta = base_operators("vars", qs)
-
-Is = Union{Int,Vector{Int}}
 function cleanup_terms(terms::Vector{Tuple{T,S}})::Vector{Tuple{T,S}} where {T<:Number,S}
 
     sort!(terms, by=x -> x[2])  # Sort by the index vector

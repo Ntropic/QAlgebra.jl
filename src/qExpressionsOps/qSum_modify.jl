@@ -3,7 +3,9 @@
 flatten(qeq::qExpr) -> qExpr
 
 Flattens nested Sums in quantum Equations (qExpr).
+Does not support qSums within qComposites within qSums!
 """
+<<<<<<< HEAD
 function flatten(qeq::qExpr)::qExpr
     new_terms = qComposite[]
     for t in qeq.terms
@@ -46,8 +48,14 @@ for each nested sum `n` emit a new `qSum` whose index-list is
 """
 # No docstring here
 function flatten_qSum(s::qSum)::qExpr
+=======
+function flatten(s::qSum, in_sum::Bool = false, in_sum_comp::Bool = false)
+>>>>>>> b06581e (Updated neq, and abstract substitutions)
     # first, fully flatten the body
-    inner = flatten(s.expr)
+    if in_sum_comp && in_sum
+        error("Unsupported: qSum found inside qComposite structure within an outer qSum.")
+    end
+    inner = flatten(s.expr, true, in_sum_comp)
 
     # pull out bare terms vs. sums
     base_terms::Vector{qComposite} = []
@@ -80,11 +88,37 @@ function flatten_qSum(s::qSum)::qExpr
         merged_einds = vcat(s.element_indexes, n.element_indexes)
         push!(out_terms, qSum(s.statespace, n.expr, merged_idxs, s.subsystem_index, merged_einds, s.neq))
     end
+<<<<<<< HEAD
     return qExpr(inner.statespace, out_terms)
 end 
+=======
+    return out_terms
+end 
+function flatten(q::qAtomProduct, in_sum::Bool = false, in_sum_comp::Bool = false)
+    return [q] 
+end
+function flatten(q::qComposite, in_sum::Bool = false, in_sum_comp::Bool = false)
+    new_q = copy(q)
+    new_q.expr = flatten(q.expr)
+    return [new_q]
+end
+function flatten(q::qMultiComposite, in_sum::Bool = false, in_sum_comp::Bool = false)
+    new_q = copy(q)
+    new_q.expr = [flatten(x) for x in q.expr]
+    return [new_q]
+end
+
+function flatten(qeq::qExpr, in_sum::Bool = false, in_sum_comp::Bool = false)::qExpr
+    new_terms = qComposite[]
+    for s in qeq.terms
+        append!(new_terms, flatten(s, in_sum, in_sum_comp))
+    end
+    return qExpr(qeq.statespace, new_terms)
+end
+>>>>>>> b06581e (Updated neq, and abstract substitutions)
 
 # change from index1 to index2
-function term_equal_indexes(expr, args...)
+function term_equal_indexes(expr, args...) # Base method to error
     throw(MethodError(term_equal_indexes, (typeof(expr), args...)))
 end
 # multiplies from the left 
@@ -103,9 +137,8 @@ function term_equal_indexes(term::qTerm, index1::Int, index2::Int, subspace::Sub
         new_term.op_indices[index1] = neutral
         push!(new_terms, new_term)
     end
-
     return true, new_terms
-end
+end 
 
 function term_equal_indexes(abstract::qAbstract, index1::Int, index2::Int, subspace::SubSpace)::Tuple{Bool, Vector{qAbstract}}
     op_type = abstract.operator_type
@@ -119,7 +152,7 @@ function term_equal_indexes(abstract::qAbstract, index1::Int, index2::Int, subsp
     return false, [abstract]
 end
 
-function term_equal_indexes(prod::qAtomProduct, index1::Int, index2::Int, subspace::SubSpace)::Tuple{Bool, Vector{qAtomProduct}}
+function term_equal_indexes(prod::qAtomProduct, index1::Int, index2::Int, subspace::SubSpace, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool, Vector{qAtomProduct}}
     changed_any = false
     term_variants = Vector{Vector{qAtom}}()
     for atom in prod.expr
@@ -127,25 +160,63 @@ function term_equal_indexes(prod::qAtomProduct, index1::Int, index2::Int, subspa
         push!(term_variants, variants)
         changed_any |= changed  # Check if any term was changed
     end
-
+    changed, new_coeff_fun = FFunctions.term_equal_indexes(prod.coeff_fun, coeff_inds1, coeff_inds2)
+    changed_any |= changed
     if !changed_any
         return false, [prod]
     end
-
     # Generate all combinations (cartesian product) of updated terms
     combinations = Iterators.product(term_variants...)
-
     simplified_products = qAtomProduct[]
-
     for combo in combinations
         new_expr = collect(combo)
-        new_prod = qAtomProduct(prod.statespace, prod.coeff_fun, new_expr)
-        push!(simplified_products, simplify(new_prod))
+        new_prod = qAtomProduct(prod.statespace, new_coeff_fun, new_expr)
+        push!(simplified_products, new_prod)
     end
-
     return true, simplified_products
 end
 
+function term_equal_indexes(qExpr::qExpr, index1::Int, index2::Int, subspace::SubSpace, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool, Vector{qExpr}}
+    changed_any = false
+    elements = []
+    for t in qExpr.terms
+        changed, variants = term_equal_indexes(t, index1, index2, subspace, coeff_inds1, coeff_inds2)
+        append!(elements, variants)
+        changed_any |= changed  # Check if any term was changed
+    end
+    if !changed_any
+        return false, [qExpr]
+    end
+    return true, [qExpr(qExpr.statespace, elements)]
+end
+#T <: qComposite case
+function term_equal_indexes(q::T, index1::Int, index2::Int, subspace::SubSpace, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool, Vector{T}} where T<:qComposite
+    changed, variants = term_equal_indexes(q.expr, index1, index2, subspace, coeff_inds1, coeff_inds2)
+    if !changed
+        return false, [q]
+    end
+    results::Vector{T} = []
+    for v in variants
+        q_new = copy(q)
+        q_new.expr = v
+        push!(results, q_new)
+    end
+    return true, results
+end
+#T <: qMultiComposite case
+function term_equal_indexes(q::T, index1::Int, index2::Int, subspace::SubSpace, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool, Vector{T}} where T<:qMultiComposite
+    changed, variants = term_equal_indexes(q.expr, index1, index2, subspace, coeff_inds1, coeff_inds2)
+    if !changed
+        return false, [q]
+    end
+    results::Vector{T} = []
+    for v in variants
+        q_new = copy(q)
+        q_new.expr = v
+        push!(results, q_new)
+    end
+    return true, results
+end
 
 """
     neq(qeq::qExpr) -> qExpr
@@ -153,6 +224,23 @@ end
 Transform sums into neq sums, where all indexes are different from each other, and returns a flattened qExpr with neq sums. 
 Considers all cases of the sums, simplifying the cases in which indexes are the same, which then reduces the order of the sum (i.e. a sum_{j} x_i y_j => sum_{j} x_i y_j + im*z_i, where we used x_i*y_i=im*z_i).
 """
+function neq(q::qObj)::qObj
+    return q
+end
+function neq(q::qAtomProduct)::qAtomProduct
+    return q 
+end
+function neq(q::T)::T where {T<:qComposite}
+    q_copy = copy(q)
+    q_copy.expr = neq(q.expr)
+    return q_copy
+end
+function neq(q::T)::T where {T<:qMultiComposite}
+    q_copy = copy(q)
+    q_copy.expr = [neq(t) for t in q.expr]
+    return q_copy
+end
+
 function neq(qeq::qExpr)::qExpr
     # flatten first 
     qeq = flatten(qeq)
@@ -160,16 +248,16 @@ function neq(qeq::qExpr)::qExpr
         return qeq
     end
     if isa(qeq.terms[1], qSum) 
-        out = neq_sum(qeq.terms[1])
+        out = neq_qsum(qeq.terms[1])
     else
-        out = qExpr(qeq.statespace, copy(qeq.terms[1]))
+        out = qExpr(qeq.statespace, neq(qeq.terms[1]))
     end
     for t in qeq.terms[2:end]
         if isa(t, qSum)
             # expand this sum into distinct + diag parts
             out += neq_qsum(t)
         else
-            out += copy(t)
+            out += neq(t)
         end
     end
     for t in out.terms
@@ -217,15 +305,7 @@ function neq_qsum(s::qSum, index::Int=1)::qExpr
         new_statespace_ind = sub.statespace_inds[new_ind_sum]
         # check for each term in the subspace if curr_statespace_ind and new_statespace_ind are the neutral_element  
         for expr in post_expr.terms
-            if isa(expr, qTerm)
-                not_neutral, new_terms = term_equal_indexes(expr, curr_statespace_ind, new_statespace_ind, sub, curr_coeff_inds, new_coeff_inds)
-                if not_neutral
-                    error("Unsupported: Element that isn't part of a Sum should no longer contain sum indexes")
-                end
-                for new_term in new_terms
-                    pieces += new_term
-                end
-            elseif isa(expr, qSum)
+           if isa(expr, qSum)
                 #println("    ($index) - expr: ", expr)
                 for t in expr.expr.terms
                     not_neutral, new_terms = term_equal_indexes(t, curr_statespace_ind, new_statespace_ind, sub, curr_coeff_inds, new_coeff_inds)
@@ -245,9 +325,17 @@ function neq_qsum(s::qSum, index::Int=1)::qExpr
                         pieces += qSum(s.statespace, qExpr(ss, new_terms), copy(expr.indexes), expr.subsystem_index, copy(expr.element_indexes), expr.neq)
                     end
                 end
+            else ## Old - no longer sufficient: if isa(expr, qTerm)
+                not_neutral, new_terms = term_equal_indexes(expr, curr_statespace_ind, new_statespace_ind, sub, curr_coeff_inds, new_coeff_inds)
+                if not_neutral
+                    error("Unsupported: Element that isn't part of a Sum should no longer contain sum indexes")
+                end
+                for new_term in new_terms
+                    pieces += new_term
+                end
             end
         end
         #println("  Result for ($index => $curr_ind_sum, $new_ind_sum | $curr_statespace_ind, $new_statespace_ind):  " , pieces)
     end
-    return simplify(pieces)
+    return pieces
 end

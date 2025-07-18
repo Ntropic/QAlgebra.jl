@@ -26,7 +26,7 @@ function is_numeric(t::qAbstract, statespace::StateSpace)::Bool
     return false 
 end
 function is_numeric(p::qAtomProduct)::Bool
-    return all(is_numeric(t, p.statespace) for t in p.expr)
+    return all(is_numeric(t, p.statespace) for t in p.expr) || iszero(p.coeff_fun)
 end
 function is_numeric(s::qSum)::Bool
     return is_numeric(s.expr)
@@ -216,7 +216,7 @@ function *(num::Number, p1::qAtomProduct)::Vector{qAtomProduct}
     return [qAtomProduct(p1.statespace, p1.coeff_fun*num, copy(p1.expr))]
 end
 function *(p1::T1, p2::T2)::Vector{qCompositeProduct} where {T1<:qComposite, T2<:qComposite}
-    return [qCompositeProduct(p1.statespace, [p1, p2])]
+    return [qCompositeProduct(p1.statespace, vcat(p1, p2))]
 end
 
 function *(Q1::qExpr, Q2::qExpr)::qExpr
@@ -239,7 +239,7 @@ function *(Q1::qExpr, Q2::qComposite)::qExpr
         append!(terms, q * num)
     end
     Q_new.terms = terms
-    return simplify(Q_new)
+    return Q_new
 end
 function *(Q1::qExpr, num::Number)::qExpr
     if num == 0

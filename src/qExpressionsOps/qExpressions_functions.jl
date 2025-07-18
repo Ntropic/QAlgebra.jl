@@ -11,6 +11,19 @@ function qCommutator(q1::qExpr, q2::qExpr)::qExpr
 end
 copy(q::qCommutator) = qCommutator(q.statespace, [copy(x) for x in q.expr])
 
+""" 
+    qCompositeProduct
+
+Represents a product of qComposites. 
+"""
+mutable struct qCompositeProduct <: qMultiComposite
+    statespace::StateSpace         # State space of the product.
+    expr::Vector{qExpr} 
+end
+function qCompositeProduct(expr::Vector{qExpr} )
+    new(expr[1].statespace, expr)
+end
+copy(q::qCompositeProduct) = qCompositeProduct(q.statespace, [copy(x) for x in q.expr])
 
 ### Non-simple qFunctions 
 mutable struct qExp <: qComposite

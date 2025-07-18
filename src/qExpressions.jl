@@ -11,7 +11,7 @@ export qObj, qAtom, qAbstract, qComposite, qCompositeProduct, qMultiComposite, q
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
 # ==========================================================================================================================================================
-Is = Union{Int,Vector{Int}}
+Is = Union{Int,Vector{Int}, Vector{Vector{Int}}}
 
 """ 
     qObj
@@ -116,7 +116,7 @@ It also contains a reference to the state space in which the equation is defined
 """
 struct qExpr
     statespace::StateSpace
-    terms::AbstractVector{<:qComposite}         # Vector of terms
+    terms::Vector{qComposite}               #AbstractVector{<:qComposite}    
     function qExpr(statespace::StateSpace, terms::AbstractVector{<:qComposite})
         if isempty(terms) 
             # add neotral zero term
@@ -139,20 +139,8 @@ function qExpr(terms::AbstractVector{<:qComposite})
     return qExpr(terms[1].statespace, terms)
 end
 
-""" 
-    qCompositeProduct
 
-Represents a product of qComposites. 
 """
-mutable struct qCompositeProduct <: qComposite
-    statespace::StateSpace         # State space of the product.
-    expr::AbstractVector{<:qComposite} 
-end
-function qCompositeProduct(expr::AbstractVector{<:qComposite} )
-    new(expr[1].statespace, expr)
-end
-
-""" 
     qSum
 
 A `qSum` represents the summation of a quantum Equation over indexes in a quantum expression.
@@ -172,8 +160,6 @@ mutable struct qSum <: qComposite
     element_indexes::Vector{Int}    # The position in that subspace.
     neq::Bool
 end
-
-
 
 
 """
@@ -295,7 +281,6 @@ length(q::qExpr) = length(q.terms)
 iszero(q::qExpr) = length(q.terms) == 0 || all(iszero, q.terms)
 iszero(q::qSum) = iszero(q.expr)
 iszero(q::qAtomProduct) = iszero(q.coeff_fun)
-iszero(q::qCompositeProduct) = false
 iszero(q::qComposite) = iszero(q.expr)
 iszero(q::qMultiComposite) = any(iszero, q.expr)
 
@@ -308,9 +293,6 @@ function copy(q::qAbstract)::qAbstract
 end
 function copy(q::qAtomProduct)::qAtomProduct
     return qAtomProduct(q.statespace, copy(q.coeff_fun), copy(q.expr))
-end
-function copy(q::qCompositeProduct)::qCompositeProduct
-    return qCompositeProduct(q.statespace, copy(q.expr))
 end
 function copy(q::qSum)::qSum
     return qSum(q.statespace, copy(q.expr), copy(q.indexes), copy(q.subsystem_index), copy(q.element_indexes), copy(q.neq))
@@ -374,6 +356,6 @@ function d_dt(left_hand::Union{qAtomProduct,qExpr}, right_hand::qExpr)::diff_qEQ
         error("Left-hand side of the equation must be a qTerm with no variable exponents.")
     end
     # Return a diff_qEQ constructed from these sides.
-    return diff_qEQ(qstate, left_hand, right_hand, )
+    return diff_qEQ(qstate, left_hand, right_hand)
 end
 end

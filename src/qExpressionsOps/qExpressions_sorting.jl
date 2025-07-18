@@ -16,7 +16,7 @@ function qobj_sort_key(term::qAtomProduct)
     return (tuple(0, 0, Int[], 0), sort_key(term.coeff_fun), qAtom_sort_key.(term.expr)...)
 end
 function qobj_sort_key(term::qSum)
-    return (tuple(1, term.subsystem_index, term.element_indexes, length(term.expr)), term.neq)
+    return (tuple(1, term.subsystem_index, length(term.element_indexes), term.element_indexes, length(term.expr)), term.neq)
 end
 function qobj_sort_key(term::qCompositeProduct)
     return (tuple(2, 0, Int[], 0), qAtom_sort_key.(term.expr)...) # first component specifies the type of object we are dealing with 
@@ -44,13 +44,6 @@ function sort(qeq::qExpr; kwargs...)
 end
 function sort(qprod::qAtomProduct; kwargs...)  # don't sort qprod 
     return copy(qprod)
-end
-function sort(qprod::qCompositeProduct; kwargs...)  # only in recursive levels do sort
-    new_exprs::AbstractVector{qComposite} = []
-    for term in qprod.expr 
-        push!(new_exprs, sort(term))
-    end 
-    return qCompositeProduct(qprod.statespace, new_exprs)
 end
 function sort(qcomp::qMultiComposite; kwargs...) # only sort recursively but not expr itself (outer most layer)
     new_qcomp = copy(qcomp)

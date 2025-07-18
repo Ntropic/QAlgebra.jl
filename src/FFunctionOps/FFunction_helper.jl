@@ -246,3 +246,33 @@ function how_to_combine_Fs(ts::Vector{Union{FAtom,FSum}}) #::Tuple{Vector{Union{
         return [], []
     end
 end
+
+
+# Make 2 indexes equal => analogous to equally named function for qTerms in qExpressions.jl
+function term_equal_indexes(atom::FAtom, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool,FAtom}
+    changed_any::Bool = false
+    new_exponents = copy(atom.var_exponents)
+    for (i, j) in zip(coeff_inds1, coeff_inds2)
+        if new_exponents[i] != 0
+            changed_any = true
+            new_exponents[j] += new_exponents[i]
+            new_exponents[i] = 0
+        end
+    end
+    return changed_any, FAtom(atom.coeff, new_exponents)
+end
+function term_equal_indexes(fsum::FSum, inds1::Vector{Int}, inds2::Vector{Int})::Tuple{Bool,FSum}
+    changed_any::Bool = false
+    new_terms::Vector{FFunction} = []
+    for t in fsum.terms
+        changed, new_term = term_equal_indexes(t, inds1, inds2)
+        changed_any = changed_any || changed
+        push!(new_terms, new_term)
+    end
+    return changed_any, FSum(fsum.index, new_terms)
+end
+function term_equal_indexes(frational::FRational, inds1::Vector{Int}, inds2::Vector{Int})::Tuple{Bool,FRational}
+    changed_num, new_num = term_equal_indexes(frational.num, inds1, inds2)
+    changed_den, new_den = term_equal_indexes(frational.den, inds1, inds2)
+    return changed_num || changed_den, FRational(new_num, new_den)
+end

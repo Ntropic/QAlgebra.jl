@@ -30,7 +30,7 @@ function combine_term(t1::qAtomProduct, t2::qAtomProduct)::qAtomProduct
     return qAtomProduct(t1.statespace, FFunctions.simplify(t1.coeff_fun + t2.coeff_fun), t1.expr)
 end
 function combine_term(s1::qSum, s2::qSum)::qSum
-    return qSum(s1.statespace, FFunctions.simplify(s1.expr + s2.expr), s1.indexes, s1.subsystem_index, s1.element_indexes, s1.neq)
+    return qSum(s1.statespace, simplify(s1.expr + s2.expr), s1.indexes, s1.subsystem_index, s1.element_indexes, s1.neq)
 end
 
 """
@@ -69,11 +69,9 @@ function simplify(p::qAtomProduct)::Vector{qComposite}
 
     # Wrap in qComposite or qAtomProduct
     return [qAtomProduct(p.statespace, FFunctions.simplify(c * p.coeff_fun), t) for (c, t) in current_products]
-end  
-function simplify(p::qCompositeProduct)::Vector{qCompositeProduct}
-    return [copy(p)]
-end         
-function simplify(qcomp::qMultiComposite; kwargs...)::Vector{qComposite}
+end   
+
+function simplify(qcomp::qMultiComposite; kwargs...)::Vector{qMultiComposite}
     new_exprs::Vector{qExpr} = [simplify(x; kwargs...) for x in qcomp.expr]
     q = copy(qcomp)
     q.expr = new_exprs
