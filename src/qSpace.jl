@@ -256,18 +256,20 @@ struct StateSpace
     # Parameter fields:
     vars::Vector{Parameter}
     vars_str::Vector{String}
-    vars_cont::Vector{Tuple{Vector{Int},Tuple}}    # For continuum variables: (subspace indices, standardized tuple for distribution)
-    where_continuums::Vector{Int}
+    vars_cont::Vector{Tuple{Vector{Int},Tuple}}    # For continuum variables: (subspace indices, standardized tuple for distribution) -> distribution is held here 
     how_many_by_continuum::Dict{Int,Int}   # for continuum subspaces, how many variables do we have 
-    where_by_continuum::Dict{Int,Vector{Vector{Int}}}   # for continuum subspaces, how many variables do we have 
+    where_by_continuum::Dict{Int,Vector{Vector{Int}}}   # for continuum subspaces, where are our variables  
+    where_by_continuum_vec::Vector{Vector{Vector{Int}}}
     where_by_time::Vector{Int}
     where_const::Vector{Int}
     # Subspace definitions:
     subspaces::Vector{SubSpace}
+    where_continuum::Vector{Int}
+    continuum_indexes::Vector{Vector{Int}}
     fermionic_keys::Vector{String}
     bosonic_keys::Vector{String}
     neutral_op::Vector{Is}
-    neutral_continuums_op::Vector{Is}
+    neutral_continuum_op::Vector{Vector{Is}}
     fone::FAtom
     # Abstract operators
     operatortypes::Vector{OperatorType}
@@ -302,9 +304,9 @@ struct StateSpace
             if n > 1
                 continuum = true
                 # must be fermionic 
-                if !op_set.fermion
-                    error("Baths (n > 1) must be fermionic operators.")
-                end
+                #if !op_set.fermion       # Outdated? Check if this works!!!
+                #    error("Baths (n > 1) must be fermionic operators.")
+                #end
                 # Generate indices starting from the first character of key_str.
                 if length(key_str) > 1
                     error("Pattern key ($key_str) must be a single character for spin baths.")
@@ -451,10 +453,11 @@ struct StateSpace
         operator_names::Vector{String} = [ot.name for ot in operatortypes]
         operatortypes_commutator_mat = operatertypes2commutator_matrix(operatortypes)
 
-        where_continuum_subspaces::Vector{Int} = sort(collect(keys(how_many_by_continuum))) 
-        where_continuums::Vector{Int} = vcat([subspaces[i].statespace_inds for i in where_continuum_subspaces]...)
-        neutral_continuums_op::Vector{Is} = neutral_op[where_continuums]
-        qss = new(vars, vars_str, vars_cont, where_continuums, how_many_by_continuum, where_by_continuum, where_by_time, where_const, subspaces, fermionic_keys, bosonic_keys, neutral_op, neutral_continuums_op, fone, operatortypes, operator_names, operatortypes_commutator_mat)
+        where_continuum::Vector{Int} = sort(collect(keys(how_many_by_continuum))) 
+        continuum_indexes::Vector{Vector{Int}} = [copy(subspaces[i].statespace_inds) for i in where_continuum]
+        neutral_continuum_op::Vector{Vector{Is}} = [[neutral_op[i] for i in cont] for cont in continuum_indexes]
+        where_by_continuum_vec::Vector{Vector{Vector{Int}}} = [where_by_continuum[i] for i in where_continuum]
+        qss = new(vars, vars_str, vars_cont, how_many_by_continuum, where_by_continuum, where_by_continuum_vec, where_by_time, where_const, subspaces, where_continuum, continuum_indexes, fermionic_keys, bosonic_keys, neutral_op, neutral_continuum_op, fone, operatortypes, operator_names, operatortypes_commutator_mat)
         if make_global
             global GLOBAL_STATE_SPACE = qss
         end
@@ -480,28 +483,35 @@ end
 #I = base_operators("I", qs)
 #alpha, beta = base_operators("vars", qs)
 function cleanup_terms(terms::Vector{Tuple{T,S}})::Vector{Tuple{T,S}} where {T<:Number,S}
-
-    sort!(terms, by=x -> x[2])  # Sort by the index vector
-
-    cleaned = Tuple{eltype(terms[1][1]),Vector{Is}}[]  # Result container
+    # 1) sort once by index
+    sort!(terms, by = x -> x[2])
+    # 2) prealloc output to worst‑case length and scan in one pass
+    n = length(terms)
+    T0 = typeof(terms[1][1])
+    S0 = typeof(terms[1][2])
+    cleaned = Vector{Tuple{T0,S0}}(undef, n)
+    cnt = 0
     i = 1
-    while i <= length(terms)
-        coeff_sum = terms[i][1]
-        idx_vec = terms[i][2]
+    @inbounds while i ≤ n
+        sumc, idx = terms[i]           # destructure once
         j = i + 1
-        while j <= length(terms) && terms[j][2] == idx_vec
-            coeff_sum += terms[j][1]
+        # inner loop: accumulate identical idx
+        @inbounds while j ≤ n && terms[j][2] == idx
+            sumc += terms[j][1]
             j += 1
         end
-        if !iszero(coeff_sum) 
-            push!(cleaned, (coeff_sum, idx_vec))
+
+        # push nonzero
+        if sumc != zero(T0)
+            cnt += 1
+            cleaned[cnt] = (sumc, idx)
         end
+
         i = j
     end
-
+    resize!(cleaned, cnt)                # trim unused slots
     return cleaned
 end
-
 
 include("OperatorSets/Qubit_Pauli.jl")
 include("OperatorSets/Qubit_PM.jl")

@@ -5,52 +5,7 @@ flatten(qeq::qExpr) -> qExpr
 Flattens nested Sums in quantum Equations (qExpr).
 Does not support qSums within qComposites within qSums!
 """
-<<<<<<< HEAD
-function flatten(qeq::qExpr)::qExpr
-    new_terms = qComposite[]
-    for t in qeq.terms
-        println(typeof(t))
-        if t isa qSum
-            flat_eq = flatten_qSum(t)
-            append!(new_terms, flat_eq.terms)
-        elseif t isa qAtomProduct 
-            push!(new_terms, copy(t))
-        elseif t isa qCompositeProduct
-            push!(new_terms, copy(t))
-        elseif t isa qMultiComposite
-            new_t = copy(t) 
-            terms = t.expr 
-            flattened_terms = [flatten(s) for s in terms]
-            new_t.expr = flattened_terms 
-            push!(new_terms, new_t)
-        elseif t isa qComposite
-            new_t = copy(t) 
-            new_t.expr = flatten(t.expr)
-            push!(new_terms, new_t)
-        else
-            push!(new_terms, t)
-        end
-    end
-    return qExpr(qeq.statespace, new_terms)
-end
-
-"""
-flatten_qSum(s::qSum) -> qExpr
-
-Take one `qSum` `s`.  First do `inner = flatten(s.expr)` so that all
-deeper-nested sums are already one-level.  Split `inner.terms` into
-• `base_terms` (just the `qTerm`’s)  
-• `nested_sums` (any `qSum`’s).
-
-Emit up to one “parent” sum over the `base_terms` (if non-empty), then
-for each nested sum `n` emit a new `qSum` whose index-list is
-`vcat(s.indexes, n.indexes)`.  Any duplicate index names will error.
-"""
-# No docstring here
-function flatten_qSum(s::qSum)::qExpr
-=======
 function flatten(s::qSum, in_sum::Bool = false, in_sum_comp::Bool = false)
->>>>>>> b06581e (Updated neq, and abstract substitutions)
     # first, fully flatten the body
     if in_sum_comp && in_sum
         error("Unsupported: qSum found inside qComposite structure within an outer qSum.")
@@ -88,16 +43,14 @@ function flatten(s::qSum, in_sum::Bool = false, in_sum_comp::Bool = false)
         merged_einds = vcat(s.element_indexes, n.element_indexes)
         push!(out_terms, qSum(s.statespace, n.expr, merged_idxs, s.subsystem_index, merged_einds, s.neq))
     end
-<<<<<<< HEAD
+
     return qExpr(inner.statespace, out_terms)
 end 
-=======
-    return out_terms
-end 
+
 function flatten(q::qAtomProduct, in_sum::Bool = false, in_sum_comp::Bool = false)
     return [q] 
 end
-function flatten(q::qComposite, in_sum::Bool = false, in_sum_comp::Bool = false)
+function flatten(q::T, in_sum::Bool = false, in_sum_comp::Bool = false) where T<:qComposite
     new_q = copy(q)
     new_q.expr = flatten(q.expr)
     return [new_q]
@@ -115,7 +68,6 @@ function flatten(qeq::qExpr, in_sum::Bool = false, in_sum_comp::Bool = false)::q
     end
     return qExpr(qeq.statespace, new_terms)
 end
->>>>>>> b06581e (Updated neq, and abstract substitutions)
 
 # change from index1 to index2
 function term_equal_indexes(expr, args...) # Base method to error

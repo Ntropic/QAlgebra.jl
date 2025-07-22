@@ -84,7 +84,7 @@ function qAtom2string(q::qAbstract, statespace::StateSpace; do_latex::Bool=false
     return curr_string
 end 
 
-function variable_str_vec(q::qComposite; do_latex::Bool=true)::Vector{String}
+function variable_str_vec(q::T; do_latex::Bool=true)::Vector{String} where T<:qComposite
     if do_latex 
         return String[t.var_latex for t in q.statespace.vars]
     else

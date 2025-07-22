@@ -15,7 +15,7 @@ end
 function is_numeric(e::qAtom, statespace::StateSpace)
     error("is_numeric (with given statespace) not implemented for qAbstract subtype $(typeof(e))")
 end
-function is_numeric(e::qComposite)
+function is_numeric(e::T) where T<:qComposite
     error("is_numeric (without given statespace) not implemented for qComposite subtype $(typeof(e))")
 end
 
@@ -62,7 +62,7 @@ function qAtom_commute(q1::qAtom, q2::qAtom, statespace::StateSpace)::Bool
     return all([nand(a,b) for (a,b) in zip(act_q1, act_q2)])
 end
 
-function same_statespace(a::qComposite, b::qComposite)::Bool
+function same_statespace(a::S, b::T)::Bool where {S<:qComposite, T<:qComposite}
     return a.statespace == b.statespace
 end
 
@@ -129,7 +129,7 @@ end
 function -(t::qExpr)::qExpr
     return qExpr(t.statespace, .-t.terms)  
 end
-function -(t::qComposite)::qComposite
+function -(t::T)::T where T<:qComposite
     t_new = copy(t)
     t_new.expr = -t_new.expr  # Negate the expression inside the composite.
     return t_new 
@@ -141,7 +141,7 @@ function +(Q1::qExpr, Q2::qExpr)::qExpr
     # Optionally: group like terms here.
     return qExpr(Q1.statespace, new_terms)
 end
-function +(Q1::qExpr, Q2::qComposite)::qExpr
+function +(Q1::qExpr, Q2::T)::qExpr where T<:qComposite
     new_terms = copy(Q1.terms)
     push!(new_terms, Q2)
     return qExpr(Q1.statespace, new_terms)
@@ -153,7 +153,7 @@ function -(Q1::qExpr, Q2::qExpr)::qExpr
     # Optionally: group like terms here.
     return qExpr(Q1.statespace, new_terms)
 end
-function -(Q1::qExpr, Q2::qComposite)::qExpr
+function -(Q1::qExpr, Q2::T)::qExpr where T<:qComposite
     new_terms = copy(Q1.terms)
     push!(new_terms, .-Q2)
     return qExpr(Q1.statespace, new_terms)
@@ -161,7 +161,19 @@ end
 
 #### Multiply ####################################################################
 function trivial_multiply(Q1::qAtomProduct, Q2::qAtomProduct)::qAtomProduct
-    return qAtomProduct(Q1.statespace, Q1.coeff_fun*Q2.coeff_fun, vcat(Q1.expr, Q2.expr))
+    e1, e2 = Q1.expr, Q2.expr
+    n1, n2 = length(e1), length(e2)
+
+    newexpr = Vector{qAtom}(undef, n1 + n2)
+    if n1 > 0
+        newexpr[1:n1] = e1
+    end
+
+    if n2 > 0
+        newexpr[n1+1:end] = e2
+    end
+    return qAtomProduct(Q1.statespace, FFunctions.simplify(Q1.coeff_fun*Q2.coeff_fun), newexpr)
+    #return qAtomProduct(Q1.statespace, FFunctions.simplify(Q1.coeff_fun*Q2.coeff_fun), vcat(Q1.expr, Q2.expr))
 end
 # Multiplies two qTerm’s from the same statespace. Returns a vector of qTerm’s that are the result of this multiplication and corresponding ComplexRational coefficients. 
 function multiply_qterm(t1::qTerm, t2::qTerm, statespace::StateSpace)::Tuple{Vector{qTerm}, Vector{ComplexRational}}
@@ -174,7 +186,7 @@ function multiply_qterm(t1::qTerm, t2::qTerm, statespace::StateSpace)::Tuple{Vec
     i = 0
     for subspace in statespace.subspaces
         op_set = subspace.op_set
-        for (ind, key) in zip(subspace.statespace_inds, subspace.keys)
+        for _ in eachindex(subspace.statespace_inds)
             i += 1
             op1 = t1.op_indices[i]
             op2 = t2.op_indices[i]
@@ -207,7 +219,7 @@ end
 #### Main Multiplication Functions ################################################
 function *(p1::qAtomProduct, p2::qAtomProduct)::Vector{qAtomProduct}
     p = trivial_multiply(p1, p2)  # append the terms of p1 and p2.
-    return simplify(p)    # simplify the product. 
+    return simplifyqAtomProduct(p)    # simplify the product. 
 end
 function *(p1::qAtomProduct, num::Number)::Vector{qAtomProduct}
     return [qAtomProduct(p1.statespace, p1.coeff_fun*num, copy(p1.expr))]
@@ -232,7 +244,7 @@ function *(Q1::qExpr, Q2::qExpr)::qExpr
     return qExpr(Q1.statespace, new_terms)
     # return simplify(qExpr(Q1.statespace, new_terms))
 end
-function *(Q1::qExpr, Q2::qComposite)::qExpr
+function *(Q1::qExpr, Q2::T)::qExpr where T<:qComposite
     Q_new = copy(Q1)
     terms = qComposite[]  # or Vector{qComposite}()
     for q in Q1.terms
@@ -255,22 +267,22 @@ function *(num::Number, Q1::qExpr)::qExpr
     return Q1*num
 end
 
-function *(Q1::qComposite, Q2::qExpr)::qComposite
+function *(Q1::T, Q2::qExpr)::qExpr where T<:qComposite
     Q_new = copy(Q1)
     Q_new.expr = Q1.expr * Q2
     return Q_new
 end
-function *(Q1::qComposite, num::Number)::Vector{qComposite}
+function *(Q1::T, num::Number)::Vector{qComposite} where T<:qComposite
     Q_new = copy(Q1)
     Q_new.expr = Q1.expr * num
     return [Q_new]
 end
-function *(num::Number, Q2::qComposite)::Vector{qComposite}
+function *(num::Number, Q2::T)::Vector{qComposite} where T<:qComposite
     return [Q2 * num]
 end
 
 ##### Exponentiation ###################################################
-function ^(Q::Union{qExpr, qComposite}, n::Integer)
+function ^(Q::Union{qExpr, T}, n::Integer) where T<:qComposite
     if n < 0
         error("Negative exponent not defined for qExpr.")
     elseif n == 0
@@ -300,7 +312,7 @@ end
 Computes the commutator [Q1, Q2] = Q1 * Q2 - Q2 * Q1.
 Both qExpr's must share the same statespace.
 """
-function Commutator(Q1::Union{qExpr, qComposite}, Q2::Union{qExpr, qComposite})
+function Commutator(Q1::Union{qExpr, T}, Q2::Union{qExpr, qComposite}) where T<:qComposite
     # qExpr multiplication is already defined.
     return Q1 * Q2 - Q2 * Q1
 end
@@ -361,7 +373,7 @@ end
 """
     Dag(qspace::StateSpace, t::qTerm) -> qTerm
     Dag(t::qExpr) -> qExpr
-    Dag(t::qComposite) -> qComposite
+    Dag(t::T) -> T where T <: qComposite
     
 Returns the Hermitian conjugate (dagger) of a qTerm, qExpr or qSum.
 Overloads the adjoint function, which can be called via `t′`.
@@ -429,10 +441,10 @@ function Dag(Q::qExpr)::qExpr
     end
     return qExpr(q_comps)
 end
-function Dag(t::qComposite)::Vector{qComposite}
+function Dag(t::T)::Vector{qComposite} where T<:qComposite
     t_new = copy(t) 
     t_new.expr = Dag(t.expr)
-    return [t_new]
+    return qComposite[t_new]
 end
 function Dag(t::qMultiComposite)::Vector{qMultiComposite}
     t_new = copy(t) 
@@ -445,4 +457,4 @@ function Dag(t::qMultiComposite)::Vector{qMultiComposite}
 end
 
 adjoint(Q::qExpr) = Dag(Q)
-adjoint(Q::qComposite) = Dag(Q)
+adjoint(Q::T) where {T<:qComposite} = Dag(Q)

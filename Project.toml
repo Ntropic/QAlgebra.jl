@@ -12,7 +12,7 @@ Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 
 [compat]
 BenchmarkTools = "1.6.0"
-ComplexRationals = "0.1"
+ComplexRationals = "0.2"
 LaTeXStrings = "1.4"
 Preferences = "1.4"
 Printf = "1.10"

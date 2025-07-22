@@ -22,7 +22,7 @@ end
 function same_term_type(s1::qSum, s2::qSum)::Bool
     return s1.subsystem_index == s2.subsystem_index && s1.element_indexes == s2.element_indexes
 end
-function same_term_type(t1::qComposite, t2::qComposite)::Bool   # term grouping either not implemented for this object or objects aren'T the same 
+function same_term_type(t1::S, t2::T)::Bool where {S<:qComposite, T<:qComposite}   # term grouping either not implemented for this object or objects aren'T the same 
     return false 
 end
 
@@ -32,6 +32,46 @@ end
 function combine_term(s1::qSum, s2::qSum)::qSum
     return qSum(s1.statespace, simplify(s1.expr + s2.expr), s1.indexes, s1.subsystem_index, s1.element_indexes, s1.neq)
 end
+
+function simplifyqAtomProduct(p::qAtomProduct)::Vector{qComposite}
+    # — pre‑allocate two empty buffers of the correct element‑type —
+    buf1 = Vector{Tuple{ComplexRational,Vector{qAtom}}}()
+    buf2 = Vector{Tuple{ComplexRational,Vector{qAtom}}}()
+    current, nextbuf = buf1, buf2
+
+    # seed the first buffer
+    empty!(current)
+    push!(current, (one(ComplexRational), copy(p.expr)))
+
+    while true
+        empty!(nextbuf)
+        did_any = false
+
+        for (coeff, terms) in current
+            outs, changed = simplify_pairs(terms, p.statespace)
+            
+            did_any |= changed
+            for (dc, t) in outs
+                if !iszero(dc)
+                    push!(nextbuf, (coeff * dc, t))
+                end
+            end
+        end
+
+        # if nothing changed, we're done
+        if !did_any
+            break
+        end
+
+        # swap buffers for the next iteration
+        current, nextbuf = nextbuf, current
+    end
+
+    # wrap the final products
+    return [ qAtomProduct(p.statespace, c * p.coeff_fun, t) for (c,t) in current ]
+    #return [ qAtomProduct(p.statespace, FFunctions.simplify(c * p.coeff_fun), t) for (c,t) in current ]
+end
+
 
 """
     simplify(q) -> simplified
@@ -47,37 +87,16 @@ Simplifies `qExpr`-based symbolic quantum expressions by recursively reducing in
 
 Returns either a single simplified object or a list of canonical components depending on input type.
 """
-function simplify(p::qAtomProduct)::Vector{qComposite}
-    current_products = [(one(ComplexRational), p.expr)]
-    did_any = true
-
-    while did_any
-        new_products = Tuple{ComplexRational, Vector{qAtom}}[]
-        did_any = false
-
-        for (coeff, terms) in current_products
-            simplified_terms, changed = simplify_pairs(terms, p.statespace)
-            if changed
-                did_any = true
-            end
-            for (c, t) in simplified_terms
-                push!(new_products, (coeff * c, t))
-            end
-        end
-        current_products = new_products
-    end
-
-    # Wrap in qComposite or qAtomProduct
-    return [qAtomProduct(p.statespace, FFunctions.simplify(c * p.coeff_fun), t) for (c, t) in current_products]
-end   
-
-function simplify(qcomp::qMultiComposite; kwargs...)::Vector{qMultiComposite}
-    new_exprs::Vector{qExpr} = [simplify(x; kwargs...) for x in qcomp.expr]
+function simplify(q::qAtomProduct)::Vector{qAtomProduct}
+    return [q]
+end
+function simplify(qcomp::T)::Vector{T} where T <: qMultiComposite
+    new_exprs::Vector{qExpr} = [simplify(x) for x in qcomp.expr]
     q = copy(qcomp)
     q.expr = new_exprs
     return [q]
 end
-function simplify(p::qComposite)::Vector{qComposite}
+function simplify(p::T)::Vector{T} where T <: qComposite
     new_p = copy(p) 
     new_p.expr = simplify(p.expr)
     return [new_p]
@@ -127,11 +146,6 @@ function simplify(q::qExpr)::qExpr
     end
     return qExpr(q.statespace, combined_terms)
 end
-function simplify(s::qSum)::Vector{qComposite}
-    simplified_expr = simplify(s.expr)
-    return [qSum(s.statespace, simplified_expr, s.indexes, s.subsystem_index, s.element_indexes, s.neq)]
-end
-
 function simplify(q::diff_qEQ)::diff_qEQ
     simp_rhs = simplify(q.expr)
     return diff_qEQ(q.left_hand_side, simp_rhs, q.statespace, q.braket, q.do_sigma)

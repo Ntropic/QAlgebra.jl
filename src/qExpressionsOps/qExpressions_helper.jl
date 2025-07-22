@@ -50,60 +50,62 @@ function reduce_qabstract_pair(a::qAbstract, b::qAbstract, statespace::StateSpac
 end
 
 #### Main simplify step function #################################################
-function simplify_pair(x::qAtom, y::qAtom, ss::StateSpace)::Tuple{Vector{Tuple{ComplexRational, Vector{qAtom}}}, Bool}
-    if isa(x, qAbstract) 
-        if isa(y, qAbstract) # 1) two abstracts → try reduction
-            new_abs, did = reduce_qabstract_pair(x, y, ss)
-            if did
-                out = Vector{Tuple{ComplexRational, Vector{qAtom}}}()
-                for t in new_abs
-                    push!(out, (one(ComplexRational), Vector{qAtom}([t])))
-                end
-                return out, true
-            end
-            return Tuple{ComplexRational, Vector{qAtom}}[(one(ComplexRational), Vector{qAtom}([x,y]))], false
-        else  # 1) qAbstract * qTerm → try (partial) commutation
-            commuting_qterm = copy(ss.neutral_op)
-            non_commuting_qterm = copy(ss.neutral_op)
-            c_abstract = where_acting(x, ss)
-            curr_combo = Vector{qAtom}()
-            for (i, (b, q_ind)) in enumerate(zip(c_abstract, y.op_indices))
-                if b
-                    non_commuting_qterm[i] = q_ind
-                else
-                    commuting_qterm[i] = q_ind
-                end
-            end
-            if !is_numeric(commuting_qterm, ss)
-                push!(curr_combo, qTerm(commuting_qterm))
-            else
-                return [(one(ComplexRational), [x, y])], false
-            end
-            push!(curr_combo, x)
-            if !is_numeric(non_commuting_qterm, ss)
-                push!(curr_combo, qTerm(non_commuting_qterm))
-            end
-            return [(one(ComplexRational), curr_combo)], true
-        end 
-    else
-        if isa(y, qTerm) # 3) two qTerms → multiply/unify
-            Ts, Cs = multiply_qterm(x, y, ss)
-            out = Vector{Tuple{ComplexRational, Vector{qAtom}}}()
-            for (t, c) in zip(Ts, Cs)
-                if !iszero(c) 
-                    if is_numeric(t, ss) 
-                        push!(out, (c, Vector{qAtom}([])))
-                    else
-                        push!(out, (c, Vector{qAtom}([t])))
-                    end
-                end
-            end
-            return out, true
-        else  # 4) nothing changed
-            return [(one(ComplexRational), Vector{qAtom}([x, y]))], false
+@inline function simplify_pair(x::qAbstract, y::qAbstract, ss::StateSpace)
+    new_abs, did = reduce_qabstract_pair(x, y, ss)
+    if did
+        out = Vector{Tuple{ComplexRational, Vector{qAtom}}}()
+        for t in new_abs
+            push!(out, (one(ComplexRational), Vector{qAtom}([t])))
         end
-    end 
+        return out, true
+    end
+    return Tuple{ComplexRational, Vector{qAtom}}[(one(ComplexRational), Vector{qAtom}([x,y]))], false
 end
+
+@inline function simplify_pair(x::qAbstract, y::qTerm, ss::StateSpace)
+    commuting_qterm = copy(ss.neutral_op)
+    non_commuting_qterm = copy(ss.neutral_op)
+    c_abstract = where_acting(x, ss)
+    curr_combo = Vector{qAtom}()
+    for (i, (b, q_ind)) in enumerate(zip(c_abstract, y.op_indices))
+        if b
+            non_commuting_qterm[i] = q_ind
+        else
+            commuting_qterm[i] = q_ind
+        end
+    end
+    if !is_numeric(commuting_qterm, ss)
+        push!(curr_combo, qTerm(commuting_qterm))
+    else
+        return [(one(ComplexRational), [x, y])], false
+    end
+    push!(curr_combo, x)
+    if !is_numeric(non_commuting_qterm, ss)
+        push!(curr_combo, qTerm(non_commuting_qterm))
+    end
+    return Tuple{ComplexRational, Vector{qAtom}}[(one(ComplexRational), curr_combo)], true
+end
+
+@inline function simplify_pair(x::qTerm, y::qAbstract, ss::StateSpace)
+    # just reverse order, logic is symmetric
+    return [(one(ComplexRational), Vector{qAtom}([x, y]))], false
+end
+
+@inline function simplify_pair(x::qTerm, y::qTerm, ss::StateSpace)
+    Ts, Cs = multiply_qterm(x, y, ss)
+    out = Vector{Tuple{ComplexRational, Vector{qAtom}}}()
+    for (t, c) in zip(Ts, Cs)
+        if !iszero(c) 
+            if is_numeric(t, ss) 
+                push!(out, (c, Vector{qAtom}([])))
+            else
+                push!(out, (c, Vector{qAtom}([t])))
+            end
+        end
+    end
+    return out, true
+end
+
 
 function simplify_pairs(expr::Vector{qAtom}, ss::StateSpace)::Tuple{Vector{Tuple{ComplexRational, Vector{qAtom}}}, Bool}
     # We're going to track triples (coeff, terms, i)

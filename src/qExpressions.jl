@@ -11,7 +11,7 @@ export qObj, qAtom, qAbstract, qComposite, qCompositeProduct, qMultiComposite, q
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
 # ==========================================================================================================================================================
-Is = Union{Int,Vector{Int}, Vector{Vector{Int}}}
+Is = Union{Int,Vector{Int}}
 
 """ 
     qObj
@@ -49,6 +49,9 @@ A `qTerm` represents a single term in a quantum expression. It contains:
 struct qTerm <: qAtom
     op_indices::Vector{Is}
 end
+function copy(q::qTerm)::qTerm
+    return qTerm(copy(q.op_indices))
+end
 
 """
     qAbstract(indices::Vector{Int})
@@ -73,6 +76,9 @@ end
 function qAbstract(operator_type::OperatorType, key_index::Int, sub_index::Int=-1, exponent::Int=1, dag::Bool=false; index_map::Vector{Tuple{Int,Int}}=Tuple{Int,Int}[])
     return qAbstract(key_index, sub_index, exponent, dag, operator_type, index_map)
 end
+function copy(q::qAbstract)::qAbstract
+    return qAbstract(copy(q.key_index), copy(q.sub_index), copy(q.exponent), copy(q.dag), q.operator_type, copy(q.index_map))
+end
 
 """ 
     qAtomProduct
@@ -91,7 +97,7 @@ mutable struct qAtomProduct <: qComposite
         new(statespace, coeff, expr)
     end
     function qAtomProduct(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::qAtom)
-        f_fun = FAtom(coeff, var_exponents) 
+        f_fun = FAtom(coeff, var_exponents)
         return new(statespace, f_fun, [expr]) 
     end
     function qAtomProduct(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::AbstractVector{<:qAtom})
@@ -107,6 +113,9 @@ mutable struct qAtomProduct <: qComposite
         return new(statespace, f_fun, [expr]) 
     end
 end
+function copy(q::qAtomProduct)::qAtomProduct
+    return qAtomProduct(q.statespace, copy(q.coeff_fun), copy(q.expr))
+end
 
 """
     qExpr
@@ -116,7 +125,7 @@ It also contains a reference to the state space in which the equation is defined
 """
 struct qExpr
     statespace::StateSpace
-    terms::Vector{qComposite}               #AbstractVector{<:qComposite}    
+    terms::Vector{qComposite}              #AbstractVector{<:qComposite}    
     function qExpr(statespace::StateSpace, terms::AbstractVector{<:qComposite})
         if isempty(terms) 
             # add neotral zero term
@@ -126,10 +135,10 @@ struct qExpr
         return new(statespace, terms)
     end
 end
-function qExpr(term::qComposite)
+function qExpr(term::T) where T<:qComposite
     return qExpr(term.statespace, [term])
 end
-function qExpr(statespace::StateSpace, prod::qComposite)
+function qExpr(statespace::StateSpace, prod::T) where T<:qComposite
     return qExpr(statespace, [prod])
 end
 function qExpr(statespace::StateSpace, terms::qAtom)
@@ -138,7 +147,9 @@ end
 function qExpr(terms::AbstractVector{<:qComposite})
     return qExpr(terms[1].statespace, terms)
 end
-
+function copy(q::qExpr)::qExpr
+    return qExpr(q.statespace, copy(q.terms))
+end
 
 """
     qSum
@@ -160,7 +171,9 @@ mutable struct qSum <: qComposite
     element_indexes::Vector{Int}    # The position in that subspace.
     neq::Bool
 end
-
+function copy(q::qSum)::qSum
+    return qSum(q.statespace, copy(q.expr), copy(q.indexes), copy(q.subsystem_index), copy(q.element_indexes), copy(q.neq))
+end
 
 """
     diff_qEQ
@@ -184,6 +197,9 @@ mutable struct diff_qEQ <: qComposite
     expr::qExpr
     braket::Bool
     do_sigma::Bool
+end
+function copy(q::diff_qEQ)::diff_qEQ
+    return diff_qEQ(copy(q.left_hand_side), copy(q.expr), copy(q.statespace), copy(q.braket), copy(q.do_sigma))
 end
 
 """
@@ -256,16 +272,8 @@ function iterate(q::qExpr, state::Int=1)
     state > length(q.terms) && return nothing
     return q.terms[state], state + 1
 end
-#function iterate(q::T, state::Int=1) where T <: qComposite
-#    #iterate the qExpr in qComposite 
-#    state > length(q.expr) && return nothing
-#    return q.expr[state], state + 1
-#end
 function iterate(q::T, state::Int=1) where T <: qComposite
     error("Cannot iterate over a qComposite of type $(T).")
-end
-function iterate(q::qAtomProduct) 
-    error("Cannot iterate over a qAtomProduct")
 end
 
 function getindex(q::qExpr, i::Int)
@@ -279,30 +287,11 @@ end
 length(q::qExpr) = length(q.terms)
 
 iszero(q::qExpr) = length(q.terms) == 0 || all(iszero, q.terms)
-iszero(q::qSum) = iszero(q.expr)
 iszero(q::qAtomProduct) = iszero(q.coeff_fun)
-iszero(q::qComposite) = iszero(q.expr)
-iszero(q::qMultiComposite) = any(iszero, q.expr)
+iszero(q::T) where T<:qComposite = iszero(q.expr)
+iszero(q::T) where T<:qMultiComposite = any(iszero, q.expr)
 
 
-function copy(q::qTerm)::qTerm
-    return qTerm(copy(q.op_indices))
-end
-function copy(q::qAbstract)::qAbstract
-    return qAbstract(copy(q.key_index), copy(q.sub_index), copy(q.exponent), copy(q.dag), q.operator_type, copy(q.index_map))
-end
-function copy(q::qAtomProduct)::qAtomProduct
-    return qAtomProduct(q.statespace, copy(q.coeff_fun), copy(q.expr))
-end
-function copy(q::qSum)::qSum
-    return qSum(q.statespace, copy(q.expr), copy(q.indexes), copy(q.subsystem_index), copy(q.element_indexes), copy(q.neq))
-end
-function copy(q::qExpr)::qExpr
-    return qExpr(q.statespace, copy(q.terms))
-end
-function copy(q::diff_qEQ)::diff_qEQ
-    return diff_qEQ(copy(q.left_hand_side), copy(q.expr), copy(q.statespace), copy(q.braket), copy(q.do_sigma))
-end
 
 include("qExpressionsOps/qExpressions_functions.jl")
 include("qExpressionsOps/qExpressions_helper.jl") # Helper functions for qAtomProduct simplify
