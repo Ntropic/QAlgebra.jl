@@ -42,13 +42,13 @@ function is_numeric(expr::qExpr)::Bool
     end
 end
 
-function where_neutral(q::qAtom, statespace::StateSpace)::Vector{Bool}
+function where_neutral(q::qTerm, statespace::StateSpace)::Vector{Bool}
     return [op==neut for (op, neut) in zip(q.op_indices, statespace.neutral_op)]
 end
 function where_neutral(q::qAbstract, statespace::StateSpace)::Vector{Bool}
     return copy(q.operator_type.subspaces)
 end
-function where_acting(q::qAtom, statespace::StateSpace)::Vector{Bool}
+function where_acting(q::qTerm, statespace::StateSpace)::Vector{Bool}
     return [op!=neut for (op, neut) in zip(q.op_indices, statespace.neutral_op)]
 end
 function where_acting(q::qAbstract, statespace::StateSpace)::Vector{Bool}

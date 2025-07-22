@@ -17,10 +17,13 @@ const PAULI_COEFF_TABLE = crationalize.([
 
 Creates the OperatorSet for a qubit using Pauli operators (``\sigma_x``, ``\sigma_y``, ``\sigma_z``, ``\sigma_I``).
 """
-function QubitPauli()
+function QubitPauli(symbol::String="")::OperatorSet
     ops = ["x", "y", "z", "I"]
     base_pauli = [1, 2, 3]
     non_base_ops::Dict{String, Vector{Tuple{ComplexRational, Is}}} = Dict("p"=> [(ComplexRational(1,0,1), 1),(ComplexRational(0,1,1), 2)], "m" => [(ComplexRational(1,0,1), 1), (ComplexRational(0,-1,1), 2)])
+    
+    symbol_str, symbol_latex = symbol2formatted(symbol)
+    do_symbol::Bool = length(symbol) > 0
     # Define the transformation function using the PAULI_* tables.
     function pauli_product(op1::Int, op2::Int)::Vector{Tuple{ComplexRational,Int}}
         # Look up the coefficient and new operator index.
@@ -42,42 +45,39 @@ function QubitPauli()
         end
         return [(ComplexRational(1,0,1), res)]
     end
-    function paulistr2ind(str::Vector{String})::Vector{Tuple{ComplexRational,Int}}
-        # iteratively take paulistr2ind for each element and unify them iteratively using pauli_product 
-        if length(str) == 0
-            return [(ComplexRational(1,0,1), 4)]
-        end
-        inds = [paulistr2ind(s)[1][2] for s in str]
-        coeff = ComplexRational(1,0,1)
-        while length(inds) > 1
-            new_coeff, new_ind = pauli_product(inds[end-1], inds[end])[1]
-            coeff *= new_coeff
-            inds[end-1] = new_ind
-            deleteat!(inds, length(inds))
-        end
-        return [(coeff, inds[1])]
-    end
     function pauli2str(ind::Int, sym::String=""; formatted::Bool=true)::String
         # create underscored string representation of sym using subscript_indexes
-        if formatted
-            return ops[ind] * str2sub(sym)
+        if do_symbol
+            if formatted
+                return symbol_str * str2sup(ops[ind]) * str2sub(sym) 
+            else
+                return symbol_str * "_" * sym 
+            end
         else
-            return ops[ind] * "_" * sym
+            if formatted
+                return ops[ind] * str2sub(sym) 
+            else
+                return ops[ind] * "_" * sym
+            end
         end
     end
-    function pauli2latex(ind::Int, sym::String, do_sigma::Bool=false)::String
+    function pauli2latex(ind::Int, sym::String)::String
         # create underscored string representation of sym using subscript_indexes
         curr_str::String = raw""
-        if do_sigma
-            curr_str *= raw"\hat{\sigma}_{" * ops[ind] * "}"
-            curr_str *= raw"^{(" * sym * ")}"
+        if do_symbol
+            curr_str *= raw"{"*symbol_latex*raw"}^{" * ops[ind] * "}"
+            if length(sym) > 0
+                curr_str *= raw"_{" * sym * raw"}"
+            end
         else
             curr_str *= raw"\hat{" * ops[ind] * "}"
-            curr_str *= raw"_{" * sym * "}"
+            if length(sym) > 0 
+                curr_str *= raw"_{" * sym * "}"
+            end
         end
         return curr_str
     end
-    return OperatorSet("Pauli Qubit", true, 1, 4, base_pauli, non_base_ops, ops, pauli_product, pauli_dag, paulistr2ind, pauli2str, pauli2latex)
+    return OperatorSet("Pauli Qubit", true, 1, 4, base_pauli, non_base_ops, ops, pauli_product, pauli_dag, pauli2str, pauli2latex)
 end
 ## Test 
 #q = QubitPauli()

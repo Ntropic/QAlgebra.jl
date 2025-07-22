@@ -40,25 +40,6 @@ function Ladder()
     function ladder_dag(op::Vector{Int})::Vector{Tuple{ComplexRational,Vector{Int}}}
         return [(ComplexRational(1,0,1), [op[2], op[1]])]
     end
-    function ladderstr2ind(str::Vector{String})::Vector{Tuple{ComplexRational,Vector{Int}}}
-        if length(str) == 0
-            return [(ComplexRational(1,0,1), [0, 0])]
-        end
-        new_exp::Vector{Tuple{ComplexRational,Vector{Int}}} = ladderstr2ind(str[1])
-        for s_str in str[2:end]
-            s = ladderstr2ind(s_str)[1]
-            new_new_exp::Vector{Tuple{ComplexRational,Vector{Int}}} = []
-            for exp in new_exp
-                curr_terms = ladder_product(exp[2], s[2])
-                for i in 1:eachindex(curr_terms)
-                    curr_terms[i] = (curr_terms[i][1] * s[1] * exp[1], curr_terms[i][2])
-                end
-                append!(new_new_exp, curr_terms)
-            end
-            new_exp = new_new_exp
-        end
-        return new_exp
-    end
     function ladder2str(a::Vector{Int}, sym::String; formatted::Bool=true)::String
         curr_str = ""
         if formatted
@@ -97,7 +78,7 @@ function Ladder()
             return ladder2str([0, 1], sym, formatted=formatted)
         end
     end
-    function ladder2latex(a::Vector{Int}, sym::String, do_sigma::Bool=false)::String
+    function ladder2latex(a::Vector{Int}, sym::String)::String
         curr_str = ""
         if a[1] > 0
             if a[1] > 1
@@ -114,5 +95,5 @@ function Ladder()
         end
         return curr_str
     end
-    return OperatorSet("Ladder", false, 2, Int[0, 0], base_ladder, non_base_ops, ops, ladder_product, ladder_dag, ladderstr2ind, ladder2str, ladder2latex)
+    return OperatorSet("Ladder", false, 2, Int[0, 0], base_ladder, non_base_ops, ops, ladder_product, ladder_dag, ladder2str, ladder2latex)
 end

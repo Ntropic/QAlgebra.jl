@@ -5,30 +5,7 @@ import Base: string
 export string, latex_string
 
 
-function var_exponents2string(var_exponents::Vector{Int}, statespace::StateSpace; do_latex::Bool=false)::String
-    monomial::String = ""
-    for (i, exp) in enumerate(var_exponents)
-        if exp != 0
-            # Convert the variable to a string; you may adjust formatting if needed.
-            if do_latex
-                var = statespace.vars[i].var_latex
-            else
-                var = statespace.vars[i].var_str
-            end
-            monomial *= var
-            if exp != 1
-                if do_latex
-                    monomial *= "^" * string(exp)
-                else
-                    monomial *= str2sup(string(exp))
-                end
-            end
-        end
-    end
-    monomial = strip(monomial)
-    return monomial
-end
-function operators2string(op_indices::Vector{Is}, statespace::StateSpace; do_latex::Bool=false, do_sigma::Bool=false)::String
+function operators2string(op_indices::Vector{Is}, statespace::StateSpace; do_latex::Bool=false)::String
     op_str::String = ""
     subspaces = statespace.subspaces
     not_neutral = false
@@ -41,7 +18,7 @@ function operators2string(op_indices::Vector{Is}, statespace::StateSpace; do_lat
             if op_set.neutral_element != curr_op_ind
                 not_neutral = true
                 if do_latex
-                    op_str *= op_set.op2latex(curr_op_ind, key, do_sigma)
+                    op_str *= op_set.op2latex(curr_op_ind, key)
                 else
                     op_str *= op_set.op2str(curr_op_ind, key)
                 end
@@ -50,10 +27,10 @@ function operators2string(op_indices::Vector{Is}, statespace::StateSpace; do_lat
     end
     return op_str 
 end
-function qAtom2string(qatom::qTerm, statespace::StateSpace; do_latex::Bool=false, do_sigma::Bool=false)::String
-    return operators2string(qatom.op_indices, statespace; do_latex=do_latex, do_sigma=do_sigma)
+function qAtom2string(qatom::qTerm, statespace::StateSpace; do_latex::Bool=false)::String
+    return operators2string(qatom.op_indices, statespace; do_latex=do_latex)
 end
-function qAtom2string(q::qAbstract, statespace::StateSpace; do_latex::Bool=false, do_sigma::Bool=false)::String
+function qAtom2string(q::qAbstract, statespace::StateSpace; do_latex::Bool=false)::String
     type = q.operator_type
     name = type.name 
     if do_latex 
@@ -131,7 +108,7 @@ function sum_symbol_str(s::qSum; do_latex::Bool=false)
 end
 
 # braced not used here as an argument use, it in other qComposites that contain qExpr to determine groupings!
-function qComposite2string(q::qAtomProduct; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+function qComposite2string(q::qAtomProduct; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     if is_numeric(q)
         curr_sign, curr_str = to_stringer(q.coeff_fun, variable_str_vec(q, do_latex=do_latex), braced=false, do_frac=do_frac)
         if return_if_braced
@@ -141,7 +118,7 @@ function qComposite2string(q::qAtomProduct; do_latex::Bool=true, do_sigma::Bool=
         end
     else
         curr_sign, curr_str = to_stringer(q.coeff_fun, variable_str_vec(q, do_latex=do_latex), braced=true, do_frac=do_frac, has_op=true)
-        operator_str = join([qAtom2string(t, q.statespace, do_latex=do_latex, do_sigma=do_sigma) for t in q.expr], "")
+        operator_str = join([qAtom2string(t, q.statespace, do_latex=do_latex) for t in q.expr], "")
         connector =do_latex ? raw" " : ""
         if return_if_braced
             return curr_sign, curr_str * connector * operator_str, false
@@ -150,9 +127,9 @@ function qComposite2string(q::qAtomProduct; do_latex::Bool=true, do_sigma::Bool=
         end
     end
 end
-function qComposite2string(term::qSum; do_latex::Bool=false, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+function qComposite2string(term::qSum; do_latex::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     sum_str = sum_symbol_str(term, do_latex=do_latex)
-    first_sign, total_string, single_group = qExpr2string(term.expr; do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac, return_grouping=true)
+    first_sign, total_string, single_group = qExpr2string(term.expr; do_latex=do_latex, braced=braced, do_frac=do_frac, return_grouping=true)
     if return_if_braced
         if single_group
             return first_sign, sum_str * total_string, false
@@ -167,11 +144,11 @@ function qComposite2string(term::qSum; do_latex::Bool=false, do_sigma::Bool=fals
         end
     end
 end
-function qComposite2string(q::qCompositeProduct; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+function qComposite2string(q::qCompositeProduct; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     total_sign = false
     all_strings::Vector{String} = []
     for term in q.expr
-        new_sign, new_str, is_braced = qComposite2string(term, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac, return_if_braced=true)
+        new_sign, new_str, is_braced = qComposite2string(term, do_latex=do_latex, braced=braced, do_frac=do_frac, return_if_braced=true)
         total_sign = xor(total_sign, new_sign)
         #if !is_braced 
         #    new_str = brace(new_str, do_latex=do_latex)
@@ -195,22 +172,22 @@ function do_return_braced_false(return_argument1::Bool, return_argument2::String
     end 
 end
 
-function qComposite2string(q::qExp; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
-    first_sign, total_str = qExpr2string(q.expr, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac) 
+function qComposite2string(q::qExp; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+    first_sign, total_str = qExpr2string(q.expr, do_latex=do_latex, braced=braced, do_frac=do_frac) 
     total_str = first_sign ? "-"*total_str : total_str 
     prefix = do_latex ? raw"\exp" : "exp"
     total_str = prefix * brace(total_str, do_latex=do_latex)
     return do_return_braced_false(false, total_str, return_if_braced) 
 end
-function qComposite2string(q::qLog; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
-    first_sign, total_str = qExpr2string(q.expr, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac) 
+function qComposite2string(q::qLog; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+    first_sign, total_str = qExpr2string(q.expr, do_latex=do_latex, braced=braced, do_frac=do_frac) 
     total_str = first_sign ? "-"*total_str : total_str 
     prefix = do_latex ? raw"\log" : "log"
     total_str = prefix * brace(total_str, do_latex=do_latex)
     return do_return_braced_false(false, total_str, return_if_braced) 
 end
-function qComposite2string(q::qPower; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
-    first_sign, total_str = qExpr2string(q.expr, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac) 
+function qComposite2string(q::qPower; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+    first_sign, total_str = qExpr2string(q.expr, do_latex=do_latex, braced=braced, do_frac=do_frac) 
     total_str = first_sign ? "-"*total_str : total_str 
     total_str = brace(total_str, do_latex=do_latex)
     if do_latex 
@@ -219,8 +196,8 @@ function qComposite2string(q::qPower; do_latex::Bool=true, do_sigma::Bool=false,
         return do_return_braced_false(false, total_str * str2sup(string(q.n)), return_if_braced)
     end
 end
-function qComposite2string(q::qRoot; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
-    first_sign, total_str = qExpr2string(q.expr, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac) 
+function qComposite2string(q::qRoot; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+    first_sign, total_str = qExpr2string(q.expr, do_latex=do_latex, braced=braced, do_frac=do_frac) 
     total_str = first_sign ? "-"*total_str : total_str 
     
     if do_latex 
@@ -234,10 +211,10 @@ function qComposite2string(q::qRoot; do_latex::Bool=true, do_sigma::Bool=false, 
         return do_return_braced_false(false, total_str * str2sup("1="*string(q.n)), return_if_braced)
     end
 end
-function qComposite2string(q::qCommutator; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+function qComposite2string(q::qCommutator; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     my_strings::Vector{String} = []
     for expr in q.expr
-        first_sign, total_str = qExpr2string(expr, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
+        first_sign, total_str = qExpr2string(expr, do_latex=do_latex, braced=braced, do_frac=do_frac)
         total_str = first_sign ? "-"*total_str : total_str 
         #total_str = brace(total_str, do_latex=do_latex)
         push!(my_strings, total_str)
@@ -249,8 +226,8 @@ function qComposite2string(q::qCommutator; do_latex::Bool=true, do_sigma::Bool=f
     end
 end
 
-function qComposites2string(terms::AbstractVector{<: qComposite}; do_latex::Bool=false, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, separate_sign::Bool=false)::String
-    substrings::Vector{Tuple{Bool, String}} = [qComposite2string(t, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac) for t in terms]
+function qComposites2string(terms::AbstractVector{<: qComposite}; do_latex::Bool=false, braced::Bool=true, do_frac::Bool=true, separate_sign::Bool=false)::String
+    substrings::Vector{Tuple{Bool, String}} = [qComposite2string(t, do_latex=do_latex, braced=braced, do_frac=do_frac) for t in terms]
     # connect substrings  
     if separate_sign
         string = substrings[1][2]
@@ -289,17 +266,17 @@ function group_qAtomProducts(qs::Vector{qAtomProduct})::Vector{Union{qAtomProduc
     return new_qs 
 end 
 
-function qAtomProduct_group2string(qs::qAtomProduct; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true)::Tuple{Bool, String, String}
-    curr_sign, operator_str = qComposite2string(qs, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
+function qAtomProduct_group2string(qs::qAtomProduct; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true)::Tuple{Bool, String, String}
+    curr_sign, operator_str = qComposite2string(qs, do_latex=do_latex, braced=braced, do_frac=do_frac)
     return curr_sign, "", operator_str
 end
-function qAtomProduct_group2string(qs::Tuple{Union{FAtom, FSum}, Vector{qAtomProduct}}; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true)::Tuple{Bool, String, String}
+function qAtomProduct_group2string(qs::Tuple{Union{FAtom, FSum}, Vector{qAtomProduct}}; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true)::Tuple{Bool, String, String}
     # assume the qs can be simple grouped (see the functions: simple_combinable_Fs, group_Fs)
     F = qs[1]
     qs = qs[2]
     has_op = any([!is_numeric(s) for s in qs])
     f_sign, f_str = to_stringer(F, variable_str_vec(qs[1], do_latex=do_latex); do_latex=do_latex, braced=braced, do_frac=do_frac, has_op=has_op)
-    q_str = qComposites2string(qs; do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac, separate_sign=false)  # don't worry about internal signs, this has already been taken care off by the sign handling of the grouping 
+    q_str = qComposites2string(qs; do_latex=do_latex, braced=braced, do_frac=do_frac, separate_sign=false)  # don't worry about internal signs, this has already been taken care off by the sign handling of the grouping 
     return f_sign, f_str, q_str
 end 
 
@@ -316,7 +293,7 @@ function brace(x::String; do_latex::Bool=true)::String
         return "(" * x * ")"
     end
 end
-function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true, return_grouping::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+function qExpr2string(q::qExpr; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_grouping::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     # outputs sign, string, {optional return_grouping:} single_group::Bool   => return grouping implies that the expression will be braced if it isn't already! , hence the outputted sign is handled differently 
     # first sort terms 
     # q_sorted = q   # activate if debugging for checking if sorting is the problem 
@@ -324,9 +301,9 @@ function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, brace
     q_sorted = simplify(q)
     if !braced # outside (not inside of a qComposite)
         if !return_grouping
-            return qComposites2string(q_sorted.terms, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac, separate_sign=true)
+            return qComposites2string(q_sorted.terms, do_latex=do_latex, braced=braced, do_frac=do_frac, separate_sign=true)
         else
-            first_sign, total_string = qComposites2string(q_sorted.terms, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac, separate_sign=true)
+            first_sign, total_string = qComposites2string(q_sorted.terms, do_latex=do_latex, braced=braced, do_frac=do_frac, separate_sign=true)
             return first_sign, total_string, false
         end
     else  # inside amnother qComposite
@@ -343,7 +320,7 @@ function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, brace
         all_strings::Vector{Tuple{Bool, String}} = []
         for group in groups
             #if isonelike(group[1])  # => remove grouping with brace 
-            curr_sign, first, second = qAtomProduct_group2string(group, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
+            curr_sign, first, second = qAtomProduct_group2string(group, do_latex=do_latex, braced=braced, do_frac=do_frac)
             if isa(group, Tuple)
                 push!(all_strings, (curr_sign, first*brace(second, do_latex=do_latex)))
             else
@@ -351,7 +328,7 @@ function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, brace
             end
         end
         for term in other_terms
-            push!(all_strings, qComposite2string(term, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac))
+            push!(all_strings, qComposite2string(term, do_latex=do_latex, braced=braced, do_frac=do_frac))
         end
         
         # make qComposites2string better, by allowing a third output in case of single group. to traverse multiple layers of Composites within composites. 
@@ -390,11 +367,11 @@ function qExpr2string(q::qExpr; do_latex::Bool=true, do_sigma::Bool=false, brace
     end
 end
 
-function diff_qEQ2string(eq::diff_qEQ; do_latex::Bool=true, do_sigma::Bool=false, braced::Bool=true, do_frac::Bool=true)::String
-    curr_sign, curr_string = qExpr2string(eq.expr, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
+function diff_qEQ2string(eq::diff_qEQ; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true)::String
+    curr_sign, curr_string = qExpr2string(eq.expr, do_latex=do_latex, braced=braced, do_frac=do_frac)
     right_hand_side = curr_sign ? "-" * curr_string : curr_string
 
-    curr_sign, curr_string = qComposite2string(eq.left_hand_side, do_latex=do_latex, do_sigma=do_sigma, braced=braced, do_frac=do_frac)
+    curr_sign, curr_string = qComposite2string(eq.left_hand_side, do_latex=do_latex, braced=braced, do_frac=do_frac)
     left_hand_side_op_str = curr_sign ? "-" * curr_string : curr_string
     left_hand_side_op_str = lstrip(left_hand_side_op_str, '+')
 
@@ -416,19 +393,19 @@ end
 Returns a string representation of the qExpr, qAtomProduct or diff_qEQ object. The string is formatted in a human-readable way, but without LaTeX formatting.
 """
 function string(eq::qExpr)::String
-    # add default variables for do_Frac, do_sigma, braced and so on. take care of this by writing a single function called by every string and latex string function 
-    curr_sign, curr_string = qExpr2string(eq, do_latex=false, do_sigma=get_default(:DO_SIGMA), braced=get_default(:DO_BRACED))
+    # add default variables for do_Frac, braced and so on. take care of this by writing a single function called by every string and latex string function 
+    curr_sign, curr_string = qExpr2string(eq, do_latex=false, braced=get_default(:DO_BRACED))
     total_string = curr_sign ? "-" * curr_string : curr_string
     return total_string
 end
 function string(eq::qAtomProduct)::String
-    # add default variables for do_Frac, do_sigma, braced and so on. take care of this by writing a single function called by every string and latex string function 
-    sign, total_string = qComposite2string(eq; do_latex=false, do_sigma=false, braced=get_default(:DO_BRACED))
+    # add default variables for do_Frac,, braced and so on. take care of this by writing a single function called by every string and latex string function 
+    sign, total_string = qComposite2string(eq; do_latex=false, braced=get_default(:DO_BRACED))
     total_string = sign ? "-" * total_string : total_string
     return total_string
 end
 function string(eq::diff_qEQ)::String
-    return diff_qEQ2string(eq; do_latex=false, do_sigma=get_default(:DO_SIGMA), braced=get_default(:DO_BRACED))
+    return diff_qEQ2string(eq; do_latex=false, braced=get_default(:DO_BRACED))
 end
 
 #### LaTeX-String ##########################################################################################################################
@@ -440,18 +417,18 @@ end
 Returns a LaTeX string representation of the qExpr, qAtomProduct or diff_qEQ object. 
 """
 function latex_string(eq::qExpr)::String
-    curr_sign, curr_string = qExpr2string(eq, do_latex=true, do_sigma=get_default(:DO_SIGMA), braced=get_default(:DO_BRACED))
+    curr_sign, curr_string = qExpr2string(eq, do_latex=true, braced=get_default(:DO_BRACED))
     total_string = curr_sign ? "-" * curr_string : curr_string
     return total_string
 end
 function latex_string(eq::qAtomProduct)::String
-    # add default variables for do_Frac, do_sigma, braced and so on. take care of this by writing a single function called by every string and latex string function 
-    sign, total_string = qComposite2string(eq; do_latex=true, do_sigma=get_default(:DO_SIGMA), braced=get_default(:DO_BRACED))
+    # add default variables for do_Frac, braced and so on. take care of this by writing a single function called by every string and latex string function 
+    sign, total_string = qComposite2string(eq; do_latex=true, braced=get_default(:DO_BRACED))
     total_string = sign ? "-" * total_string : total_string
     return total_string
 end
 function latex_string(eq::diff_qEQ)::String
-    return diff_qEQ2string(eq; do_latex=true, do_sigma=get_default(:DO_SIGMA), braced=get_default(:DO_BRACED))
+    return diff_qEQ2string(eq; do_latex=true, braced=get_default(:DO_BRACED))
 end
 
 #### Show off #########################################################################################################################

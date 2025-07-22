@@ -23,7 +23,6 @@ struct OperatorSet
     ops::Vector{String}     # operator symbols
     op_product::Function    # takes operator indexes of two operators of this set and outputs a vector of tuples of coefficients and associated indexes for the resulting operators in this set
     op_dag::Function        # Create Complex Transpoose Conjugate
-    strs2ind::Function      # transform a vector of strings into the index representation
     op2str::Function        # transforms an operator index into a string for console printing
     op2latex::Function      # transforms an operator index into a LaTeX string for formatted LaTeXStrings
 end

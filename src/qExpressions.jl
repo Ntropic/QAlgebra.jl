@@ -191,29 +191,27 @@ It represents time evolution of operator expectation values, and wraps the symbo
 - `expr::qExpr`: The RHS symbolic expression.
 - `statespace::StateSpace`: The StateSpace in which the equation is defined.
 - `braket::Bool`: Whether to use braket notation ⟨⋯⟩ (default = `true`).
-- `do_sigma::Bool`: Whether to display Pauli operators as `σₓ`, etc. (default = `true`).
 """
 struct diff_qEQ <: qObj
     statespace::StateSpace
     left_hand_side::qAtomProduct
     expr::qExpr 
     braket::Bool
-    do_sigma::Bool
 end
 function copy(q::diff_qEQ)::diff_qEQ
-    return diff_qEQ(q.statespace, copy(q.left_hand_side), copy(q.expr), q.braket, q.do_sigma)
+    return diff_qEQ(q.statespace, copy(q.left_hand_side), copy(q.expr), q.braket)
 end
 
 """
-    diff_qEQ(lhs::qTerm, rhs::qExpr, statespace::StateSpace; braket=true, do_sigma=true)
+    diff_qEQ(lhs::qTerm, rhs::qExpr, statespace::StateSpace; braket=true)
 
 Construct a [`diff_qEQ`](@ref) that represents the time derivative of ⟨lhs⟩ = rhs.
 
 Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
-function diff_qEQ(statespace::StateSpace, left_hand_side::qAtomProduct, expr::qExpr; braket::Bool=true, do_sigma::Bool=false)
+function diff_qEQ(statespace::StateSpace, left_hand_side::qAtomProduct, expr::qExpr; braket::Bool=true)
     new_rhs = neq(expr)
-    return diff_qEQ(statespace, left_hand_side, new_rhs, braket, do_sigma)
+    return diff_qEQ(statespace, left_hand_side, new_rhs, braket)
 end
 
 """

@@ -4,7 +4,6 @@ using Preferences
 # === Default Coefficient Preferences ===
 const DEFAULT_COEFF_PREFS = Dict(
     :FLIP_IF_FIRST_TERM_NEGATIVE => true,
-    :DO_SIGMA => false,
     :DO_BRACED => true
     )
 
@@ -33,13 +32,6 @@ function set_flip_if_first_term_negative(mode::Bool)
     set_default(:FLIP_IF_FIRST_TERM_NEGATIVE, mode)
 end
 
-@doc raw"""
-    set_do_sigma(b::Bool)
-Sets a new default value for :DO_SIGMA. Toggles whether we write ``x_i`` or ``\sigma_x^{(i)}``.
-"""
-function set_do_sigma(mode::Bool)
-    set_default(:DO_SIGMA, mode)
-end
 
 """
     set_do_braced(b::Bool)
@@ -49,10 +41,11 @@ function set_do_braced(mode::Bool)
     set_default(:DO_BRACED, mode)
 end
 
-
-export get_default, set_flip_if_first_term_negative, set_do_sigma, set_do_braced
+export get_default, set_flip_if_first_term_negative, set_do_braced
 
 include("StringUtils.jl")
+using .StringUtils
+export symbol2formatted, str2sub, str2sup
 
 include("FFunctions.jl")
 using .FFunctions
