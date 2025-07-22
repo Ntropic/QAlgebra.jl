@@ -259,7 +259,7 @@ struct StateSpace
     vars_cont::Vector{Tuple{Vector{Int},Tuple}}    # For continuum variables: (subspace indices, standardized tuple for distribution) -> distribution is held here 
     how_many_by_continuum::Dict{Int,Int}   # for continuum subspaces, how many variables do we have 
     where_by_continuum::Dict{Int,Vector{Vector{Int}}}   # for continuum subspaces, where are our variables  
-    where_by_continuum_vec::Vector{Vector{Vector{Int}}}
+    where_by_continuum_var::Vector{Vector{Vector{Int}}}
     where_by_time::Vector{Int}
     where_const::Vector{Int}
     # Subspace definitions:
@@ -270,6 +270,7 @@ struct StateSpace
     bosonic_keys::Vector{String}
     neutral_op::Vector{Is}
     neutral_continuum_op::Vector{Vector{Is}}
+    subspace_by_ind::Vector{Int}
     fone::FAtom
     # Abstract operators
     operatortypes::Vector{OperatorType}
@@ -456,8 +457,12 @@ struct StateSpace
         where_continuum::Vector{Int} = sort(collect(keys(how_many_by_continuum))) 
         continuum_indexes::Vector{Vector{Int}} = [copy(subspaces[i].statespace_inds) for i in where_continuum]
         neutral_continuum_op::Vector{Vector{Is}} = [[neutral_op[i] for i in cont] for cont in continuum_indexes]
-        where_by_continuum_vec::Vector{Vector{Vector{Int}}} = [where_by_continuum[i] for i in where_continuum]
-        qss = new(vars, vars_str, vars_cont, how_many_by_continuum, where_by_continuum, where_by_continuum_vec, where_by_time, where_const, subspaces, where_continuum, continuum_indexes, fermionic_keys, bosonic_keys, neutral_op, neutral_continuum_op, fone, operatortypes, operator_names, operatortypes_commutator_mat)
+        where_by_continuum_var::Vector{Vector{Vector{Int}}} = [where_by_continuum[i] for i in where_continuum]
+        subspace_by_ind::Vector{Int} = zeros(Int, length(neutral_op))
+        for (i, s) in zip(where_continuum, continuum_indexes)
+            subspace_by_ind[s] .= i
+        end
+        qss = new(vars, vars_str, vars_cont, how_many_by_continuum, where_by_continuum, where_by_continuum_var, where_by_time, where_const, subspaces, where_continuum, continuum_indexes, fermionic_keys, bosonic_keys, neutral_op, neutral_continuum_op, subspace_by_ind, fone, operatortypes, operator_names, operatortypes_commutator_mat)
         if make_global
             global GLOBAL_STATE_SPACE = qss
         end

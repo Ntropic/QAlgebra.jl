@@ -74,55 +74,61 @@ function term_equal_indexes(expr, args...) # Base method to error
     throw(MethodError(term_equal_indexes, (typeof(expr), args...)))
 end
 # multiplies from the left 
-function term_equal_indexes(term::qTerm, index1::Int, index2::Int, subspace::SubSpace)::Tuple{Bool, Vector{qTerm}}
+function term_equal_indexes(term::qTerm, index1::Int, index2::Int, subspace::SubSpace)::Tuple{Bool, Vector{qTerm}, Vector{ComplexRational}}
     op1 = term.op_indices[index1]
     op2 = term.op_indices[index2]
     neutral = subspace.op_set.neutral_element
     if op1 === neutral && op2 === neutral
-        return false, [term]
+        return false, qTerm[term], ComplexRational[ComplexRational(1,0,1)]
     end
     results = subspace.op_set.op_product(op1, op2)
     new_terms = qTerm[]
+    new_coeffs = ComplexRational[]
     for (coeff, op) in results
         new_term = deepcopy(term)
         new_term.op_indices[index2] = op
         new_term.op_indices[index1] = neutral
         push!(new_terms, new_term)
+        push!(new_coeffs, coeff)
     end
-    return true, new_terms
+    return true, new_terms, new_coeffs
 end 
 
-function term_equal_indexes(abstract::qAbstract, index1::Int, index2::Int, subspace::SubSpace)::Tuple{Bool, Vector{qAbstract}}
+function term_equal_indexes(abstract::qAbstract, index1::Int, index2::Int, subspace::SubSpace)::Tuple{Bool, Vector{qAbstract}, Vector{ComplexRational}}
     op_type = abstract.operator_type
     non_trivial_op_indices = op_type.non_trivial_op_indices
     if non_trivial_op_indices[index2]
         new_abstract = copy(abstract)
         push!(new_abstract.index_map, (index1, index2))
-        return true, [new_abstract]
+        return true, qAbstract[new_abstract], ComplexRational[ComplexRational(1,0,1)]
     end
     # append this rule to the index map 
-    return false, [abstract]
+    return false, qAbstract[abstract], ComplexRational[ComplexRational(1,0,1)]
 end
 
-function term_equal_indexes(prod::qAtomProduct, index1::Int, index2::Int, subspace::SubSpace, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool, Vector{qAtomProduct}}
+function term_equal_indexes(q::qAtomProduct, index1::Int, index2::Int, subspace::SubSpace, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool, Vector{qAtomProduct}}
     changed_any = false
     term_variants = Vector{Vector{qAtom}}()
-    for atom in prod.expr
-        changed, variants = term_equal_indexes(atom, index1, index2, subspace)
+    coeff_variants = Vector{Vector{ComplexRational}}()
+    for atom in q.expr
+        changed, variants, coeffs = term_equal_indexes(atom, index1, index2, subspace)
         push!(term_variants, variants)
+        push!(coeff_variants, coeffs)
         changed_any |= changed  # Check if any term was changed
     end
-    changed, new_coeff_fun = FFunctions.term_equal_indexes(prod.coeff_fun, coeff_inds1, coeff_inds2)
+    changed, new_coeff_fun = FFunctions.term_equal_indexes(q.coeff_fun, coeff_inds1, coeff_inds2)
     changed_any |= changed
     if !changed_any
-        return false, [prod]
+        return false, [q]
     end
     # Generate all combinations (cartesian product) of updated terms
     combinations = Iterators.product(term_variants...)
+    coeff_combinations = Iterators.product(coeff_variants...)
     simplified_products = qAtomProduct[]
-    for combo in combinations
+    for (combo, coeff_combo) in zip(combinations, coeff_combinations)
         new_expr = collect(combo)
-        new_prod = qAtomProduct(prod.statespace, new_coeff_fun, new_expr)
+        factor = prod(coeff_combo)
+        new_prod = qAtomProduct(q.statespace, new_coeff_fun*factor, new_expr)
         push!(simplified_products, new_prod)
     end
     return true, simplified_products

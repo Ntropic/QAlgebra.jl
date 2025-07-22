@@ -245,14 +245,20 @@ function *(Q1::qExpr, Q2::qExpr)::qExpr
     # return simplify(qExpr(Q1.statespace, new_terms))
 end
 function *(Q1::qExpr, Q2::T)::qExpr where T<:qComposite
-    Q_new = copy(Q1)
     terms = qComposite[]  # or Vector{qComposite}()
     for q in Q1.terms
-        append!(terms, q * num)
+        append!(terms, q * Q2)
     end
-    Q_new.terms = terms
-    return Q_new
+    return qExpr(Q1.statespace, terms)
 end
+function *(Q1::T, Q2::qExpr)::qExpr where T<:qComposite
+    terms = qComposite[]  # or Vector{qComposite}()
+    for q in Q2.terms
+        append!(terms, Q1 * q)
+    end
+    return qExpr(Q1.statespace, terms)
+end
+
 function *(Q1::qExpr, num::Number)::qExpr
     if num == 0
         return qExpr(Q1.statespace, qComposite[])  # or Vector{qComposite}() if preferred
@@ -267,11 +273,7 @@ function *(num::Number, Q1::qExpr)::qExpr
     return Q1*num
 end
 
-function *(Q1::T, Q2::qExpr)::qExpr where T<:qComposite
-    Q_new = copy(Q1)
-    Q_new.expr = Q1.expr * Q2
-    return Q_new
-end
+
 function *(Q1::T, num::Number)::Vector{qComposite} where T<:qComposite
     Q_new = copy(Q1)
     Q_new.expr = Q1.expr * num

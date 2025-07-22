@@ -6,11 +6,12 @@ using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, ^, product, iszero, copy
 using ..qAlgebra: get_default 
 using ..FFunctions: isnumeric
-export qObj, qAtom, qAbstract, qComposite, qCompositeProduct, qMultiComposite, qTerm, qAtomProduct, qExpr, qSum, Sum, ∑, diff_qEQ, base_operators, simplify, flatten, neq, d_dt
+export qObj, qAtom, qAbstract, qComposite, qCompositeProduct, qMultiComposite, qTerm, qAtomProduct, qExpr, qSum, Sum, ∑, diff_qEQ, base_operators, simplify, simplifyqAtomProduct, flatten, neq, d_dt
 
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
 # ==========================================================================================================================================================
+# We are constructing terms and equations as an Abstract Syntax Tree 
 Is = Union{Int,Vector{Int}}
 
 """ 
@@ -77,8 +78,9 @@ function qAbstract(operator_type::OperatorType, key_index::Int, sub_index::Int=-
     return qAbstract(key_index, sub_index, exponent, dag, operator_type, index_map)
 end
 function copy(q::qAbstract)::qAbstract
-    return qAbstract(copy(q.key_index), copy(q.sub_index), copy(q.exponent), copy(q.dag), q.operator_type, copy(q.index_map))
+    return qAbstract(q.key_index, q.sub_index, q.exponent, q.dag, q.operator_type, copy(q.index_map))
 end
+
 
 """ 
     qAtomProduct
@@ -114,7 +116,7 @@ mutable struct qAtomProduct <: qComposite
     end
 end
 function copy(q::qAtomProduct)::qAtomProduct
-    return qAtomProduct(q.statespace, copy(q.coeff_fun), copy(q.expr))
+    return qAtomProduct(q.statespace, copy(q.coeff_fun), [copy(s) for s in q.expr])
 end
 
 """
@@ -123,14 +125,14 @@ end
 A `qExpr` represents a quantum equation, consisting of a Vector of quantum Expressions representing the additive terms of the equation.
 It also contains a reference to the state space in which the equation is defined.
 """
-struct qExpr
+mutable struct qExpr <: qObj
     statespace::StateSpace
     terms::Vector{qComposite}              #AbstractVector{<:qComposite}    
     function qExpr(statespace::StateSpace, terms::AbstractVector{<:qComposite})
         if isempty(terms) 
             # add neotral zero term
             zero_term = qAtomProduct(statespace, statespace.fone*0, qAtom[])
-            push!(terms, zero_term)
+            terms = [zero_term]
         end
         return new(statespace, terms)
     end
@@ -148,7 +150,7 @@ function qExpr(terms::AbstractVector{<:qComposite})
     return qExpr(terms[1].statespace, terms)
 end
 function copy(q::qExpr)::qExpr
-    return qExpr(q.statespace, copy(q.terms))
+    return qExpr(q.statespace, [copy(s) for s in q.terms])
 end
 
 """
@@ -172,7 +174,7 @@ mutable struct qSum <: qComposite
     neq::Bool
 end
 function copy(q::qSum)::qSum
-    return qSum(q.statespace, copy(q.expr), copy(q.indexes), copy(q.subsystem_index), copy(q.element_indexes), copy(q.neq))
+    return qSum(q.statespace, copy(q.expr), copy(q.indexes), q.subsystem_index, copy(q.element_indexes), q.neq)
 end
 
 """
@@ -191,15 +193,15 @@ It represents time evolution of operator expectation values, and wraps the symbo
 - `braket::Bool`: Whether to use braket notation ⟨⋯⟩ (default = `true`).
 - `do_sigma::Bool`: Whether to display Pauli operators as `σₓ`, etc. (default = `true`).
 """
-mutable struct diff_qEQ <: qComposite
+struct diff_qEQ <: qObj
     statespace::StateSpace
     left_hand_side::qAtomProduct
-    expr::qExpr
+    expr::qExpr 
     braket::Bool
     do_sigma::Bool
 end
 function copy(q::diff_qEQ)::diff_qEQ
-    return diff_qEQ(copy(q.left_hand_side), copy(q.expr), copy(q.statespace), copy(q.braket), copy(q.do_sigma))
+    return diff_qEQ(q.statespace, copy(q.left_hand_side), copy(q.expr), q.braket, q.do_sigma)
 end
 
 """
@@ -250,6 +252,10 @@ function Sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::qExpr; neq::Bo
         end
     end
     if length(index_strs) > 0
+        if length(e_inds) != length(unique(e_inds))
+            error("Duplicate indexes found in the input.")
+        end
+        e_inds = sort(e_inds)
         return qExpr(ss, [qSum(ss, expr, index_strs, the_s_ind, e_inds, neq)])
     else
         return expr
