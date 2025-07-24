@@ -50,7 +50,7 @@ A, A1, As(2)
 
 ---
 
-## Building and Simplifying Expressions
+## Building, Printing and Modifying Expressions
 
 You can build symbolic expressions using variables and operators:
 
@@ -85,7 +85,7 @@ diff_eq = d_dt(zi, alpha * expr + qsum)
 ```
 
 
-## Operator Functions
+### Operator Functions
 We provide the following operator functions, with as of now limited support
 ```@example qalgebra
 qCommutator(Sum("i", alpha * ph * xi * yi) + zj, zh)
@@ -107,7 +107,7 @@ power(Sum("i", alpha * ph * xi * yi) + zj, 2) + zh
 root(Sum("i", alpha * ph * xi * yi) + zj, 2) + zh
 ```
 
-## Simplify Expressions
+### Simplify, substitute and reorder Expressions
 You can simplify expressions with 
 ```@example qalgebra
 simplify(xi*yi+yi*xi)

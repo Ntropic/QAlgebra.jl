@@ -36,7 +36,7 @@ function QubitPM(symbol::String="")::OperatorSet
     base_pm = [1, 2, 3]
     pm_dag_inds = [2, 1, 3, 4]
 
-    symbol_str, symbol_latex = symbol2formatted(symbol)
+    symbol_str, symbol_latex = symbol2formatted(symbol, do_hat=true)
     do_symbol::Bool = length(symbol) > 0
     # Define the transformation function using the PAULI_* tables.
     function pm_product(op1::Int, op2::Int)::Vector{Tuple{ComplexRational,Int}}

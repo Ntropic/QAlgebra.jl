@@ -6,62 +6,148 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
 
-**qAlgebra.jl** provides a symbolic framework for operator algebra on composite quantum systems.
+**qAlgebra.jl** provides symbolic tools for constructing and manipulating quantum operator expressions on structured composite systems of qubits, spins, and bosonic modes.
 
-The operators are defined via a **StateSpace**, on which both the *variables* and *operators* are defined.  
-On these spaces, one can construct and manipulate *quantum expressions* and construct *differential equations* for expectatiuon values of (composite) operators.
+---
 
-Key features include:
-- Structured representation of operators across subsystems
-- Algebraic manipulation and simplification of quantum expressions
-- Support for sums over bath indexes with distinct or overlapping indices
-- Pretty-printing and LaTeX rendering of expressions
+## Features
+
+- **Flexible State Spaces**  
+  Define composite systems with symbolic variables, indexed subsystems, and a variety of operator bases (Pauli, ladder, raising/lowering, …).
+
+- **Symbolic Expressions**  
+  Build, combine, and manipulate expressions of operators and parameters.
+
+- **Index‑summations & Constraints**  
+  Generate sums over indices, nest and flatten them, and enforce index‑distinction (e.g. \(i \neq j\)).
+
+- **Operator Algebra**  
+  Compute commutators, exponentials, logarithms, powers, and roots of operator expressions.
+
+- **Differential Equations**  
+  Define and manage operator differential equations for expectation values.
+
+- **Simplification & Substitution**  
+  Simplify operator products, reorder terms, and substitute symbols or sub‑expressions.
+
+---
 
 ## Installation
-You can install the package directly from GitHub:
+
 ```julia
 import Pkg
-Pkg.add(url="https://github.com/Ntropic/qAlgebra.jl")
+Pkg.add("qAlgebra")
 ```
 
-## Quick Usage Example
+
+## Quick Start
+
 ```julia
 using qAlgebra
-
-# Generate the State Space consisting of a spin h using the raising and lowering basis (QubitPM), a spin bath in the Pauli Bases (QubitPauli) and a bosonic mode (Ladder).
-qs = StateSpace("alpha", "beta(t)", "gamma_i", "delta_i", h=QubitPM(), i=(3, QubitPauli()), b=Ladder())
-
-# We can return a dictionary of the operators in the system
-var_dict, op_dict = base_operators(qs)
-
-# Or individually for each subsystem (or subsystem index, i.e. i,j, and k) and variable
-xi, yi, zi = base_operators("i", qs)
-xj, yj, zj = base_operators("j", qs)
-xk, yk, zk = base_operators("k", qs)
-ph, mh, zh = base_operators("h", qs)
-b = base_operators("b", qs)
-I = base_operators("I", qs)     # Identity operator
-alpha, beta, gamma_i, gamma_j, gamma_k, delta_i, delta_j, delta_k = base_operators("vars", qs)
-
-# A simple expression can then be constructed from the operators 
-expr = 2 * alpha * im * xi + alpha * Dag(b) * xi * yi
-
-# It can be simplified via
-simplified_expr = simplify(expr)
-
-# Sums can be constructed via 
-qsum = Sum("j", alpha*yi*yj+Sum("k", beta*alpha^2*xi*xj*xk))
-
-# and the nested sum flattened via 
-flat_qsum = flatten(qsum)
-
-# The sum still covers all combinations of indexes j,k
-# We can transform it into a neq sum, in which the indexes j and k are distinct. the following function then expands into all possible cases
-neq_sum = neq_sum(qsum) # this also flattens the sum
-
-# A differential equation of expectation values can be constructed via
-diff_eq = d_dt(zi, alpha*expr+sum) # this simplifies, flattens and neq's the quantum equation
 ```
+
+### Constructing a State Space
+
+Define a composite system with symbolic coupling constants and multiple operator bases:
+
+```julia
+qspace = StateSpace(
+    "alpha", "beta(t)", "gamma_i", "delta_i";
+    operators = ["A(!i)", "B(U,H,i)"],
+    h = QubitPM(),           # single-qubit plus/minus basis
+    i = (3, QubitPauli()),   # three Pauli‑qubit subsystems
+    b = Ladder()             # single bosonic ladder mode
+)
+```
+
+Access the building blocks:
+
+```julia
+# All variables, operators, and abstract operators
+var_dict, op_dict, abstract_dict = base_operators(qspace)
+
+# Individual scalar variables
+alpha = base_operators(qspace, "alpha")
+beta  = base_operators(qspace, "beta")
+
+# Operators for subsystem “h” (returns a tuple [σ⁺, σ⁻, σᶻ])
+ph, mh, zh = base_operators(qspace, "h", do_dict=false)
+
+# Pauli operators on the i,j,k‑indexed qubits
+xi, yi, zi, pi, mi = base_operators(qspace, "i", do_dict=false)
+xj, yj, zj, pj, mj = base_operators(qspace, "j", do_dict=false)
+xk, yk, zk, pk, mk = base_operators(qspace, "k", do_dict=false)
+
+# Bosonic mode: ladder and number operators
+b, n = base_operators(qspace, "b", do_dict=false)
+```
+
+You can also pull out parameterized or indexed abstract operators:
+
+```julia
+A   = base_operators(qspace, "A")       # abstract A(!i)
+A1  = base_operators(qspace, "A_1")     # concrete index 1
+As  = base_operators(qspace, "A", do_fun=true)  # function A(i)
+A, A1, As(2)
+```
+
+### Building and Printing Expressions
+Compose symbolic expressions just like you would in standard Julia:
+```julia
+expr = 2 * (alpha + beta) * im * xi + alpha * Dag(b) * xi * yi
+
+# View as plain string or LaTeX
+string(expr)
+latex_string(expr)
+```
+
+### Summations & Index Constraints
+```julia
+# Nested sums over indices j and k
+qsum = Sum("j",
+    alpha * yi * yj +
+    Sum("k", beta * alpha^2 * xi * xj * xk)
+)
+
+# Flatten nested sums
+flatten(qsum)
+
+# Enforce i ≠ j where appropriate
+neq(qsum)
+```
+
+### Differential Equations
+Define the time‑derivative of an operator expectation value:
+
+```julia
+diff_eq = d_dt(zi, alpha * expr + qsum)
+```
+
+### Operator Functions
+Apply common functions to operator expressions:
+
+```julia
+# Commutator [·,·]
+qCommutator(Sum("i", alpha * ph * xi * yi) + zj, zh)
+
+# Exponential
+exp(Sum("i", alpha * ph * xi * yi) + zj) + zh
+
+# Logarithm
+log(Sum("i", alpha * ph * xi * yi) + zj)
+
+# Power and root
+power(Sum("i", alpha * ph * xi * yi) + zj, 2) + zh
+
+root(Sum("i", alpha * ph * xi * yi) + zj, 2) + zh
+```
+
+### Simplify, Substitute, and Reorder
+We can simplify expressions with
+```julia
+# Simplify anti‑commuting Pauli products
+simplify(xi*yi + yi*xi)
+``` 
 
 ## Author 
 - [Michael Schilling](https://github.com/Ntropic)

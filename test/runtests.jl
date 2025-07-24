@@ -4,41 +4,53 @@ using qAlgebra
 @testset "qAlgebra Tests" begin
 
     # === SETUP ===
-    qs = StateSpace("alpha", "beta(t)", "gamma_i", "delta_i", h=QubitPM(), i=(3, QubitPauli()), b=Ladder())
+    qspace = StateSpace("alpha", "beta(t)", "gamma_i", "delta_i", h=QubitPM(), i=(3, QubitPauli()), b=Ladder())
 
-    var_dict, op_dict = base_operators(qs)
+    var_dict, op_dict, abstract_dict = base_operators(qspace)
 
-    xi, yi, zi = base_operators("i", qs)
-    xj, yj, zj = base_operators("j", qs)
-    xk, yk, zk = base_operators("k", qs)
-    ph, mh, zh = base_operators("h", qs)
-    I = base_operators("I", qs)
-    b = base_operators("b", qs)
-    alpha, beta, gamma_i, gamma_j, gamma_k, delta_i, delta_j, delta_k = base_operators("vars", qs)
+    xi, yi, zi, _, _ = base_operators(qspace, "i", do_dict=false)
+    xj, yj, zj, pj, mj = base_operators(qspace, "j", do_dict=false)
+    xk, yk, zk, _, _ = base_operators(qspace, "k", do_dict=false)
+    ph, mh, zh, _, _ = base_operators(qspace, "h", do_dict=false)
+    b, n = base_operators(qspace, "b", do_dict=false)
+    I = base_operators(qspace, "I")
+    var_dict2 = base_operators(qspace, "vars")
+    alpha = base_operators(qspace, "alpha")
+    beta = base_operators(qspace, "beta")
+    gamma_i, gamma_j, gamma_k = base_operators(qspace, "gamma", do_dict=false)
+    delta_i, delta_j, delta_k = base_operators(qspace, "delta", do_dict=false)
 
     # === TESTS ===
 
     @testset "StateSpace Construction" begin
-        @test qs isa StateSpace
+        @test qspace isa StateSpace
     end
 
     @testset "Base Operators Extraction" begin
         @test var_dict isa Dict
+        @test var_dict2 isa Dict
         @test op_dict isa Dict
+        @test abstract_dict isa Dict
         @test haskey(var_dict, "alpha")
+        @test haskey(var_dict2, "alpha")
         @test haskey(op_dict, "b")
+        @test haskey(op_dict, "x_i")
+        @test haskey(abstract_dict, "A")
         @test xi isa qExpr
+        @test pj isa qExpr
         @test b isa qExpr
+        @test alpha isa qExpr
+        @test I isa qExpr
     end
 
     @testset "Simple Expressions" begin
-        A = 2 * alpha * im * xi
-        B = alpha * (Dag(b) * xi * yi)
-        @test A isa qExpr
-        @test B isa qExpr
+        As = 2 * alpha * im * xi
+        Bs = alpha * (Dag(b) * xi * yi)
+        @test As isa qExpr
+        @test Bs isa qExpr
 
-        expr1 = 2 * alpha * im * xi
-        expr2 = 2 * alpha * im * xi
+        expr1 = 2 * alpha * im * zi
+        expr2 = 2 * alpha *  xi * yi 
         @test expr1 == expr2
     end
 
@@ -66,25 +78,25 @@ using qAlgebra
         @test comm isa qExpr
 
         messy = alpha * xi + alpha^2 * zi + alpha * xi
-        expected = 2 * alpha * xi + alpha^2 * zi
-        @test simplify(messy) == expected
+        expected = simplify(alpha^2 * zi + 2 * alpha * xi )
+        @test simplify(simplify(messy)) == expected
     end
 
     @testset "Pauli Algebra Rules" begin
         @test xi * yi == -yi * xi
         @test xi * yi == im * zi
         @test xi * yj == yj * xi
-        @test xi * xi == 1
+        @test xi * xi == I
     end
     @testset "PM Basis Rules" begin
         @test mh * ph == 1 / 2 * (I - zh)
         @test ph * mh == 1 / 2 * (zh + I)
-        @test ph * ph == 0
+        @test ph * ph == 0*I
         @test ph' == mh
     end
 
     @testset "Ladder Operator Rules" begin
-        @test b' * b - b * b' == -1
+        @test b' * b - b * b' == -1*I
     end
 
 end

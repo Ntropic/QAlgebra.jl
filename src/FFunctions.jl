@@ -55,6 +55,9 @@ mutable struct FSum       <: FFunction
     # (inner) constructor for a Vector{<:FFunction>, with flattening
     function FSum(ts::AbstractVector{<:FFunction})
         flat = FFunction[]
+        if length(ts) == 1
+            return ts[1]
+        end
         for t in ts
             if t isa FSum
                 append!(flat, (t::FSum).terms)   # flatten nested sums
@@ -178,7 +181,11 @@ import Base: -, +
 *(a::FSum, b::FRational) = FRational(a*b.numer, b.denom)
 *(b::FRational, a::FSum) = FRational(a*b.numer, b.denom)
 # number 
-*(a::FFunction, b::Number)  = a*FAtom(b, zeros(Int, dims(a)))
+function *(a::FAtom, b::Number)  
+    return FAtom(a.coeff*b, copy(a.var_exponents))
+end
+*(a::FSum, b::Number)  = FSum([ x*b for x in a.terms ])
+*(a::FRational, b::Number) = FRational(a.numer*b, a.denom)
 *(b::Number, a::FFunction)  = a * b
 
 multiply_one(a::FRational, b::Int) = (a.numer * b) / (a.denom * b)
@@ -251,7 +258,7 @@ function unify(a::FAtom, b::FAtom)::FFunction
         var_zeros = zeros(Int, dims(a))
         return FAtom(0, var_zeros)
     end
-    return FAtom(absum, a.var_exponents)
+    return FAtom(absum, copy(a.var_exponents))
 end
 function unify(a::FRational, b::FRational)::FFunction
     simple_numer = simplify(a.numer+b.numer)
@@ -281,7 +288,7 @@ Returns a vector used to sort symbolic expressions in a canonical order:
 - `FRational`: denominator keys first (priority), then numerator.
 """
 function sort_key(a::FAtom)
-    return vcat(a.var_exponents, custom_sort_key(a.coeff))
+    return a.var_exponents #vcat(a.var_exponents, custom_sort_key(a.coeff))
 end
 
 function sort_key(s::FSum)

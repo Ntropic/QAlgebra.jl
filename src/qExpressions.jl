@@ -312,7 +312,9 @@ include("qExpressionsOps/qExpressionsPrint.jl")
 
 include("qExpressionsOps/qSum_modify.jl")
 
-#
+include("qExpressionsOps/qExpressions_welldefined.jl")
+include("qExpressionsOps/qExpressions_substitute.jl")
+include("qExpressionsOps/qExpressions_reorder.jl")
 
 
 """

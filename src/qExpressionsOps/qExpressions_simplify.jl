@@ -148,5 +148,5 @@ function simplify(q::qExpr)::qExpr
 end
 function simplify(q::diff_qEQ)::diff_qEQ
     simp_rhs = simplify(q.expr)
-    return diff_qEQ(q.left_hand_side, simp_rhs, q.statespace, q.braket, q.do_sigma)
+    return diff_qEQ(q.left_hand_side, simp_rhs, q.statespace, q.braket)
 end

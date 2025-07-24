@@ -22,7 +22,7 @@ function QubitPauli(symbol::String="")::OperatorSet
     base_pauli = [1, 2, 3]
     non_base_ops::Dict{String, Vector{Tuple{ComplexRational, Is}}} = Dict("p"=> [(ComplexRational(1,0,1), 1),(ComplexRational(0,1,1), 2)], "m" => [(ComplexRational(1,0,1), 1), (ComplexRational(0,-1,1), 2)])
     
-    symbol_str, symbol_latex = symbol2formatted(symbol)
+    symbol_str, symbol_latex = symbol2formatted(symbol, do_hat=true)
     do_symbol::Bool = length(symbol) > 0
     # Define the transformation function using the PAULI_* tables.
     function pauli_product(op1::Int, op2::Int)::Vector{Tuple{ComplexRational,Int}}

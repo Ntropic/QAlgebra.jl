@@ -63,4 +63,8 @@ export qCommutator, qExp, qLog, qPower, power, qRoot, root, simplify, simplifyqA
 export Dag, Commutator
 export string, latex_string
 export term
+
+export contains_abstract, which_continuum_acting, are_indexes_defined
+export substitute
+export reorder!
 end # module qAlgebra

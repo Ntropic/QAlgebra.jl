@@ -46,24 +46,36 @@ diff_qEQ
 
 ---
 
-## Basic Construction and Simplification
+## qObj Construction 
 
+Quantum expressions can be constructed via 
 ```@docs
 term
-qAlgebra.qExpressions.simplify
 base_operators
 Sum
 ∑
+d_dt
+``` 
+## qObj Modification
+General modifications of quantum objectscan be performed with
+```@docs
 flatten
 neq
-d_dt
-qAlgebra.qExpressions.is_numeric
+qAlgebra.qExpressions.simplify
+qAlgebra.qExpressions.substitute
+qAlgebra.qExpressions.reorder!
 ```
 
----
+## qObj Checks and Properties
+The following scripts perform basic checks on the quantum expressions
+```@docs
+qAlgebra.qExpressions.is_numeric
+qAlgebra.qExpressions.contains_abstract
+qAlgebra.qExpressions.which_continuum_acting
+qAlgebra.qExpressions.are_indexes_defined
+```
 
 ##  Printing and Output Formatting
-
 ```@docs
 string
 latex_string
@@ -82,9 +94,6 @@ We overload the most common algebraic operations, such as `+`, `*`, `-`, and `/`
 Dag
 Commutator
 ```
-
-- [`Dag`](@ref) computes the Hermitian conjugate (dagger) of an expression.
-- [`Commutator`](@ref) computes the commutator \([A, B] = AB - BA\).
 
 You can also construct commutators using vector notation:
 

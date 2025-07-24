@@ -131,37 +131,42 @@ end
 function simple_combinable_F(t1::Union{FAtom, FSum}, t2::Union{FAtom, FSum})::Tuple{Bool, ComplexRational}
     # Transform FAtom's to FSums 
     if t1 isa FAtom
-        t1 = FSum([t1])
+        t1 = [t1]
+    else 
+        t1 = t1.terms
     end
     if t2 isa FAtom
-        t2 = FSum([t2])
+        t2 = [t2]
+    else
+        t2 = t2.terms
     end
+
     #@assert length(t1) == length(t2) "Cannot separate pair terms with different lengths."
     if length(t1) != length(t2)
         return false, ComplexRational(0, 0, 1)
     end
 
-    if all(a -> all(e == 0 for e in a.var_exponents), t1.terms)
+    if all(a -> all(e == 0 for e in a.var_exponents), t1)
         return false, ComplexRational(0, 0, 1)
     end
     
     # check if corresponding terms have the similar exponents (i.e. the difference of exponents has to be the same for each term in FSum)
-    exponents_diff = t1.terms[1].var_exponents .- t2.terms[1].var_exponents
+    exponents_diff = t1[1].var_exponents .- t2[1].var_exponents
     if !all([diff == 0 for diff in exponents_diff])
         return false, ComplexRational(0, 0, 1)
     end
-    for (a1, a2) in zip(t1.terms[2:end], t2.terms[2:end])
+    for (a1, a2) in zip(t1[2:end], t2[2:end])
         if a1.var_exponents .- a2.var_exponents != exponents_diff
             return false, ComplexRational(0, 0, 1)
         end
     end
     
     # check if the terms have a constant ratio in the coefficients 
-    ratio = t1.terms[1].coeff / t2.terms[1].coeff
+    ratio = t1[1].coeff / t2[1].coeff
     if !(ratio.b == 0 || ratio.a == 0)
         return false, ratio
     end
-    for (a1, a2) in zip(t1.terms[2:end], t2.terms[2:end])
+    for (a1, a2) in zip(t1[2:end], t2[2:end])
         if a1.coeff / a2.coeff != ratio
             return false, ratio
         end
