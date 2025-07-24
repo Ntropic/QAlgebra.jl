@@ -3,7 +3,7 @@
 The `FFunctions` module provides the structs and operations needed to express functions of classical variables. 
 
 ```@meta
-CurrentModule = qAlgebra.FFunctions
+CurrentModule = QAlgebra.FFunctions
 ```
 
 ## Types / Structs

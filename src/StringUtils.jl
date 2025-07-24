@@ -89,7 +89,7 @@ function symbol2formatted(symbol::String; do_hat::Bool=false)::Tuple{String, Str
 end
 
 function term_pre_split(input::String, operator_names::Vector{String})::Tuple{Vector{String}, Vector{Bool}}
-    # Separate string into qTerm parts and qAbstract parts (with 0 for qTerm and 1 for qAbstract in the second output (Vector{Bool})
+    # Separate string into QTerm parts and QAbstract parts (with 0 for QTerm and 1 for QAbstract in the second output (Vector{Bool})
     # Preprocess the input: remove underscores and replace spaces with asterisks.
     input = replace(replace(input, "_" => ""), " " => "*")
     # Split the input string by '*' signs.

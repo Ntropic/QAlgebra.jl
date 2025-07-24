@@ -1,6 +1,6 @@
 # Defaults and Precision Settings
 
-qAlgebra allows configuration of the number formatting used for coefficients, including float and exponential precision.  
+QAlgebra allows configuration of the number formatting used for coefficients, including float and exponential precision.  
 These defaults are persistent across sessions using `Preferences.jl`.
 
 ## API

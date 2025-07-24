@@ -1,6 +1,6 @@
-# qAlgebra.jl
+# QAlgebra.jl
 
-**qAlgebra.jl** provides symbolic tools for constructing and manipulating quantum operator expressions  
+**QAlgebra.jl** provides symbolic tools for constructing and manipulating quantum operator expressions  
 on structured composite systems of qubits, spins, and bosonic modes.
 
 The core abstraction is the [`StateSpace`](@ref), which defines:
@@ -13,7 +13,7 @@ The core abstraction is the [`StateSpace`](@ref), which defines:
 ## Example: Constructing a State Space
 
 ```@example qalgebra
-using qAlgebra
+using QAlgebra
 qspace = StateSpace("alpha", "beta(t)", "gamma_i", "delta_i",
                     operators=["A(!i)", "B(U,H,i)"],
                     h=QubitPM(), i=(3, QubitPauli()), b=Ladder())
@@ -88,7 +88,7 @@ diff_eq = d_dt(zi, alpha * expr + qsum)
 ### Operator Functions
 We provide the following operator functions, with as of now limited support
 ```@example qalgebra
-qCommutator(Sum("i", alpha * ph * xi * yi) + zj, zh)
+QCommutator(Sum("i", alpha * ph * xi * yi) + zj, zh)
 ```
 
 ```@example qalgebra

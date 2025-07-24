@@ -1,17 +1,17 @@
-using qAlgebra
+using QAlgebra
 using Documenter
 
 
 makedocs(;
-    modules=[qAlgebra, qAlgebra.FFunctions],
-    sitename="qAlgebra.jl Documentation",
+    modules=[QAlgebra, QAlgebra.FFunctions],
+    sitename="QAlgebra.jl Documentation",
     format = Documenter.HTML(prettyurls = get(ENV, "CI", nothing) == "true"),
     pages=[
         "Home" => "index.md",
         "API Reference" => [
             "Default Values" => "api/defaults.md",
-            "Operator Spaces" => "api/qSpace.md",
-            "qExpressions" => "api/qExpressions.md",
+            "Operator Spaces" => "api/QSpace.md",
+            "QExpressions" => "api/QExpressions.md",
             "FFunctions" => "api/FFunctions.md", 
             "Other" => "api/other.md"
         ]

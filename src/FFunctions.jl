@@ -2,7 +2,7 @@ module FFunctions
 
 using ..StringUtils
 using ComplexRationals
-using ..qAlgebra: get_default 
+using ..QAlgebra: get_default 
 
 export FFunction, FAtom, FSum, FRational, isnumeric, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
 

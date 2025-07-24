@@ -1,7 +1,7 @@
 using Test
-using qAlgebra
+using QAlgebra
 
-@testset "qAlgebra Tests" begin
+@testset "QAlgebra Tests" begin
 
     # === SETUP ===
     qspace = StateSpace("alpha", "beta(t)", "gamma_i", "delta_i", h=QubitPM(), i=(3, QubitPauli()), b=Ladder())
@@ -57,7 +57,7 @@ using qAlgebra
     @testset "Sum and Nested Expressions" begin
         qsum_expr = Sum(["j", "k"], alpha * gamma_i * gamma_k * delta_k * xi * yi)
         @test qsum_expr isa qExpr
-        @test qsum_expr.terms[1] isa qSum
+        @test qsum_expr.terms[1] isa QSum
 
         flat_expr = flatten(qsum_expr)
         @test flat_expr isa qExpr
@@ -68,7 +68,7 @@ using qAlgebra
 
     @testset "Differentiation Tests" begin
         diff_eq = d_dt(zi, alpha^2)
-        @test diff_eq isa diff_qEQ
+        @test diff_eq isa Diff_qEQ
     end
 
     @testset "Commutator and Simplify Tests" begin

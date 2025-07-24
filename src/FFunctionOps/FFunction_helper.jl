@@ -253,7 +253,7 @@ function how_to_combine_Fs(ts::Vector{Union{FAtom,FSum}}) #::Tuple{Vector{Union{
 end
 
 
-# Make 2 indexes equal => analogous to equally named function for qTerms in qExpressions.jl
+# Make 2 indexes equal => analogous to equally named function for qTerms in QExpressions.jl
 function term_equal_indexes(atom::FAtom, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool,FAtom}
     changed_any::Bool = false
     new_exponents = copy(atom.var_exponents)

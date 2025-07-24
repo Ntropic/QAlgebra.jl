@@ -1,12 +1,12 @@
-# qAlgebra.jl
+# QAlgebra.jl
 
-[![CI](https://github.com/Ntropic/qAlgebra.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/Ntropic/qAlgebra.jl/actions/workflows/CI.yml)
+[![CI](https://github.com/Ntropic/QAlgebra.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/Ntropic/QAlgebra.jl/actions/workflows/CI.yml)
 [![Julia](https://img.shields.io/badge/Julia-1.10%2B-blue.svg)](https://julialang.org/)
-[![Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://Ntropic.github.io/qAlgebra.jl)
+[![Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://Ntropic.github.io/QAlgebra.jl)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
 
-**qAlgebra.jl** provides symbolic tools for constructing and manipulating quantum operator expressions on structured composite systems of qubits, spins, and bosonic modes.
+**QAlgebra.jl** provides symbolic tools for constructing and manipulating quantum operator expressions on structured composite systems of qubits, spins, and bosonic modes.
 
 ---
 
@@ -36,14 +36,14 @@
 
 ```julia
 import Pkg
-Pkg.add("qAlgebra")
+Pkg.add("QAlgebra")
 ```
 
 
 ## Quick Start
 
 ```julia
-using qAlgebra
+using QAlgebra
 ```
 
 ### Constructing a State Space
@@ -128,7 +128,7 @@ Apply common functions to operator expressions:
 
 ```julia
 # Commutator [·,·]
-qCommutator(Sum("i", alpha * ph * xi * yi) + zj, zh)
+QCommutator(Sum("i", alpha * ph * xi * yi) + zj, zh)
 
 # Exponential
 exp(Sum("i", alpha * ph * xi * yi) + zj) + zh

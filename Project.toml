@@ -1,4 +1,4 @@
-name = "qAlgebra"
+name = "QAlgebra"
 uuid = "b9371e27-7e1d-48fa-b5f7-43d028413397"
 authors = ["Michael Schilling"]
 version = "0.2.0"

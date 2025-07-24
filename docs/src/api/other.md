@@ -6,6 +6,6 @@ The following are currently exposed functions and constants
 symbol2formatted
 str2sub
 str2sup
-qAlgebra.StringUtils.superscript_indexes
-qAlgebra.StringUtils.subscript_indexes
+QAlgebra.StringUtils.superscript_indexes
+QAlgebra.StringUtils.subscript_indexes
 ```
