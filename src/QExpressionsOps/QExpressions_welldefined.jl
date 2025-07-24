@@ -14,7 +14,7 @@ end
 function contains_abstract(term::T)::Bool where T<:QMultiComposite
     return any([contains_abstract(t) for t in term.expr])
 end
-function contains_abstract(term::qAtomProduct)::Bool
+function contains_abstract(term::QAtomProduct)::Bool
     return any([isa(t, QAbstract) for t in term.expr])
 end
 function contains_abstract(term::Diff_qEQ)::Bool 
@@ -65,7 +65,7 @@ end
 function which_continuum_acting(q::QAbstract, continuum_indexes::Vector{Vector{Int}}, neutral_continuums_op::Vector{Vector{Is}})
     error("Which continuum acting should be applied to abstractless expressions!")
 end
-function which_continuum_acting(q::qAtomProduct)::Vector{Vector{Bool}}
+function which_continuum_acting(q::QAtomProduct)::Vector{Vector{Bool}}
     # xor between vectors of vector of bool 
     qspace = q.statespace
     return vecvec_or(reduce(vecvec_or, [which_continuum_acting(t, qspace.continuum_indexes, qspace.neutral_continuum_op) for t in q.expr]), which_continuum_acting(q.coeff_fun, qspace.where_by_continuum_var))
@@ -77,7 +77,7 @@ end
 Checks if all indexes n the differential equation are properly specified, either by the left-hand-side or 
 by QSums on the right-hand-side.
 """
-function are_indexes_defined(q::qAtomProduct, where_defined::Vector{Vector{Bool}})::Bool
+function are_indexes_defined(q::QAtomProduct, where_defined::Vector{Vector{Bool}})::Bool
     # check that no true on which_continuum_acting, that isn't also a true on where_defined => converse nonimplication cnimp(a::Bool, b::Bool) = b && !a
     qspace = q.statespace
     if any(any, converse_nonimplication(where_defined, which_continuum_acting(q)))

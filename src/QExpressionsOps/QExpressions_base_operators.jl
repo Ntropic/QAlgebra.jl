@@ -29,7 +29,7 @@ function base_operators(statespace::StateSpace; do_fun::Bool=false, formatted::B
         else
             vars_str = var.var_name
         end
-        var_dict[vars_str] = qExpr(statespace, qAtomProduct(statespace, CRone, copy(var_exponents), QTerm[]))
+        var_dict[vars_str] = qExpr(statespace, QAtomProduct(statespace, CRone, copy(var_exponents), QTerm[]))
         var_exponents[i] -= 1
     end
     index = 1
@@ -48,12 +48,12 @@ function base_operators(statespace::StateSpace; do_fun::Bool=false, formatted::B
             # non base ops # in a Dict 
             non_base_ops = op_set.non_base_ops
             for (inner_key, ops) in non_base_ops
-                curr_terms::Vector{qAtomProduct} = qAtomProduct[]
+                curr_terms::Vector{QAtomProduct} = QAtomProduct[]
                 for op in ops
                     curr_operator = copy(neutral_operator)
                     curr_operator[index] = op[2]
                     coeff = op[1]
-                    curr_prod = qAtomProduct(statespace, coeff, copy(var_exponents), QTerm(copy(curr_operator)))
+                    curr_prod = QAtomProduct(statespace, coeff, copy(var_exponents), QTerm(copy(curr_operator)))
                     push!(curr_terms, curr_prod)
                 end
                 if formatted
@@ -66,7 +66,7 @@ function base_operators(statespace::StateSpace; do_fun::Bool=false, formatted::B
             index += 1
         end
     end
-    op_dict["I"] = qExpr(statespace, qAtomProduct(statespace, CRone, QTerm[]))
+    op_dict["I"] = qExpr(statespace, QAtomProduct(statespace, CRone, QTerm[]))
     # now abstract operators 
     abstract_dict::Dict{String, Union{Function, qExpr}} = Dict()
     for (key_index, (name, operatortype)) in enumerate(zip(statespace.operator_names, statespace.operatortypes))
@@ -94,7 +94,7 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
             else
                 vars_str = var.var_name
             end
-            var_dict[vars_str] = qExpr(statespace, qAtomProduct(statespace, CRone, copy(var_exponents), QTerm[]))
+            var_dict[vars_str] = qExpr(statespace, QAtomProduct(statespace, CRone, copy(var_exponents), QTerm[]))
             var_exponents[i] -= 1
         end
         return var_dict
@@ -116,12 +116,12 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                 # non base ops # in a Dict 
                 non_base_ops = op_set.non_base_ops
                 for (inner_key, ops) in non_base_ops
-                    curr_terms::Vector{qAtomProduct} = qAtomProduct[]
+                    curr_terms::Vector{QAtomProduct} = QAtomProduct[]
                     for op in ops
                         curr_operator = copy(neutral_operator)
                         curr_operator[index] = op[2]
                         coeff = op[1]
-                        curr_prod = qAtomProduct(statespace, coeff, copy(var_exponents), QTerm(copy(curr_operator)))
+                        curr_prod = QAtomProduct(statespace, coeff, copy(var_exponents), QTerm(copy(curr_operator)))
                         push!(curr_terms, curr_prod)
                     end
                     if formatted
@@ -134,7 +134,7 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                 index += 1
             end
         end
-        op_dict["I"] = qExpr(statespace, qAtomProduct(statespace, CRone, QTerm[]))
+        op_dict["I"] = qExpr(statespace, QAtomProduct(statespace, CRone, QTerm[]))
         return op_dict
     elseif name == "abstract"
         # now abstract operators 
@@ -152,14 +152,14 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
             return abstract_dict2
         end
     elseif name == "I"
-        return qExpr(statespace, qAtomProduct(statespace, CRone, QTerm[]))
+        return qExpr(statespace, QAtomProduct(statespace, CRone, QTerm[]))
     end
 
     # vars
     for (i, var) in enumerate(statespace.vars)
         if name == var.var_name || name == var.var_str
             var_exponents[i] += 1
-            return qExpr(statespace, qAtomProduct(statespace, 1, copy(var_exponents), QTerm[]))
+            return qExpr(statespace, QAtomProduct(statespace, 1, copy(var_exponents), QTerm[]))
         end
     end
     # Option 2 for vars: gather all the ones for which it occurs in the name, colelct those return if vector is not empty
@@ -179,9 +179,9 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
             end
             var_exponents[i] += 1
             if do_dict
-                curr_ops[vars_str] = qExpr(statespace, qAtomProduct(statespace, 1, copy(var_exponents), QTerm[]))
+                curr_ops[vars_str] = qExpr(statespace, QAtomProduct(statespace, 1, copy(var_exponents), QTerm[]))
             else 
-                push!(ops_vec, qExpr(statespace, qAtomProduct(statespace, 1, copy(var_exponents), QTerm[])))
+                push!(ops_vec, qExpr(statespace, QAtomProduct(statespace, 1, copy(var_exponents), QTerm[])))
             end
             var_exponents[i] -= 1
         end
@@ -220,12 +220,12 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                 # non base ops # in a Dict 
                 non_base_ops = op_set.non_base_ops
                 for (inner_key, ops) in non_base_ops
-                    curr_terms::Vector{qAtomProduct} = qAtomProduct[]
+                    curr_terms::Vector{QAtomProduct} = QAtomProduct[]
                     for op in ops
                         curr_operator = copy(neutral_operator)
                         curr_operator[index] = op[2]
                         coeff = op[1]
-                        curr_prod = qAtomProduct(statespace,coeff, copy(var_exponents), QTerm(copy(curr_operator)))
+                        curr_prod = QAtomProduct(statespace,coeff, copy(var_exponents), QTerm(copy(curr_operator)))
                         push!(curr_terms, curr_prod)
                     end
                     if formatted

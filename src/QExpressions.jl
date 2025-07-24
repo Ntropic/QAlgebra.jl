@@ -6,7 +6,7 @@ using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, ^, product, iszero, copy
 using ..QAlgebra: get_default 
 using ..FFunctions: isnumeric
-export QObj, QAtom, QAbstract, QComposite, QCompositeProduct, QMultiComposite, QTerm, qAtomProduct, qExpr, QSum, Sum, ∑, Diff_qEQ, base_operators, simplify, simplifyqAtomProduct, flatten, neq, d_dt
+export QObj, QAtom, QAbstract, QComposite, QCompositeProduct, QMultiComposite, QTerm, QAtomProduct, qExpr, QSum, Sum, ∑, Diff_qEQ, base_operators, simplify, simplifyqAtomProduct, flatten, neq, d_dt
 
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
@@ -30,7 +30,7 @@ abstract type QAtom <: QObj end # elementary operator definitions
     QComposite
 
 The abstract type `QComposite` is a subtype of `QObj` and represents composite expressions, 
-such as QSum and qAtomProduct which consist of QAtom, QAbstract or QComposite objects themselves. 
+such as QSum and QAtomProduct which consist of QAtom, QAbstract or QComposite objects themselves. 
 """
 abstract type QComposite <: QObj end  # products and sums of operator definitions
 
@@ -83,7 +83,7 @@ end
 
 
 """ 
-    qAtomProduct
+    QAtomProduct
 
 A product of QAtom expressions, i.e. qTerms or QAbstract.
 It contains:
@@ -91,32 +91,32 @@ It contains:
     - `coeff_fun`: The function of parameters for the Operator product
     - `expr`: A vector of qAtoms (qTerms or QAbstract) that are multiplied together.
 """
-mutable struct qAtomProduct <: QComposite
+mutable struct QAtomProduct <: QComposite
     statespace::StateSpace         # State space of the product.
     coeff_fun::FFunction            # function of scalar parameters => has +,-,*,/,^ defined 
     expr::Vector{QAtom}             # Vector of qAtoms (qTerms or QAbstract).
-    function qAtomProduct(statespace::StateSpace, coeff::FFunction, expr::AbstractVector{<:QAtom}= QAtom[])
+    function QAtomProduct(statespace::StateSpace, coeff::FFunction, expr::AbstractVector{<:QAtom}= QAtom[])
         new(statespace, coeff, expr)
     end
-    function qAtomProduct(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::QAtom)
+    function QAtomProduct(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::QAtom)
         f_fun = FAtom(coeff, var_exponents)
         return new(statespace, f_fun, [expr]) 
     end
-    function qAtomProduct(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::AbstractVector{<:QAtom})
+    function QAtomProduct(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::AbstractVector{<:QAtom})
         f_fun = FAtom(coeff, var_exponents)
         return new(statespace, f_fun, expr)
     end
-    function qAtomProduct(statespace::StateSpace, coeff::Number, expr::AbstractVector{<:QAtom})
+    function QAtomProduct(statespace::StateSpace, coeff::Number, expr::AbstractVector{<:QAtom})
         f_fun = coeff* statespace.fone
         return new(statespace, f_fun, expr)
     end
-    function qAtomProduct(statespace::StateSpace, coeff::Number, expr::QAtom)
+    function QAtomProduct(statespace::StateSpace, coeff::Number, expr::QAtom)
         f_fun = coeff * statespace.fone
         return new(statespace, f_fun, [expr]) 
     end
 end
-function copy(q::qAtomProduct)::qAtomProduct
-    return qAtomProduct(q.statespace, copy(q.coeff_fun), [copy(s) for s in q.expr])
+function copy(q::QAtomProduct)::QAtomProduct
+    return QAtomProduct(q.statespace, copy(q.coeff_fun), [copy(s) for s in q.expr])
 end
 
 """
@@ -131,7 +131,7 @@ mutable struct qExpr <: QObj
     function qExpr(statespace::StateSpace, terms::AbstractVector{<:QComposite})
         if isempty(terms) 
             # add neotral zero term
-            zero_term = qAtomProduct(statespace, statespace.fone*0, QAtom[])
+            zero_term = QAtomProduct(statespace, statespace.fone*0, QAtom[])
             terms = [zero_term]
         end
         return new(statespace, terms)
@@ -144,7 +144,7 @@ function qExpr(statespace::StateSpace, prod::T) where T<:QComposite
     return qExpr(statespace, [prod])
 end
 function qExpr(statespace::StateSpace, terms::QAtom)
-    return qExpr(statespace, qAtomProduct(statespace, statespace.fone, [terms]))
+    return qExpr(statespace, QAtomProduct(statespace, statespace.fone, [terms]))
 end
 function qExpr(terms::AbstractVector{<:QComposite})
     return qExpr(terms[1].statespace, terms)
@@ -167,7 +167,7 @@ It contains:
 """
 mutable struct QSum <: QComposite
     statespace::StateSpace
-    expr::qExpr       # The expression being summed over.    # use expr in other qComposites except for qAtomProduct
+    expr::qExpr       # The expression being summed over.    # use expr in other qComposites except for QAtomProduct
     indexes::Vector{String}   # The summation index (e.g. "i").
     subsystem_index::Int  # The subspace index where the summation index was found.
     element_indexes::Vector{Int}    # The position in that subspace.
@@ -194,7 +194,7 @@ It represents time evolution of operator expectation values, and wraps the symbo
 """
 struct Diff_qEQ <: QObj
     statespace::StateSpace
-    left_hand_side::qAtomProduct
+    left_hand_side::QAtomProduct
     expr::qExpr 
     braket::Bool
 end
@@ -209,7 +209,7 @@ Construct a [`Diff_qEQ`](@ref) that represents the time derivative of ⟨lhs⟩ 
 
 Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
-function Diff_qEQ(statespace::StateSpace, left_hand_side::qAtomProduct, expr::qExpr; braket::Bool=true)
+function Diff_qEQ(statespace::StateSpace, left_hand_side::QAtomProduct, expr::qExpr; braket::Bool=true)
     new_rhs = neq(expr)
     return Diff_qEQ(statespace, left_hand_side, new_rhs, braket)
 end
@@ -291,14 +291,14 @@ end
 length(q::qExpr) = length(q.terms)
 
 iszero(q::qExpr) = length(q.terms) == 0 || all(iszero, q.terms)
-iszero(q::qAtomProduct) = iszero(q.coeff_fun)
+iszero(q::QAtomProduct) = iszero(q.coeff_fun)
 iszero(q::T) where T<:QComposite = iszero(q.expr)
 iszero(q::T) where T<:QMultiComposite = any(iszero, q.expr)
 
 
 
 include("QExpressionsOps/QExpressions_functions.jl")
-include("QExpressionsOps/QExpressions_helper.jl") # Helper functions for qAtomProduct simplify
+include("QExpressionsOps/QExpressions_helper.jl") # Helper functions for QAtomProduct simplify
 
 include("QExpressionsOps/QExpressions_string2term.jl")
 include("QExpressionsOps/QExpressions_base_operators.jl")
@@ -328,7 +328,7 @@ of the form
     LHS = RHS
 The function then returns a `Diff_qEQ` constructed from the left-hand side QTerm and the right-hand side qExpr.
 """
-function d_dt(left_hand::Union{qAtomProduct,qExpr}, right_hand::qExpr)::Diff_qEQ
+function d_dt(left_hand::Union{QAtomProduct,qExpr}, right_hand::qExpr)::Diff_qEQ
     # Check if expr is an equality.
     qstate = right_hand.statespace
 
@@ -340,8 +340,8 @@ function d_dt(left_hand::Union{qAtomProduct,qExpr}, right_hand::qExpr)::Diff_qEQ
             error("Left-hand side of the equation must consist of a single QTerm.")
         end
         left_hand = left_hand.terms[1]
-        if !isa(left_hand, qAtomProduct)
-            error("Left-hand side of the equation must be a qAtomProduct. Or a qAtomProduct wrapped in a qExpr. ")
+        if !isa(left_hand, QAtomProduct)
+            error("Left-hand side of the equation must be a QAtomProduct. Or a QAtomProduct wrapped in a qExpr. ")
         end
     end
     if !isnumeric(left_hand.coeff_fun) && abs(left_hand.coeff_fun - 1) != 0

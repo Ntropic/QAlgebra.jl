@@ -7,7 +7,7 @@ end
 function same_term_type(t1::QAbstract, t2::QAbstract) 
     return t1.key_index == t2.key_index && t1.sub_index == t2.sub_index && t1.index_map == t2.index_map
 end
-function same_term_type(t1::qAtomProduct, t2::qAtomProduct)::Bool
+function same_term_type(t1::QAtomProduct, t2::QAtomProduct)::Bool
     # check operators individually -> must all be the same!
     if length(t1.expr) != length(t2.expr) 
         return false
@@ -26,14 +26,14 @@ function same_term_type(t1::S, t2::T)::Bool where {S<:QComposite, T<:QComposite}
     return false 
 end
 
-function combine_term(t1::qAtomProduct, t2::qAtomProduct)::qAtomProduct
-    return qAtomProduct(t1.statespace, FFunctions.simplify(t1.coeff_fun + t2.coeff_fun), t1.expr)
+function combine_term(t1::QAtomProduct, t2::QAtomProduct)::QAtomProduct
+    return QAtomProduct(t1.statespace, FFunctions.simplify(t1.coeff_fun + t2.coeff_fun), t1.expr)
 end
 function combine_term(s1::QSum, s2::QSum)::QSum
     return QSum(s1.statespace, simplify(s1.expr + s2.expr), s1.indexes, s1.subsystem_index, s1.element_indexes, s1.neq)
 end
 
-function simplifyqAtomProduct(p::qAtomProduct)::Vector{QComposite}
+function simplifyqAtomProduct(p::QAtomProduct)::Vector{QComposite}
     # — pre‑allocate two empty buffers of the correct element‑type —
     buf1 = Vector{Tuple{ComplexRational,Vector{QAtom}}}()
     buf2 = Vector{Tuple{ComplexRational,Vector{QAtom}}}()
@@ -68,8 +68,8 @@ function simplifyqAtomProduct(p::qAtomProduct)::Vector{QComposite}
     end
 
     # wrap the final products
-    return [ qAtomProduct(p.statespace, c * p.coeff_fun, t) for (c,t) in current ]
-    #return [ qAtomProduct(p.statespace, FFunctions.simplify(c * p.coeff_fun), t) for (c,t) in current ]
+    return [ QAtomProduct(p.statespace, c * p.coeff_fun, t) for (c,t) in current ]
+    #return [ QAtomProduct(p.statespace, FFunctions.simplify(c * p.coeff_fun), t) for (c,t) in current ]
 end
 
 
@@ -78,7 +78,7 @@ end
 
 Simplifies `qExpr`-based symbolic quantum expressions by recursively reducing internal structures:
 
-- `qAtomProduct`: Applies pairwise simplifications repeatedly and merges results into canonical `qAtomProduct`s.
+- `QAtomProduct`: Applies pairwise simplifications repeatedly and merges results into canonical `QAtomProduct`s.
 - `QMultiComposite`: Simplifies each expression element-wise.
 - `QComposite`: Simplifies its internal expression and returns a new `QComposite`.
 - `qExpr`: Flattens and simplifies terms, then combines like terms where possible.
@@ -87,7 +87,7 @@ Simplifies `qExpr`-based symbolic quantum expressions by recursively reducing in
 
 Returns either a single simplified object or a list of canonical components depending on input type.
 """
-function simplify(q::qAtomProduct)::Vector{qAtomProduct}
+function simplify(q::QAtomProduct)::Vector{QAtomProduct}
     return [q]
 end
 function simplify(qcomp::T)::Vector{T} where T <: QMultiComposite

@@ -47,7 +47,7 @@ function flatten(s::QSum, in_sum::Bool = false, in_sum_comp::Bool = false)
     return qExpr(inner.statespace, out_terms)
 end 
 
-function flatten(q::qAtomProduct, in_sum::Bool = false, in_sum_comp::Bool = false)
+function flatten(q::QAtomProduct, in_sum::Bool = false, in_sum_comp::Bool = false)
     return [q] 
 end
 function flatten(q::T, in_sum::Bool = false, in_sum_comp::Bool = false) where T<:QComposite
@@ -106,7 +106,7 @@ function term_equal_indexes(abstract::QAbstract, index1::Int, index2::Int, subsp
     return false, QAbstract[abstract], ComplexRational[ComplexRational(1,0,1)]
 end
 
-function term_equal_indexes(q::qAtomProduct, index1::Int, index2::Int, subspace::SubSpace, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool, Vector{qAtomProduct}}
+function term_equal_indexes(q::QAtomProduct, index1::Int, index2::Int, subspace::SubSpace, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool, Vector{QAtomProduct}}
     changed_any = false
     term_variants = Vector{Vector{QAtom}}()
     coeff_variants = Vector{Vector{ComplexRational}}()
@@ -124,11 +124,11 @@ function term_equal_indexes(q::qAtomProduct, index1::Int, index2::Int, subspace:
     # Generate all combinations (cartesian product) of updated terms
     combinations = Iterators.product(term_variants...)
     coeff_combinations = Iterators.product(coeff_variants...)
-    simplified_products = qAtomProduct[]
+    simplified_products = QAtomProduct[]
     for (combo, coeff_combo) in zip(combinations, coeff_combinations)
         new_expr = collect(combo)
         factor = prod(coeff_combo)
-        new_prod = qAtomProduct(q.statespace, new_coeff_fun*factor, new_expr)
+        new_prod = QAtomProduct(q.statespace, new_coeff_fun*factor, new_expr)
         push!(simplified_products, new_prod)
     end
     return true, simplified_products
@@ -185,7 +185,7 @@ Considers all cases of the sums, simplifying the cases in which indexes are the 
 function neq(q::QObj)::QObj
     return q
 end
-function neq(q::qAtomProduct)::qAtomProduct
+function neq(q::QAtomProduct)::QAtomProduct
     return q 
 end
 function neq(q::T)::T where {T<:QComposite}

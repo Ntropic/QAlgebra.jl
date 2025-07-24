@@ -32,7 +32,7 @@ QAbstract
 
 For composite operators we have
 ```@docs
-qAtomProduct
+QAtomProduct
 QCompositeProduct
 QMultiComposite
 QSum

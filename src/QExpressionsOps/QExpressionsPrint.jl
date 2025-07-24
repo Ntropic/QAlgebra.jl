@@ -108,7 +108,7 @@ function sum_symbol_str(s::QSum; do_latex::Bool=false)
 end
 
 # braced not used here as an argument use, it in other qComposites that contain qExpr to determine groupings!
-function qComposite2string(q::qAtomProduct; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+function qComposite2string(q::QAtomProduct; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     if is_numeric(q)
         curr_sign, curr_str = to_stringer(q.coeff_fun, variable_str_vec(q, do_latex=do_latex), braced=false, do_frac=do_frac)
         if return_if_braced
@@ -244,7 +244,7 @@ function qComposites2string(terms::AbstractVector{<: QComposite}; do_latex::Bool
 end
 
 import ..FFunctions: how_to_combine_Fs
-function group_qAtomProducts(qs::Vector{qAtomProduct})::Vector{Union{qAtomProduct, Tuple{Union{FAtom, FSum}, Vector{qAtomProduct}}}}
+function group_qAtomProducts(qs::Vector{QAtomProduct})::Vector{Union{QAtomProduct, Tuple{Union{FAtom, FSum}, Vector{QAtomProduct}}}}
     coeffs_funs::Vector{Union{FAtom, FSum}} = [q.coeff_fun for q in qs]
     coeff_groups, indexes = how_to_combine_Fs(coeffs_funs)
     new_qs = []
@@ -254,7 +254,7 @@ function group_qAtomProducts(qs::Vector{qAtomProduct})::Vector{Union{qAtomProduc
         else
             pre_F = coeffs[1]
             post_F = coeffs[2]
-            post_q = qAtomProduct[]
+            post_q = QAtomProduct[]
             for (F, i) in zip(post_F, indexes) 
                 new_p = copy(qs[i]) 
                 new_p.coeff_fun = F 
@@ -266,11 +266,11 @@ function group_qAtomProducts(qs::Vector{qAtomProduct})::Vector{Union{qAtomProduc
     return new_qs 
 end 
 
-function qAtomProduct_group2string(qs::qAtomProduct; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true)::Tuple{Bool, String, String}
+function qAtomProduct_group2string(qs::QAtomProduct; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true)::Tuple{Bool, String, String}
     curr_sign, operator_str = qComposite2string(qs, do_latex=do_latex, braced=braced, do_frac=do_frac)
     return curr_sign, "", operator_str
 end
-function qAtomProduct_group2string(qs::Tuple{Union{FAtom, FSum}, Vector{qAtomProduct}}; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true)::Tuple{Bool, String, String}
+function qAtomProduct_group2string(qs::Tuple{Union{FAtom, FSum}, Vector{QAtomProduct}}; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true)::Tuple{Bool, String, String}
     # assume the qs can be simple grouped (see the functions: simple_combinable_Fs, group_Fs)
     F = qs[1]
     qs = qs[2]
@@ -307,13 +307,13 @@ function qExpr2string(q::qExpr; do_latex::Bool=true, braced::Bool=true, do_frac:
             return first_sign, total_string, false
         end
     else  # inside amnother QComposite
-        # separate into qAtomProduct and other QComposite terms -> sorting puts qAtomProducts first 
+        # separate into QAtomProduct and other QComposite terms -> sorting puts qAtomProducts first 
         # then group qAtomProducts by their factors 
-        first_non_qAtomProduct = findfirst(x -> !isa(x, qAtomProduct), q_sorted.terms)
+        first_non_qAtomProduct = findfirst(x -> !isa(x, QAtomProduct), q_sorted.terms)
         if first_non_qAtomProduct === nothing
             first_non_qAtomProduct = length(q_sorted.terms) + 1
         end
-        qAtomProduct_terms::Vector{qAtomProduct} = q_sorted.terms[1:first_non_qAtomProduct-1]
+        qAtomProduct_terms::Vector{QAtomProduct} = q_sorted.terms[1:first_non_qAtomProduct-1]
         other_terms = q_sorted.terms[first_non_qAtomProduct:end]
         groups = group_qAtomProducts(qAtomProduct_terms)
         # create strings for each element 
@@ -387,10 +387,10 @@ end
 #### String ##########################################################################################################################
 """ 
     string(eq::qExpr) -> String
-    string(eq::qAtomProduct) -> String
+    string(eq::QAtomProduct) -> String
     string(eq::Diff_qEQ) -> String
 
-Returns a string representation of the qExpr, qAtomProduct or Diff_qEQ object. The string is formatted in a human-readable way, but without LaTeX formatting.
+Returns a string representation of the qExpr, QAtomProduct or Diff_qEQ object. The string is formatted in a human-readable way, but without LaTeX formatting.
 """
 function string(eq::qExpr)::String
     # add default variables for do_Frac, braced and so on. take care of this by writing a single function called by every string and latex string function 
@@ -398,7 +398,7 @@ function string(eq::qExpr)::String
     total_string = curr_sign ? "-" * curr_string : curr_string
     return total_string
 end
-function string(eq::qAtomProduct)::String
+function string(eq::QAtomProduct)::String
     # add default variables for do_Frac,, braced and so on. take care of this by writing a single function called by every string and latex string function 
     sign, total_string = qComposite2string(eq; do_latex=false, braced=get_default(:DO_BRACED))
     total_string = sign ? "-" * total_string : total_string
@@ -411,17 +411,17 @@ end
 #### LaTeX-String ##########################################################################################################################
 """ 
     latex_string(eq::qExpr) -> String
-    latex_string(eq::qAtomProduct) -> String
+    latex_string(eq::QAtomProduct) -> String
     latex_string(eq::Diff_qEQ) -> String
 
-Returns a LaTeX string representation of the qExpr, qAtomProduct or Diff_qEQ object. 
+Returns a LaTeX string representation of the qExpr, QAtomProduct or Diff_qEQ object. 
 """
 function latex_string(eq::qExpr)::String
     curr_sign, curr_string = qExpr2string(eq, do_latex=true, braced=get_default(:DO_BRACED))
     total_string = curr_sign ? "-" * curr_string : curr_string
     return total_string
 end
-function latex_string(eq::qAtomProduct)::String
+function latex_string(eq::QAtomProduct)::String
     # add default variables for do_Frac, braced and so on. take care of this by writing a single function called by every string and latex string function 
     sign, total_string = qComposite2string(eq; do_latex=true, braced=get_default(:DO_BRACED))
     total_string = sign ? "-" * total_string : total_string
@@ -439,10 +439,10 @@ function show(io::IO, ::MIME"text/latex", x::qExpr)
     print(io, latexstring(latex_string(x)))
 end
 
-function show(io::IO, x::qAtomProduct)
+function show(io::IO, x::QAtomProduct)
     print(io, string(x))
 end
-function show(io::IO, ::MIME"text/latex", x::qAtomProduct)
+function show(io::IO, ::MIME"text/latex", x::QAtomProduct)
     print(io, latexstring(latex_string(x)))
 end
 

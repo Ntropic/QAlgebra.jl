@@ -5,12 +5,12 @@ function extract_qabstract(q::qExpr)::QAbstract
         error("Cannot substitute composites. abstract_op must contain only an abstract operator.")
     end
     term = q.terms[1]
-    if !isa(term, qAtomProduct)
-        error("qExpr must contain only a qAtomProduct")
+    if !isa(term, QAtomProduct)
+        error("qExpr must contain only a QAtomProduct")
     end
     return extract_qabstract(term)
 end
-function extract_qabstract(term::qAtomProduct)::QAbstract
+function extract_qabstract(term::QAtomProduct)::QAbstract
     if length(term.expr) != 1 || !isa(term.expr[1], QAbstract)
         error("abstract_op must contain exactly one QAbstract")
     end
@@ -22,12 +22,12 @@ function extract_qatom(q::qExpr)::QAtom
         error("Cannot substitute composites. abstract_op must contain only an abstract operator.")
     end
     term = q.terms[1]
-    if !isa(term, qAtomProduct)
-        error("qExpr must contain only a qAtomProduct")
+    if !isa(term, QAtomProduct)
+        error("qExpr must contain only a QAtomProduct")
     end
     return extract_qatom(term)
 end
-function extract_qatom(term::qAtomProduct)::QAtom
+function extract_qatom(term::QAtomProduct)::QAtom
     if length(term.expr) != 1 || !isa(term.expr[1], QAtom)
         error("abstract_op must contain exactly one QAbstract")
     end
@@ -36,9 +36,9 @@ end
 
 # substitute abstract operator 
 # input is abstract_op, replacement and target
-simpleQ = Union{qExpr, qAtomProduct}
+simpleQ = Union{qExpr, QAtomProduct}
 # Deals with index_map mapping one index to another ithin QAbstract
-function qAtom_index_flip(q::QAtom, index_map::Vector{Tuple{Int,Int}}, statespace::StateSpace)::Vector{qAtomProduct}
+function qAtom_index_flip(q::QAtom, index_map::Vector{Tuple{Int,Int}}, statespace::StateSpace)::Vector{QAtomProduct}
     qs::Vector{QAtom} = [q]
     cs::Vector{ComplexRational} = [ComplexRational(1,0,1)]
     for (index1, index2) in index_map
@@ -52,12 +52,12 @@ function qAtom_index_flip(q::QAtom, index_map::Vector{Tuple{Int,Int}}, statespac
         qs = new_qs
         cs = new_cs
     end
-    return [qAtomProduct(statespace, statespace.fone*c, [q]) for (q, c) in zip(qs, cs)]
+    return [QAtomProduct(statespace, statespace.fone*c, [q]) for (q, c) in zip(qs, cs)]
 end
-function substitute_qAtom(abstract_op::QAbstract, replacement::QAtom, target::QTerm, statespace::StateSpace)::Vector{qAtomProduct}
-    return [qAtomProduct(statespace, statespace.fone, [target])]
+function substitute_qAtom(abstract_op::QAbstract, replacement::QAtom, target::QTerm, statespace::StateSpace)::Vector{QAtomProduct}
+    return [QAtomProduct(statespace, statespace.fone, [target])]
 end
-function substitute_qAtom(abstract_op::QAbstract, replacement::QAtom, target::QAbstract, statespace::StateSpace)::Vector{qAtomProduct}
+function substitute_qAtom(abstract_op::QAbstract, replacement::QAtom, target::QAbstract, statespace::StateSpace)::Vector{QAtomProduct}
     # check if its the same QAbstract operator 
     if target.key_index == abstract_op.key_index && target.sub_index == abstract_op.sub_index 
         qs = qAtom_index_flip(replacement, target.index_map, statespace)
@@ -70,17 +70,17 @@ function substitute_qAtom(abstract_op::QAbstract, replacement::QAtom, target::QA
         end
         return qs
     else
-        return [qAtomProduct(statespace, statespace.fone, [target])]
+        return [QAtomProduct(statespace, statespace.fone, [target])]
     end
 end
 
 """ 
-    substitute(abstract_op::Union{qExpr, qAtomProduct, QAbstract}, replacement::Union{qExpr, qAtomProduct, QAtom}, target::Diff_qEQ, statespace::StateSpace) -> diff_q
-    substitute(abstract_op::Union{qExpr, qAtomProduct, QAbstract}, replacement::Union{qExpr, qAtomProduct, QAtom}, target::qExpr) -> qExpr
+    substitute(abstract_op::Union{qExpr, QAtomProduct, QAbstract}, replacement::Union{qExpr, QAtomProduct, QAtom}, target::Diff_qEQ, statespace::StateSpace) -> diff_q
+    substitute(abstract_op::Union{qExpr, QAtomProduct, QAbstract}, replacement::Union{qExpr, QAtomProduct, QAtom}, target::qExpr) -> qExpr
 
 Substitutes `abstract_op` with `replacement` in `target`. Keeps track of index changes due to for example `neq`. 
 """
-function substitute(abstract_op::QAbstract, replacement::QAtom, target::qAtomProduct)::Vector{QComposite}
+function substitute(abstract_op::QAbstract, replacement::QAtom, target::QAtomProduct)::Vector{QComposite}
     # recursively navigate expression, and substitue
     statespace = target.statespace
     expr = target.expr
@@ -95,7 +95,7 @@ function substitute(abstract_op::QAbstract, replacement::QAtom, target::qAtomPro
         new_expr = new_new_expr
     end
     terms = simplify(new_expr).terms
-    return [qAtomProduct(statespace, coeff_fun*t.coeff_fun, t.expr) for t in terms]  
+    return [QAtomProduct(statespace, coeff_fun*t.coeff_fun, t.expr) for t in terms]  
 end
 
 

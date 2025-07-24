@@ -11,7 +11,7 @@ function qAtom_sort_key(term::QAbstract)
 end
 
 # Use your custom_sort_key for coefficients.
-function qobj_sort_key(term::qAtomProduct)
+function qobj_sort_key(term::QAtomProduct)
     # Here we convert var_exponents (a Vector{Int}) to a tuple so that it compares lexicographically.
     return (tuple(0, 0, Int[], 0), sort_key(term.coeff_fun), qAtom_sort_key.(term.expr)...)
 end
@@ -42,7 +42,7 @@ function sort(qeq::qExpr; kwargs...)
     sorted_terms = _sort(terms, kwargs...)
     return qExpr(qeq.statespace, sorted_terms)
 end
-function sort(qprod::qAtomProduct; kwargs...)  # don't sort qprod 
+function sort(qprod::QAtomProduct; kwargs...)  # don't sort qprod 
     return copy(qprod)
 end
 function sort(qcomp::T; kwargs...) where T<:QMultiComposite # only sort recursively but not expr itself (outer most layer)
