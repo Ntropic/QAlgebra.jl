@@ -13,7 +13,6 @@ makedocs(;
             "Operator Spaces" => "api/qSpace.md",
             "qExpressions" => "api/qExpressions.md",
             "FFunctions" => "api/FFunctions.md", 
-            "Defaults" => "api/defaults.md",
             "Other" => "api/other.md"
         ]
     ],
