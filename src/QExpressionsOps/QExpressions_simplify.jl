@@ -9,10 +9,10 @@ function same_term_type(t1::QAbstract, t2::QAbstract)
 end
 function same_term_type(t1::QAtomProduct, t2::QAtomProduct)::Bool
     # check operators individually -> must all be the same!
-    if length(t1.expr) != length(t2.expr) || t1.separate_expectation_values == t2.separate_expectation_values 
+    if length(t1.expr) != length(t2.expr) || t1.separate_expectation_values != t2.separate_expectation_values 
         return false
     end
-    for (a,b) in zip(t1.expr, t2.expr) 
+    for (a,b) in zip(t1.expr, t2.expr)
         if !same_term_type(a,b)
             return false 
         end
@@ -125,6 +125,7 @@ function simplify(q::qExpr)::qExpr
     while i < length(sorted_terms)
         # Combine adjacent like terms.
         next_term = sorted_terms[i+1]
+        # Check if the current term and the next term
         if same_term_type(curr_term, next_term)
             curr_term = combine_term(curr_term, next_term)
         else
