@@ -17,7 +17,7 @@ end
 function contains_abstract(term::QAtomProduct)::Bool
     return any([isa(t, QAbstract) for t in term.expr])
 end
-function contains_abstract(term::Diff_qEQ)::Bool 
+function contains_abstract(term::diff_QEq)::Bool 
     return contains_abstract(term.expr) && contains_abstract(term.left_hand_side)
 end
 
@@ -72,7 +72,7 @@ function which_continuum_acting(q::QAtomProduct)::Vector{Vector{Bool}}
 end
 
 """ 
-    are_indexes_defined(q::Diff_qEQ)::Bool
+    are_indexes_defined(q::diff_QEq)::Bool
 
 Checks if all indexes n the differential equation are properly specified, either by the left-hand-side or 
 by QSums on the right-hand-side.
@@ -113,7 +113,7 @@ function are_indexes_defined(q::QSum, where_defined::Vector{Vector{Bool}})::Bool
     # check the summation qExpr 
     return are_indexes_defined(q.expr, new_where_defined)
 end
-function are_indexes_defined(q::Diff_qEQ)::Bool
+function are_indexes_defined(q::diff_QEq)::Bool
     qspace = q.statespace
     # first two arguments for operators 
     # final argument for paramete/variables

@@ -9,7 +9,7 @@ function same_term_type(t1::QAbstract, t2::QAbstract)
 end
 function same_term_type(t1::QAtomProduct, t2::QAtomProduct)::Bool
     # check operators individually -> must all be the same!
-    if length(t1.expr) != length(t2.expr) 
+    if length(t1.expr) != length(t2.expr) || t1.separate_expectation_values == t2.separate_expectation_values 
         return false
     end
     for (a,b) in zip(t1.expr, t2.expr) 
@@ -43,33 +43,34 @@ function simplifyqAtomProduct(p::QAtomProduct)::Vector{QComposite}
     empty!(current)
     push!(current, (one(ComplexRational), copy(p.expr)))
 
-    while true
-        empty!(nextbuf)
-        did_any = false
+    if !p.separate_expectation_values 
+        while true
+            empty!(nextbuf)
+            did_any = false
 
-        for (coeff, terms) in current
-            outs, changed = simplify_pairs(terms, p.statespace)
-            
-            did_any |= changed
-            for (dc, t) in outs
-                if !iszero(dc)
-                    push!(nextbuf, (coeff * dc, t))
+            for (coeff, terms) in current
+                outs, changed = simplify_pairs(terms, p.statespace)
+                
+                did_any |= changed
+                for (dc, t) in outs
+                    if !iszero(dc)
+                        push!(nextbuf, (coeff * dc, t))
+                    end
                 end
             end
-        end
 
-        # if nothing changed, we're done
-        if !did_any
-            break
-        end
+            # if nothing changed, we're done
+            if !did_any
+                break
+            end
 
-        # swap buffers for the next iteration
-        current, nextbuf = nextbuf, current
+            # swap buffers for the next iteration
+            current, nextbuf = nextbuf, current
+        end
     end
 
     # wrap the final products
     return [ QAtomProduct(p.statespace, c * p.coeff_fun, t) for (c,t) in current ]
-    #return [ QAtomProduct(p.statespace, FFunctions.simplify(c * p.coeff_fun), t) for (c,t) in current ]
 end
 
 
@@ -83,7 +84,7 @@ Simplifies `qExpr`-based symbolic quantum expressions by recursively reducing in
 - `QComposite`: Simplifies its internal expression and returns a new `QComposite`.
 - `qExpr`: Flattens and simplifies terms, then combines like terms where possible.
 - `QSum`: Simplifies its expression array and returns a new `QSum`.
-- `Diff_qEQ`: Replaces its right-hand side with a simplified version.
+- `diff_QEq`: Replaces its right-hand side with a simplified version.
 
 Returns either a single simplified object or a list of canonical components depending on input type.
 """
@@ -146,7 +147,7 @@ function simplify(q::qExpr)::qExpr
     end
     return qExpr(q.statespace, combined_terms)
 end
-function simplify(q::Diff_qEQ)::Diff_qEQ
+function simplify(q::diff_QEq)::diff_QEq
     simp_rhs = simplify(q.expr)
-    return Diff_qEQ(q.left_hand_side, simp_rhs, q.statespace, q.braket)
+    return diff_QEq(q.left_hand_side, simp_rhs, q.statespace, q.braket)
 end

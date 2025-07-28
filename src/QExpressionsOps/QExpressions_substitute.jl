@@ -75,7 +75,7 @@ function substitute_qAtom(abstract_op::QAbstract, replacement::QAtom, target::QA
 end
 
 """ 
-    substitute(abstract_op::Union{qExpr, QAtomProduct, QAbstract}, replacement::Union{qExpr, QAtomProduct, QAtom}, target::Diff_qEQ, statespace::StateSpace) -> diff_q
+    substitute(abstract_op::Union{qExpr, QAtomProduct, QAbstract}, replacement::Union{qExpr, QAtomProduct, QAtom}, target::diff_QEq, statespace::StateSpace) -> diff_q
     substitute(abstract_op::Union{qExpr, QAtomProduct, QAbstract}, replacement::Union{qExpr, QAtomProduct, QAtom}, target::qExpr) -> qExpr
 
 Substitutes `abstract_op` with `replacement` in `target`. Keeps track of index changes due to for example `neq`. 
@@ -131,7 +131,7 @@ function substitute(a::QAbstract, r::QAtom, targ::T) where T<:QMultiComposite
     return [cp]
 end
 
-function substitute(abstract_op::Union{simpleQ, QAbstract}, replacement::Union{simpleQ, QAtom}, target::Diff_qEQ)::Diff_qEQ 
+function substitute(abstract_op::Union{simpleQ, QAbstract}, replacement::Union{simpleQ, QAtom}, target::diff_QEq)::diff_QEq 
     if !isa(abstract_op, QAbstract)
         abstract_op = extract_qabstract(abstract_op)
     end
@@ -140,12 +140,12 @@ function substitute(abstract_op::Union{simpleQ, QAbstract}, replacement::Union{s
     end
     return substitute(abstract_op, replacement, target)
 end
-function substitute(abstract_op::QAbstract, replacement::QAtom, target::Diff_qEQ)::Diff_qEQ
+function substitute(abstract_op::QAbstract, replacement::QAtom, target::diff_QEq)::diff_QEq
     lhs = substitute(abstract_op, replacement, target.left_hand_side)
     if length(lhs) != 1
         error("Substitution of $abstract_op with $replacement in $target did not result in a single term.")
     end
     lhs = lhs[1]
     rhs = substitute(abstract_op, replacement, target.expr)
-    return Diff_qEQ(target.statespace, lhs, rhs, target.braket)
+    return diff_QEq(target.statespace, lhs, rhs, target.braket)
 end

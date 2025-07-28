@@ -103,12 +103,12 @@ function reorder(q::QSum, add_at_sum::Bool, where_defined::Vector{Vector{Bool}},
 end
 
 """
-    reorder!(q::Diff_qEQ) -> Diff_qEQ
+    reorder!(q::diff_QEq) -> diff_QEq
 
 Reorders the indexes of continuum-subspaces to the left, so that present indexes are i,j,k and not i,k,m.
 This allows simplify to further simplify expressions, by removing 
 """
-function reorder!(q::Diff_qEQ)::Diff_qEQ
+function reorder!(q::diff_QEq)::diff_QEq
     # check index order on left side 
     q = copy(q)#deepcopy(q)
     where_defined_lhs = which_continuum_acting(q.left_hand_side)
@@ -122,8 +122,8 @@ function reorder!(q::Diff_qEQ)::Diff_qEQ
         where_defined_lhs = which_continuum_acting(left_hand_side)
         op_inds = collect(1:length(op_inds))
         var_inds = collect(1:length(var_inds))
-        q = Diff_qEQ(q.statespace, left_hand_side, expr, q.braket)
+        q = diff_QEq(q.statespace, left_hand_side, expr, q.braket)
     end
     expr = reorder(q.expr, true, where_defined_lhs, op_inds, var_inds)
-    return Diff_qEQ(q.statespace, q.left_hand_side, expr, q.braket)
+    return diff_QEq(q.statespace, q.left_hand_side, expr, q.braket)
 end

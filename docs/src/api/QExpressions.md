@@ -41,7 +41,7 @@ QSum
 Finally we have quantum expressions that are constructed as linear combinations of composite operators and differential equations in time \( d/dt \langle \text{Op} \rangle \) which define the time derivative (of the expectation value) of a composite operator as a quantum expression
 ```@docs
 qExpr
-Diff_qEQ
+diff_QEq
 ```
 
 ---
@@ -89,7 +89,7 @@ Pretty-printing happens automatically when using `display` or `println` in envir
 ---
 
 ## 4. Algebraic Operations
-We overload the most common algebraic operations, such as `+`, `*`, `-`, and `/`, to work with `QTerm`, `QAbstract`, `qExpr`, `QSum` and `Diff_qEQ` types. We forthermore add the following functions:
+We overload the most common algebraic operations, such as `+`, `*`, `-`, and `/`, to work with `QTerm`, `QAbstract`, `qExpr`, `QSum` and `diff_QEq` types. We forthermore add the following functions:
 ```@docs
 Dag
 Commutator

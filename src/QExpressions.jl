@@ -6,7 +6,7 @@ using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, ^, product, iszero, copy
 using ..QAlgebra: get_default 
 using ..FFunctions: isnumeric
-export QObj, QAtom, QAbstract, QComposite, QCompositeProduct, QMultiComposite, QTerm, QAtomProduct, qExpr, QSum, Sum, ∑, Diff_qEQ, base_operators, simplify, simplifyqAtomProduct, flatten, neq, d_dt
+export QObj, QAtom, QAbstract, QComposite, QCompositeProduct, QMultiComposite, QTerm, QAtomProduct, qExpr, QSum, Sum, ∑, diff_QEq, base_operators, simplify, simplifyqAtomProduct, flatten, neq, d_dt
 
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
@@ -95,28 +95,29 @@ mutable struct QAtomProduct <: QComposite
     statespace::StateSpace         # State space of the product.
     coeff_fun::FFunction            # function of scalar parameters => has +,-,*,/,^ defined 
     expr::Vector{QAtom}             # Vector of qAtoms (qTerms or QAbstract).
-    function QAtomProduct(statespace::StateSpace, coeff::FFunction, expr::AbstractVector{<:QAtom}= QAtom[])
-        new(statespace, coeff, expr)
+    separate_expectation_values::Bool 
+    function QAtomProduct(statespace::StateSpace, coeff::FFunction, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false)
+        new(statespace, coeff, expr, separate_expectation_values)
     end
-    function QAtomProduct(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::QAtom)
+    function QAtomProduct(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::QAtom, separate_expectation_values::Bool=false)
         f_fun = FAtom(coeff, var_exponents)
-        return new(statespace, f_fun, [expr]) 
+        return new(statespace, f_fun, [expr], separate_expectation_values)
     end
-    function QAtomProduct(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::AbstractVector{<:QAtom})
+    function QAtomProduct(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::AbstractVector{<:QAtom}, separate_expectation_values::Bool=false)
         f_fun = FAtom(coeff, var_exponents)
-        return new(statespace, f_fun, expr)
+        return new(statespace, f_fun, expr, separate_expectation_values)
     end
-    function QAtomProduct(statespace::StateSpace, coeff::Number, expr::AbstractVector{<:QAtom})
+    function QAtomProduct(statespace::StateSpace, coeff::Number, expr::AbstractVector{<:QAtom}, separate_expectation_values::Bool=false)
         f_fun = coeff* statespace.fone
-        return new(statespace, f_fun, expr)
+        return new(statespace, f_fun, expr, separate_expectation_values)
     end
-    function QAtomProduct(statespace::StateSpace, coeff::Number, expr::QAtom)
+    function QAtomProduct(statespace::StateSpace, coeff::Number, expr::QAtom, separate_expectation_values::Bool=false)
         f_fun = coeff * statespace.fone
-        return new(statespace, f_fun, [expr]) 
+        return new(statespace, f_fun, [expr], separate_expectation_values)
     end
 end
 function copy(q::QAtomProduct)::QAtomProduct
-    return QAtomProduct(q.statespace, copy(q.coeff_fun), [copy(s) for s in q.expr])
+    return QAtomProduct(q.statespace, copy(q.coeff_fun), [copy(s) for s in q.expr], q.separate_expectation_values)
 end
 
 """
@@ -178,9 +179,9 @@ function copy(q::QSum)::QSum
 end
 
 """
-    Diff_qEQ
+    diff_QEq
 
-A `Diff_qEQ` represents a differential equation of the form:
+A `diff_QEq` represents a differential equation of the form:
 
     d/dt ⟨Op⟩ = RHS
 
@@ -192,26 +193,26 @@ It represents time evolution of operator expectation values, and wraps the symbo
 - `statespace::StateSpace`: The StateSpace in which the equation is defined.
 - `braket::Bool`: Whether to use braket notation ⟨⋯⟩ (default = `true`).
 """
-struct Diff_qEQ <: QObj
+struct diff_QEq <: QObj
     statespace::StateSpace
     left_hand_side::QAtomProduct
     expr::qExpr 
     braket::Bool
 end
-function copy(q::Diff_qEQ)::Diff_qEQ
-    return Diff_qEQ(q.statespace, copy(q.left_hand_side), copy(q.expr), q.braket)
+function copy(q::diff_QEq)::diff_QEq
+    return diff_QEq(q.statespace, copy(q.left_hand_side), copy(q.expr), q.braket)
 end
 
 """
-    Diff_qEQ(lhs::QTerm, rhs::qExpr, statespace::StateSpace; braket=true)
+    diff_QEq(lhs::QTerm, rhs::qExpr, statespace::StateSpace; braket=true)
 
-Construct a [`Diff_qEQ`](@ref) that represents the time derivative of ⟨lhs⟩ = rhs.
+Construct a [`diff_QEq`](@ref) that represents the time derivative of ⟨lhs⟩ = rhs.
 
 Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
-function Diff_qEQ(statespace::StateSpace, left_hand_side::QAtomProduct, expr::qExpr; braket::Bool=true)
+function diff_QEq(statespace::StateSpace, left_hand_side::QAtomProduct, expr::qExpr; braket::Bool=true)
     new_rhs = neq(expr)
-    return Diff_qEQ(statespace, left_hand_side, new_rhs, braket)
+    return diff_QEq(statespace, left_hand_side, new_rhs, braket)
 end
 
 """
@@ -316,6 +317,8 @@ include("QExpressionsOps/QExpressions_welldefined.jl")
 include("QExpressionsOps/QExpressions_substitute.jl")
 include("QExpressionsOps/QExpressions_reorder.jl")
 
+include("QExpressionsOps/QExpressions_cumulants.jl")
+
 
 """
     d_dt(statespace::StateSpace, expr)
@@ -326,9 +329,9 @@ This function expects that `expr` is an equation (i.e. an Expr with an equal sig
 of the form
 
     LHS = RHS
-The function then returns a `Diff_qEQ` constructed from the left-hand side QTerm and the right-hand side qExpr.
+The function then returns a `diff_QEq` constructed from the left-hand side QTerm and the right-hand side qExpr.
 """
-function d_dt(left_hand::Union{QAtomProduct,qExpr}, right_hand::qExpr)::Diff_qEQ
+function d_dt(left_hand::Union{QAtomProduct,qExpr}, right_hand::qExpr)::diff_QEq
     # Check if expr is an equality.
     qstate = right_hand.statespace
 
@@ -350,7 +353,7 @@ function d_dt(left_hand::Union{QAtomProduct,qExpr}, right_hand::qExpr)::Diff_qEQ
     if !iszero(left_hand.coeff_fun.var_exponents)
         error("Left-hand side of the equation must be a QTerm with no variable exponents.")
     end
-    # Return a Diff_qEQ constructed from these sides.
-    return Diff_qEQ(qstate, left_hand, right_hand)
+    # Return a diff_QEq constructed from these sides.
+    return diff_QEq(qstate, left_hand, right_hand)
 end
 end

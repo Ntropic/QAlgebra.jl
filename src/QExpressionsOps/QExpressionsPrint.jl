@@ -367,7 +367,7 @@ function qExpr2string(q::qExpr; do_latex::Bool=true, braced::Bool=true, do_frac:
     end
 end
 
-function diff_qEQ2string(eq::Diff_qEQ; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true)::String
+function diff_qEQ2string(eq::diff_QEq; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true)::String
     curr_sign, curr_string = qExpr2string(eq.expr, do_latex=do_latex, braced=braced, do_frac=do_frac)
     right_hand_side = curr_sign ? "-" * curr_string : curr_string
 
@@ -388,9 +388,9 @@ end
 """ 
     string(eq::qExpr) -> String
     string(eq::QAtomProduct) -> String
-    string(eq::Diff_qEQ) -> String
+    string(eq::diff_QEq) -> String
 
-Returns a string representation of the qExpr, QAtomProduct or Diff_qEQ object. The string is formatted in a human-readable way, but without LaTeX formatting.
+Returns a string representation of the qExpr, QAtomProduct or diff_QEq object. The string is formatted in a human-readable way, but without LaTeX formatting.
 """
 function string(eq::qExpr)::String
     # add default variables for do_Frac, braced and so on. take care of this by writing a single function called by every string and latex string function 
@@ -404,7 +404,7 @@ function string(eq::QAtomProduct)::String
     total_string = sign ? "-" * total_string : total_string
     return total_string
 end
-function string(eq::Diff_qEQ)::String
+function string(eq::diff_QEq)::String
     return diff_qEQ2string(eq; do_latex=false, braced=get_default(:DO_BRACED))
 end
 
@@ -412,9 +412,9 @@ end
 """ 
     latex_string(eq::qExpr) -> String
     latex_string(eq::QAtomProduct) -> String
-    latex_string(eq::Diff_qEQ) -> String
+    latex_string(eq::diff_QEq) -> String
 
-Returns a LaTeX string representation of the qExpr, QAtomProduct or Diff_qEQ object. 
+Returns a LaTeX string representation of the qExpr, QAtomProduct or diff_QEq object. 
 """
 function latex_string(eq::qExpr)::String
     curr_sign, curr_string = qExpr2string(eq, do_latex=true, braced=get_default(:DO_BRACED))
@@ -427,7 +427,7 @@ function latex_string(eq::QAtomProduct)::String
     total_string = sign ? "-" * total_string : total_string
     return total_string
 end
-function latex_string(eq::Diff_qEQ)::String
+function latex_string(eq::diff_QEq)::String
     return diff_qEQ2string(eq; do_latex=true, braced=get_default(:DO_BRACED))
 end
 
@@ -446,10 +446,10 @@ function show(io::IO, ::MIME"text/latex", x::QAtomProduct)
     print(io, latexstring(latex_string(x)))
 end
 
-function show(io::IO, q::Diff_qEQ)
+function show(io::IO, q::diff_QEq)
     print(io, string(q))
 end
-function show(io::IO, ::MIME"text/latex", q::Diff_qEQ)
+function show(io::IO, ::MIME"text/latex", q::diff_QEq)
     print(io, latexstring(latex_string(q)))
 end
 

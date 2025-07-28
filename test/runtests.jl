@@ -68,7 +68,7 @@ using QAlgebra
 
     @testset "Differentiation Tests" begin
         diff_eq = d_dt(zi, alpha^2)
-        @test diff_eq isa Diff_qEQ
+        @test diff_eq isa diff_QEq
     end
 
     @testset "Commutator and Simplify Tests" begin
