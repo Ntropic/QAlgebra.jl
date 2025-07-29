@@ -120,14 +120,14 @@ function term(statespace::StateSpace, coeff::Number, operator_str::String)
         curr_atoms = [c[2] for c in comb]
         push!(products, QAtomProduct(statespace, curr_coeff, copy(var_exponents), curr_atoms))
     end
-    return qExpr(statespace, products)
+    return QExpr(statespace, products)
 end
-function term(statespace::StateSpace, operator_str::String)::qExpr
+function term(statespace::StateSpace, operator_str::String)::QExpr
     return term(statespace, one(1), operator_str)
 end
-function term(operator_str::String)::qExpr
+function term(operator_str::String)::QExpr
     return term(GLOBAL_STATE_SPACE, operator_str)
 end
-function term(coeff::Number, operator_str::String)::qExpr
+function term(coeff::Number, operator_str::String)::QExpr
     return term(GLOBAL_STATE_SPACE, coeff, operator_str)
 end

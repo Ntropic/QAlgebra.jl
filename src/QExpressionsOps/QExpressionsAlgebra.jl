@@ -5,7 +5,7 @@ export Dag, Commutator, is_numeric, same_statespace
     is_numeric(t::QAbstract, qspace::StateSpace) -> Bool
     is_numeric(p::QAtomProduct) -> Bool
     is_numeric(s::QSum) -> Bool
-    is_numeric(expr::qExpr) -> Bool
+    is_numeric(expr::QExpr) -> Bool
 
 Returns true if only the coefficient of the term(s) is non-zero.
 """
@@ -31,7 +31,7 @@ end
 function is_numeric(s::QSum)::Bool
     return is_numeric(s.expr)
 end
-function is_numeric(expr::qExpr)::Bool
+function is_numeric(expr::QExpr)::Bool
     expr_s = simplify(expr)
     terms = expr_s.terms
 
@@ -78,7 +78,7 @@ function ==(a::QAtomProduct, b::QAtomProduct)
     return a.coeff_fun == b.coeff_fun &&  all([ai == bi for (ai, bi) in zip(a.expr, b.expr)])
 end
 
-function ==(a::qExpr, b::qExpr)
+function ==(a::QExpr, b::QExpr)
     simple_a = simplify(a)
     simple_b = simplify(b)
     if length(simple_a) != length(simple_b)
@@ -101,7 +101,7 @@ function ==(a::QSum, b::QSum)
     end
     return a.expr == b.expr
 end
-function ==(expr::qExpr, n::Number)
+function ==(expr::QExpr, n::Number)
     function isapprox_num(x, y; atol=1e-12)
         return isapprox(x, y, atol=atol)
     end
@@ -115,7 +115,7 @@ function ==(expr::qExpr, n::Number)
     end
     return false
 end
-function ==(n::Number, expr::qExpr)
+function ==(n::Number, expr::QExpr)
     return expr == n  # Symmetric
 end
 
@@ -126,8 +126,8 @@ end
 function -(t::QAtomProduct)::QAtomProduct
     return QAtomProduct(t.statespace, -t.coeff_fun, copy(t.expr))
 end
-function -(t::qExpr)::qExpr
-    return qExpr(t.statespace, .-t.terms)  
+function -(t::QExpr)::QExpr
+    return QExpr(t.statespace, .-t.terms)  
 end
 function -(t::T)::T where T<:QComposite
     t_new = copy(t)
@@ -136,27 +136,27 @@ function -(t::T)::T where T<:QComposite
 end
 
 #### Binary + ####################################################################
-function +(Q1::qExpr, Q2::qExpr)::qExpr
+function +(Q1::QExpr, Q2::QExpr)::QExpr
     new_terms = vcat(Q1.terms, Q2.terms)
     # Optionally: group like terms here.
-    return qExpr(Q1.statespace, new_terms)
+    return QExpr(Q1.statespace, new_terms)
 end
-function +(Q1::qExpr, Q2::T)::qExpr where T<:QComposite
+function +(Q1::QExpr, Q2::T)::QExpr where T<:QComposite
     new_terms = copy(Q1.terms)
     push!(new_terms, Q2)
-    return qExpr(Q1.statespace, new_terms)
+    return QExpr(Q1.statespace, new_terms)
 end
 
 #### Binary - ####################################################################
-function -(Q1::qExpr, Q2::qExpr)::qExpr
+function -(Q1::QExpr, Q2::QExpr)::QExpr
     new_terms = vcat(Q1.terms, .-Q2.terms)
     # Optionally: group like terms here.
-    return qExpr(Q1.statespace, new_terms)
+    return QExpr(Q1.statespace, new_terms)
 end
-function -(Q1::qExpr, Q2::T)::qExpr where T<:QComposite
+function -(Q1::QExpr, Q2::T)::QExpr where T<:QComposite
     new_terms = copy(Q1.terms)
     push!(new_terms, .-Q2)
-    return qExpr(Q1.statespace, new_terms)
+    return QExpr(Q1.statespace, new_terms)
 end
 
 #### Multiply ####################################################################
@@ -228,12 +228,45 @@ function *(num::Number, p1::QAtomProduct)::Vector{QAtomProduct}
     return [QAtomProduct(p1.statespace, p1.coeff_fun*num, copy(p1.expr))]
 end
 function *(p1::T1, p2::T2)::Vector{QCompositeProduct} where {T1<:QComposite, T2<:QComposite}
-    return [QCompositeProduct(p1.statespace, vcat(p1, p2))]
+    return [QCompositeProduct(vcat(p1, p2))]
+end
+function *(p1::QSum, p2::T2)::Vector{QSum} where T2<:QComposite
+    new_expr::Vector{QComposite} = []
+    for t in p1.expr
+       append!(new_expr, t*p2)
+    end
+    return [QSum(p1.statespace, QExpr(new_expr), p1.indexes, p1.subsystem_index, p1.element_indexes, p1.neq)]
+end
+function *(p1::QCompositeProduct, p2::T2)::Vector{QCompositeProduct} where T2<:QComposite
+    curr_comp = p1.expr
+    last_prod = p1.expr[end] * p2
+    return_vec::Vector{QCompositeProduct} = [] 
+    for last in last_prod
+        if isa(last, QCompositeProduct)
+            push!(return_vec, QCompositeProduct(vcat(curr_comp, QExpr([p2]))))
+        else 
+            push!(return_vec, QCompositeProduct(vcat(curr_comp[1:end-1], QExpr([last]))))
+        end
+    end
+    return return_vec
+end
+function *(p2::T2, p1::QCompositeProduct)::Vector{QCompositeProduct} where T2<:QComposite
+    curr_comp = p1.expr
+    first_prod = p2* p1.expr[1]
+    return_vec::Vector{QCompositeProduct} = [] 
+    for first in first_prod
+        if isa(first, QCompositeProduct)
+            push!(return_vec, QCompositeProduct(vcat(p2, curr_comp)))
+        else 
+            push!(return_vec, QCompositeProduct(vcat(first_prod, curr_comp[2:end])))
+        end
+    end
+    return return_vec
 end
 
-function *(Q1::qExpr, Q2::qExpr)::qExpr
+function *(Q1::QExpr, Q2::QExpr)::QExpr
     if Q1.statespace != Q2.statespace
-        error("Cannot multiply qExpr’s from different statespaces.")
+        error("Cannot multiply QExpr’s from different statespaces.")
     end
     new_terms::AbstractVector{QComposite} = []
     for t1 in Q1.terms
@@ -241,35 +274,35 @@ function *(Q1::qExpr, Q2::qExpr)::qExpr
             append!(new_terms, t1*t2)   
         end
     end
-    return qExpr(Q1.statespace, new_terms)
-    # return simplify(qExpr(Q1.statespace, new_terms))
+    return QExpr(Q1.statespace, new_terms)
+    # return simplify(QExpr(Q1.statespace, new_terms))
 end
-function *(Q1::qExpr, Q2::T)::qExpr where T<:QComposite
+function *(Q1::QExpr, Q2::T)::QExpr where T<:QComposite
     terms = QComposite[]  # or Vector{QComposite}()
     for q in Q1.terms
         append!(terms, q * Q2)
     end
-    return qExpr(Q1.statespace, terms)
+    return QExpr(Q1.statespace, terms)
 end
-function *(Q1::T, Q2::qExpr)::qExpr where T<:QComposite
+function *(Q1::T, Q2::QExpr)::QExpr where T<:QComposite
     terms = QComposite[]  # or Vector{QComposite}()
     for q in Q2.terms
         append!(terms, Q1 * q)
     end
-    return qExpr(Q1.statespace, terms)
+    return QExpr(Q1.statespace, terms)
 end
 
-function *(Q1::qExpr, num::Number)::qExpr
+function *(Q1::QExpr, num::Number)::QExpr
     if num == 0
-        return qExpr(Q1.statespace, QComposite[])  # or Vector{QComposite}() if preferred
+        return QExpr(Q1.statespace, QComposite[])  # or Vector{QComposite}() if preferred
     end
     terms = QComposite[]  # or Vector{QComposite}()
     for q in Q1.terms
         append!(terms, q * num)
     end
-    return qExpr(Q1.statespace, terms)
+    return QExpr(Q1.statespace, terms)
 end
-function *(num::Number, Q1::qExpr)::qExpr
+function *(num::Number, Q1::QExpr)::QExpr
     return Q1*num
 end
 
@@ -284,9 +317,9 @@ function *(num::Number, Q2::T)::Vector{QComposite} where T<:QComposite
 end
 
 ##### Exponentiation ###################################################
-function ^(Q::Union{qExpr, T}, n::Integer) where T<:QComposite
+function ^(Q::Union{QExpr, T}, n::Integer) where T<:QComposite
     if n < 0
-        error("Negative exponent not defined for qExpr.")
+        error("Negative exponent not defined for QExpr.")
     elseif n == 0
         return Identity(Q.statespace)
     end
@@ -305,55 +338,55 @@ function ^(Q::Union{qExpr, T}, n::Integer) where T<:QComposite
 end
 
 ##### Commutators ###################################################
-# --- Define the commutator for qExpr ---
+# --- Define the commutator for QExpr ---
 """
-    Commutator(Q1::qExpr, Q2::qExpr) -> qExpr
-    Commutator(Q::qExpr, t::QSum) -> qExpr
-    Commutator(t::QSum, Q::qExpr) -> qExpr
+    Commutator(Q1::QExpr, Q2::QExpr) -> QExpr
+    Commutator(Q::QExpr, t::QSum) -> QExpr
+    Commutator(t::QSum, Q::QExpr) -> QExpr
 
 Computes the commutator [Q1, Q2] = Q1 * Q2 - Q2 * Q1.
-Both qExpr's must share the same statespace.
+Both QExpr's must share the same statespace.
 """
-function Commutator(Q1::Union{qExpr, T}, Q2::Union{qExpr, QComposite}) where T<:QComposite
-    # qExpr multiplication is already defined.
+function Commutator(Q1::Union{QExpr, T}, Q2::Union{QExpr, QComposite}) where T<:QComposite
+    # QExpr multiplication is already defined.
     return Q1 * Q2 - Q2 * Q1
 end
-function +(Q::qExpr, exprs::Vector{qExpr})::qExpr
+function +(Q::QExpr, exprs::Vector{QExpr})::QExpr
     if length(exprs) != 2
         error("Only vectors of length 2 can be interpreted as Commutator arguments.")
     end
     c = Commutator(exprs[1], exprs[2])
     return c + Q
 end
-function +(exprs::Vector{qExpr}, Q::qExpr)::qExpr
+function +(exprs::Vector{QExpr}, Q::QExpr)::QExpr
     if length(exprs) != 2
         error("Only vectors of length 2 can be interpreted as Commutator arguments.")
     end
     c = Commutator(exprs[1], exprs[2])
     return c + Q 
 end
-function -(Q::qExpr, exprs::Vector{qExpr})::qExpr
+function -(Q::QExpr, exprs::Vector{QExpr})::QExpr
     if length(exprs) != 2
         error("Only vectors of length 2 can be interpreted as Commutator arguments.")
     end
     c = Commutator(exprs[1], exprs[2])
     return Q - c
 end
-function -(exprs::Vector{qExpr}, Q::qExpr)::qExpr
+function -(exprs::Vector{QExpr}, Q::QExpr)::QExpr
     if length(exprs) != 2
         error("Only vectors of length 2 can be interpreted as Commutator arguments.")
     end
     c = Commutator(exprs[1], exprs[2])
     return c - Q
 end
-function *(Q::qExpr, exprs::Vector{qExpr})::qExpr
+function *(Q::QExpr, exprs::Vector{QExpr})::QExpr
     if length(exprs) != 2
         error("Only vectors of length 2 can be interpreted as Commutator arguments.")
     end
     c = Commutator(exprs[1], exprs[2])
     return Q * c
 end
-function *(exprs::Vector{qExpr}, Q::qExpr)::qExpr
+function *(exprs::Vector{QExpr}, Q::QExpr)::QExpr
     if length(exprs) != 2
         error("Only vectors of length 2 can be interpreted as Commutator arguments.")
     end
@@ -368,16 +401,16 @@ function Identity(qspace::StateSpace)
     var_exponents = zeros(Int, length(qspace.vars))
     # Build a vector of neutral operator indexes.
     neutral_ops = [s.op_set.neutral_element for s in qspace.subspaces for key in s.keys]
-    # Create a single-term qExpr.
-    return qExpr(qspace, QAtomProduct(qspace, qspace.fone, QAtom[QTerm(qspace.neutral_op)]))
+    # Create a single-term QExpr.
+    return QExpr(qspace, QAtomProduct(qspace, qspace.fone, QAtom[QTerm(qspace.neutral_op)]))
 end
 
 """
     Dag(qspace::StateSpace, t::QTerm) -> QTerm
-    Dag(t::qExpr) -> qExpr
+    Dag(t::QExpr) -> QExpr
     Dag(t::T) -> T where T <: QComposite
     
-Returns the Hermitian conjugate (dagger) of a QTerm, qExpr or QSum.
+Returns the Hermitian conjugate (dagger) of a QTerm, QExpr or QSum.
 Overloads the adjoint function, which can be called via `t′`.
 """
 function Dag(qspace::StateSpace, t::QTerm)::Vector{Tuple{QTerm, ComplexRational}}
@@ -436,12 +469,12 @@ function Dag(p::QAtomProduct)::Vector{QAtomProduct}
     return new_atom_products 
 end
 
-function Dag(Q::qExpr)::qExpr
+function Dag(Q::QExpr)::QExpr
     q_comps::Vector{QComposite} = []
     for q in Q.terms
         append!(q_comps, Dag(q))
     end
-    return qExpr(q_comps)
+    return QExpr(q_comps)
 end
 function Dag(t::T)::Vector{QComposite} where T<:QComposite
     t_new = copy(t) 
@@ -450,7 +483,7 @@ function Dag(t::T)::Vector{QComposite} where T<:QComposite
 end
 function Dag(t::QMultiComposite)::Vector{QMultiComposite}
     t_new = copy(t) 
-    dag_exprs::Vector{qExpr} = []
+    dag_exprs::Vector{QExpr} = []
     for expr in reverse(t.expr)
         append!(dag_exprs, Dag(expr))
     end
@@ -458,5 +491,5 @@ function Dag(t::QMultiComposite)::Vector{QMultiComposite}
     return [t_new]
 end
 
-adjoint(Q::qExpr) = Dag(Q)
+adjoint(Q::QExpr) = Dag(Q)
 adjoint(Q::T) where {T<:QComposite} = Dag(Q)

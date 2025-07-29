@@ -1,12 +1,12 @@
 export substitute 
 
-function extract_qabstract(q::qExpr)::QAbstract
+function extract_qabstract(q::QExpr)::QAbstract
     if length(q) > 1 
         error("Cannot substitute composites. abstract_op must contain only an abstract operator.")
     end
     term = q.terms[1]
     if !isa(term, QAtomProduct)
-        error("qExpr must contain only a QAtomProduct")
+        error("QExpr must contain only a QAtomProduct")
     end
     return extract_qabstract(term)
 end
@@ -17,13 +17,13 @@ function extract_qabstract(term::QAtomProduct)::QAbstract
     return term.expr[1]
 end
 #now same for QAtom 
-function extract_qatom(q::qExpr)::QAtom
+function extract_qatom(q::QExpr)::QAtom
     if length(q) > 1 
         error("Cannot substitute composites. abstract_op must contain only an abstract operator.")
     end
     term = q.terms[1]
     if !isa(term, QAtomProduct)
-        error("qExpr must contain only a QAtomProduct")
+        error("QExpr must contain only a QAtomProduct")
     end
     return extract_qatom(term)
 end
@@ -36,7 +36,7 @@ end
 
 # substitute abstract operator 
 # input is abstract_op, replacement and target
-simpleQ = Union{qExpr, QAtomProduct}
+simpleQ = Union{QExpr, QAtomProduct}
 # Deals with index_map mapping one index to another ithin QAbstract
 function qAtom_index_flip(q::QAtom, index_map::Vector{Tuple{Int,Int}}, statespace::StateSpace)::Vector{QAtomProduct}
     qs::Vector{QAtom} = [q]
@@ -75,8 +75,8 @@ function substitute_qAtom(abstract_op::QAbstract, replacement::QAtom, target::QA
 end
 
 """ 
-    substitute(abstract_op::Union{qExpr, QAtomProduct, QAbstract}, replacement::Union{qExpr, QAtomProduct, QAtom}, target::diff_QEq, statespace::StateSpace) -> diff_q
-    substitute(abstract_op::Union{qExpr, QAtomProduct, QAbstract}, replacement::Union{qExpr, QAtomProduct, QAtom}, target::qExpr) -> qExpr
+    substitute(abstract_op::Union{QExpr, QAtomProduct, QAbstract}, replacement::Union{QExpr, QAtomProduct, QAtom}, target::diff_QEq, statespace::StateSpace) -> diff_q
+    substitute(abstract_op::Union{QExpr, QAtomProduct, QAbstract}, replacement::Union{QExpr, QAtomProduct, QAtom}, target::QExpr) -> QExpr
 
 Substitutes `abstract_op` with `replacement` in `target`. Keeps track of index changes due to for example `neq`. 
 """
@@ -85,7 +85,7 @@ function substitute(abstract_op::QAbstract, replacement::QAtom, target::QAtomPro
     statespace = target.statespace
     expr = target.expr
     coeff_fun = target.coeff_fun
-    new_expr::qExpr = qExpr(target.statespace, substitute_qAtom(abstract_op, replacement, expr[1], statespace))
+    new_expr::QExpr = QExpr(target.statespace, substitute_qAtom(abstract_op, replacement, expr[1], statespace))
     for t in expr[2:end]
         new_terms = substitute_qAtom(abstract_op, replacement, t, statespace)
         new_new_expr = new_expr * new_terms[1]
@@ -99,7 +99,7 @@ function substitute(abstract_op::QAbstract, replacement::QAtom, target::QAtomPro
 end
 
 
-function substitute(abstract_op::Union{simpleQ, QAbstract}, replacement::Union{simpleQ, QAtom}, target::qExpr)::qExpr
+function substitute(abstract_op::Union{simpleQ, QAbstract}, replacement::Union{simpleQ, QAtom}, target::QExpr)::QExpr
     if !isa(abstract_op, QAbstract)
         abstract_op = extract_qabstract(abstract_op)
     end
@@ -108,13 +108,13 @@ function substitute(abstract_op::Union{simpleQ, QAbstract}, replacement::Union{s
     end
     return substitute(abstract_op, replacement, target)
 end
-function substitute(abstract_op::QAbstract, replacement::QAtom, target::qExpr)::qExpr
+function substitute(abstract_op::QAbstract, replacement::QAtom, target::QExpr)::QExpr
     # recursively navigate expression, and substitue
     new_terms = QComposite[]
     for term in target.terms
         append!(new_terms, substitute(abstract_op, replacement, term))
     end
-    return qExpr(target.statespace, new_terms)
+    return QExpr(target.statespace, new_terms)
 end
 function substitute(a::QAbstract, r::QAtom, targ::T) where T<:QComposite
     # T<:QMultiComposite is *also* <:QComposite, 

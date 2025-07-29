@@ -36,18 +36,18 @@ using QAlgebra
         @test haskey(op_dict, "b")
         @test haskey(op_dict, "x_i")
         @test haskey(abstract_dict, "A")
-        @test xi isa qExpr
-        @test pj isa qExpr
-        @test b isa qExpr
-        @test alpha isa qExpr
-        @test I isa qExpr
+        @test xi isa QExpr
+        @test pj isa QExpr
+        @test b isa QExpr
+        @test alpha isa QExpr
+        @test I isa QExpr
     end
 
     @testset "Simple Expressions" begin
         As = 2 * alpha * im * xi
         Bs = alpha * (Dag(b) * xi * yi)
-        @test As isa qExpr
-        @test Bs isa qExpr
+        @test As isa QExpr
+        @test Bs isa QExpr
 
         expr1 = 2 * alpha * im * zi
         expr2 = 2 * alpha *  xi * yi 
@@ -56,14 +56,14 @@ using QAlgebra
 
     @testset "Sum and Nested Expressions" begin
         qsum_expr = Sum(["j", "k"], alpha * gamma_i * gamma_k * delta_k * xi * yi)
-        @test qsum_expr isa qExpr
+        @test qsum_expr isa QExpr
         @test qsum_expr.terms[1] isa QSum
 
         flat_expr = flatten(qsum_expr)
-        @test flat_expr isa qExpr
+        @test flat_expr isa QExpr
 
         neq_expr = neq(qsum_expr)
-        @test neq_expr isa qExpr
+        @test neq_expr isa QExpr
     end
 
     @testset "Differentiation Tests" begin
@@ -75,7 +75,7 @@ using QAlgebra
         a_term = alpha * beta^2 * xi * yi * Dag(b) * b
         b_term = alpha^2 * beta * zi * Dag(b)
         comm = simplify(Commutator(a_term, b_term))
-        @test comm isa qExpr
+        @test comm isa QExpr
 
         messy = alpha * xi + alpha^2 * zi + alpha * xi
         expected = simplify(alpha^2 * zi + 2 * alpha * xi )

@@ -9,7 +9,7 @@ function same_term_type(t1::QAbstract, t2::QAbstract)
 end
 function same_term_type(t1::QAtomProduct, t2::QAtomProduct)::Bool
     # check operators individually -> must all be the same!
-    if length(t1.expr) != length(t2.expr) || t1.separate_expectation_values == t2.separate_expectation_values 
+    if length(t1.expr) != length(t2.expr) || t1.separate_expectation_values != t2.separate_expectation_values 
         return false
     end
     for (a,b) in zip(t1.expr, t2.expr) 
@@ -77,12 +77,12 @@ end
 """
     simplify(q) -> simplified
 
-Simplifies `qExpr`-based symbolic quantum expressions by recursively reducing internal structures:
+Simplifies `QExpr`-based symbolic quantum expressions by recursively reducing internal structures:
 
 - `QAtomProduct`: Applies pairwise simplifications repeatedly and merges results into canonical `QAtomProduct`s.
 - `QMultiComposite`: Simplifies each expression element-wise.
 - `QComposite`: Simplifies its internal expression and returns a new `QComposite`.
-- `qExpr`: Flattens and simplifies terms, then combines like terms where possible.
+- `QExpr`: Flattens and simplifies terms, then combines like terms where possible.
 - `QSum`: Simplifies its expression array and returns a new `QSum`.
 - `diff_QEq`: Replaces its right-hand side with a simplified version.
 
@@ -92,7 +92,7 @@ function simplify(q::QAtomProduct)::Vector{QAtomProduct}
     return [q]
 end
 function simplify(qcomp::T)::Vector{T} where T <: QMultiComposite
-    new_exprs::Vector{qExpr} = [simplify(x) for x in qcomp.expr]
+    new_exprs::Vector{QExpr} = [simplify(x) for x in qcomp.expr]
     q = copy(qcomp)
     q.expr = new_exprs
     return [q]
@@ -103,10 +103,10 @@ function simplify(p::T)::Vector{T} where T <: QComposite
     return [new_p]
 end 
 
-function simplify(q::qExpr)::qExpr
-    # If there are no terms, return an empty qExpr.
+function simplify(q::QExpr)::QExpr
+    # If there are no terms, return an empty QExpr.
     if isempty(q.terms)
-        return qExpr(q.statespace, QComposite[])
+        return QExpr(q.statespace, QComposite[])
     end
 
     expr::Vector{QComposite} = QComposite[]
@@ -114,9 +114,9 @@ function simplify(q::qExpr)::qExpr
     for t in q.terms 
         append!(expr, simplify(t))
     end
-    q = qExpr(q.statespace, expr)
+    q = QExpr(q.statespace, expr)
     
-    # First, sort qExpr without modifying the original.
+    # First, sort QExpr without modifying the original.
     sorted_terms = _sort(expr)
 
     combined_terms = QComposite[]
@@ -145,7 +145,7 @@ function simplify(q::qExpr)::qExpr
             push!(combined_terms, copy(curr_term))
         end
     end
-    return qExpr(q.statespace, combined_terms)
+    return QExpr(q.statespace, combined_terms)
 end
 function simplify(q::diff_QEq)::diff_QEq
     simp_rhs = simplify(q.expr)

@@ -6,7 +6,7 @@ using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, ^, product, iszero, copy
 using ..QAlgebra: get_default 
 using ..FFunctions: isnumeric
-export QObj, QAtom, QAbstract, QComposite, QCompositeProduct, QMultiComposite, QTerm, QAtomProduct, qExpr, QSum, Sum, ∑, diff_QEq, base_operators, simplify, simplifyqAtomProduct, flatten, neq, d_dt
+export QObj, QAtom, QAbstract, QComposite, QCompositeProduct, QMultiComposite, QTerm, QAtomProduct, QExpr, QSum, Sum, ∑, diff_QEq, base_operators, simplify, simplifyqAtomProduct, flatten, neq, d_dt
 
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
@@ -37,7 +37,7 @@ abstract type QComposite <: QObj end  # products and sums of operator definition
 """ 
     QMultiComposite 
 
-Abstract type for composite expressions that contain a Vector of qExpr objects.
+Abstract type for composite expressions that contain a Vector of QExpr objects.
 """
 abstract type QMultiComposite <: QComposite end
 
@@ -121,15 +121,15 @@ function copy(q::QAtomProduct)::QAtomProduct
 end
 
 """
-    qExpr
+    QExpr
 
-A `qExpr` represents a quantum equation, consisting of a Vector of quantum Expressions representing the additive terms of the equation.
+A `QExpr` represents a quantum equation, consisting of a Vector of quantum Expressions representing the additive terms of the equation.
 It also contains a reference to the state space in which the equation is defined.
 """
-mutable struct qExpr <: QObj
+mutable struct QExpr <: QObj
     statespace::StateSpace
     terms::Vector{QComposite}              #AbstractVector{<:QComposite}    
-    function qExpr(statespace::StateSpace, terms::AbstractVector{<:QComposite})
+    function QExpr(statespace::StateSpace, terms::AbstractVector{<:QComposite})
         if isempty(terms) 
             # add neotral zero term
             zero_term = QAtomProduct(statespace, statespace.fone*0, QAtom[])
@@ -138,20 +138,17 @@ mutable struct qExpr <: QObj
         return new(statespace, terms)
     end
 end
-function qExpr(term::T) where T<:QComposite
-    return qExpr(term.statespace, [term])
+function QExpr(statespace::StateSpace, prod::T) where T<:QComposite
+    return QExpr(statespace, [prod])
 end
-function qExpr(statespace::StateSpace, prod::T) where T<:QComposite
-    return qExpr(statespace, [prod])
+function QExpr(statespace::StateSpace, terms::QAtom)
+    return QExpr(statespace, QAtomProduct(statespace, statespace.fone, [terms]))
 end
-function qExpr(statespace::StateSpace, terms::QAtom)
-    return qExpr(statespace, QAtomProduct(statespace, statespace.fone, [terms]))
+function QExpr(terms::AbstractVector{<:QComposite})
+    return QExpr(terms[1].statespace, terms)
 end
-function qExpr(terms::AbstractVector{<:QComposite})
-    return qExpr(terms[1].statespace, terms)
-end
-function copy(q::qExpr)::qExpr
-    return qExpr(q.statespace, [copy(s) for s in q.terms])
+function copy(q::QExpr)::QExpr
+    return QExpr(q.statespace, [copy(s) for s in q.terms])
 end
 
 """
@@ -159,7 +156,7 @@ end
 
 A `QSum` represents the summation of a quantum Equation over indexes in a quantum expression.
 It contains:
-    - `expr`: The expression being summed over, which is a `qExpr` object.
+    - `expr`: The expression being summed over, which is a `QExpr` object.
     - `indexes`: A vector of strings representing the summation indexes (e.g., "i").
     - `subsystem_index`: The index of the subspace in which the indexes live. 
     - `element_indexes`: A vector of integers representing the position of the indexes in that subspace.
@@ -168,7 +165,7 @@ It contains:
 """
 mutable struct QSum <: QComposite
     statespace::StateSpace
-    expr::qExpr       # The expression being summed over.    # use expr in other qComposites except for QAtomProduct
+    expr::QExpr       # The expression being summed over.    # use expr in other QComposites except for QAtomProduct
     indexes::Vector{String}   # The summation index (e.g. "i").
     subsystem_index::Int  # The subspace index where the summation index was found.
     element_indexes::Vector{Int}    # The position in that subspace.
@@ -189,14 +186,14 @@ It represents time evolution of operator expectation values, and wraps the symbo
 
 # Fields
 - `left_hand_side::QTerm`: The LHS operator being differentiated.
-- `expr::qExpr`: The RHS symbolic expression.
+- `expr::QExpr`: The RHS symbolic expression.
 - `statespace::StateSpace`: The StateSpace in which the equation is defined.
 - `braket::Bool`: Whether to use braket notation ⟨⋯⟩ (default = `true`).
 """
 struct diff_QEq <: QObj
     statespace::StateSpace
     left_hand_side::QAtomProduct
-    expr::qExpr 
+    expr::QExpr 
     braket::Bool
 end
 function copy(q::diff_QEq)::diff_QEq
@@ -204,23 +201,23 @@ function copy(q::diff_QEq)::diff_QEq
 end
 
 """
-    diff_QEq(lhs::QTerm, rhs::qExpr, statespace::StateSpace; braket=true)
+    diff_QEq(lhs::QTerm, rhs::QExpr, statespace::StateSpace; braket=true)
 
 Construct a [`diff_QEq`](@ref) that represents the time derivative of ⟨lhs⟩ = rhs.
 
 Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
-function diff_QEq(statespace::StateSpace, left_hand_side::QAtomProduct, expr::qExpr; braket::Bool=true)
+function diff_QEq(statespace::StateSpace, left_hand_side::QAtomProduct, expr::QExpr; braket::Bool=true)
     new_rhs = neq(expr)
     return diff_QEq(statespace, left_hand_side, new_rhs, braket)
 end
 
 """
-    Sum(index::Union{String,Symbol,Vector{String},Vector{Symbol}}, expr::qExpr; neq::Bool=false) -> QSum
+    Sum(index::Union{String,Symbol,Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=false) -> QSum
 
 Constructor of a `QSum` struct. Defines the indexes to sum over, the expressions for which to apply the sum and optionally whether the sum is only over non equal indexes. 
 """
-function Sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::qExpr; neq::Bool=false)::qExpr
+function Sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=false)::QExpr
     index_strs = [string(index) for index in indexes]
     ss = expr.statespace
     the_s_ind::Int = -1
@@ -255,25 +252,25 @@ function Sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::qExpr; neq::Bo
             error("Duplicate indexes found in the input.")
         end
         e_inds = sort(e_inds)
-        return qExpr(ss, [QSum(ss, expr, index_strs, the_s_ind, e_inds, neq)])
+        return QExpr(ss, [QSum(ss, expr, index_strs, the_s_ind, e_inds, neq)])
     else
         return expr
     end
 end
-function Sum(index::Union{String,Symbol}, expr::qExpr; neq::Bool=false)::qExpr
+function Sum(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false)::QExpr
     return Sum([index], expr, neq=neq)
 end
 """ 
-    ∑(index::Union{String,Symbol}, expr::qExpr; neq::Bool=false) -> QSum
+    ∑(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false) -> QSum
 
 Alternative way to call the `Sum` constructor. Sum(index, expr; neq) = ∑(index, expr; neq).
 """
-∑(index::Union{String,Symbol}, expr::qExpr; neq::Bool=false) = Sum(index, expr, neq=neq)
-∑(indexes::Union{Vector{String},Vector{Symbol}}, expr::qExpr; neq::Bool=false) = Sum(indexes, expr, neq=neq)
+∑(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false) = Sum(index, expr, neq=neq)
+∑(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=false) = Sum(indexes, expr, neq=neq)
  
 #### Helper Functions #######################################################################################
-# Define iteration for qExpr so that iterating over it yields its QTerm's.
-function iterate(q::qExpr, state::Int=1)
+# Define iteration for QExpr so that iterating over it yields its QTerm's.
+function iterate(q::QExpr, state::Int=1)
     state > length(q.terms) && return nothing
     return q.terms[state], state + 1
 end
@@ -281,7 +278,7 @@ function iterate(q::T, state::Int=1) where T <: QComposite
     error("Cannot iterate over a QComposite of type $(T).")
 end
 
-function getindex(q::qExpr, i::Int)
+function getindex(q::QExpr, i::Int)
     q.terms[i]
 end
 function getindex(q::T, i::Int) where T <: QComposite
@@ -289,9 +286,9 @@ function getindex(q::T, i::Int) where T <: QComposite
 end
 
 # Optionally, define length and eltype.
-length(q::qExpr) = length(q.terms)
+length(q::QExpr) = length(q.terms)
 
-iszero(q::qExpr) = length(q.terms) == 0 || all(iszero, q.terms)
+iszero(q::QExpr) = length(q.terms) == 0 || all(iszero, q.terms)
 iszero(q::QAtomProduct) = iszero(q.coeff_fun)
 iszero(q::T) where T<:QComposite = iszero(q.expr)
 iszero(q::T) where T<:QMultiComposite = any(iszero, q.expr)
@@ -329,13 +326,13 @@ This function expects that `expr` is an equation (i.e. an Expr with an equal sig
 of the form
 
     LHS = RHS
-The function then returns a `diff_QEq` constructed from the left-hand side QTerm and the right-hand side qExpr.
+The function then returns a `diff_QEq` constructed from the left-hand side QTerm and the right-hand side QExpr.
 """
-function d_dt(left_hand::Union{QAtomProduct,qExpr}, right_hand::qExpr)::diff_QEq
+function d_dt(left_hand::Union{QAtomProduct,QExpr}, right_hand::QExpr)::diff_QEq
     # Check if expr is an equality.
     qstate = right_hand.statespace
 
-    if left_hand isa qExpr
+    if left_hand isa QExpr
         if left_hand.statespace != qstate
             error("Left and right sides of the equation must be in the same state space.")
         end
@@ -344,7 +341,7 @@ function d_dt(left_hand::Union{QAtomProduct,qExpr}, right_hand::qExpr)::diff_QEq
         end
         left_hand = left_hand.terms[1]
         if !isa(left_hand, QAtomProduct)
-            error("Left-hand side of the equation must be a QAtomProduct. Or a QAtomProduct wrapped in a qExpr. ")
+            error("Left-hand side of the equation must be a QAtomProduct. Or a QAtomProduct wrapped in a QExpr. ")
         end
     end
     if !isnumeric(left_hand.coeff_fun) && abs(left_hand.coeff_fun - 1) != 0

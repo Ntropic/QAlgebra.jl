@@ -5,7 +5,7 @@ export contains_abstract, which_continuum_acting, are_indexes_defined
 
 Checks if the quantum object contains an abstract operator among its leaves.
 """
-function contains_abstract(term::qExpr)::Bool
+function contains_abstract(term::QExpr)::Bool
     return any([contains_abstract(t) for t in term.terms])
 end
 function contains_abstract(term::T)::Bool where T<:QComposite
@@ -86,7 +86,7 @@ function are_indexes_defined(q::QAtomProduct, where_defined::Vector{Vector{Bool}
     end
     return true
 end
-function are_indexes_defined(q::qExpr, where_defined::Vector{Vector{Bool}})::Bool
+function are_indexes_defined(q::QExpr, where_defined::Vector{Vector{Bool}})::Bool
     # check element wise if all indexes are defined
     return all([are_indexes_defined(t, where_defined) for t in q.terms])
 end
@@ -110,7 +110,7 @@ function are_indexes_defined(q::QSum, where_defined::Vector{Vector{Bool}})::Bool
     end
     new_where_defined = deepcopy(where_defined)
     new_where_defined[outer_ind][element_indexes] .= true
-    # check the summation qExpr 
+    # check the summation QExpr 
     return are_indexes_defined(q.expr, new_where_defined)
 end
 function are_indexes_defined(q::diff_QEq)::Bool

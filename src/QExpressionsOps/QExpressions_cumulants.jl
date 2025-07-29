@@ -182,10 +182,10 @@ function order(q::QTerm, statespace::StateSpace)::Int
     return length(where_acting_index(q, statespace))
 end
 
-struct QCumulant <:QComposite  # Must be QComposite to be in qExpr's
+struct QCumulant <:QComposite  # Must be QComposite to be in QExpr's
     statespace::StateSpace
     atom::QAtom
-    expr_::qExpr
+    expr_::QExpr
     order::Int
     where_acting::Vector{Int}
 end
@@ -232,8 +232,8 @@ end
     curr_op_indexes = atom.op_indices
     neutral_op = statespace.neutral_op
     # create indexed cumulant to this order 
-    # create qExpr from this 
-    qexpr::Vector{qComposite} = Vector{qComposite}(undef, length(red_cum.approximation))
+    # create QExpr from this 
+    qexpr::Vector{QComposite} = Vector{QComposite}(undef, length(red_cum.approximation))
     for (j, app) in enumerate(red_cum.approximation)
         # create qTerm from app, where acting and atom 
         coeff = app.coeff

@@ -1,9 +1,9 @@
 #### Flatten 
 """
-flatten(qeq::qExpr) -> qExpr
+flatten(qeq::QExpr) -> QExpr
 
-Flattens nested Sums in quantum Equations (qExpr).
-Does not support QSums within qComposites within QSums!
+Flattens nested Sums in quantum Equations (QExpr).
+Does not support QSums within QComposites within QSums!
 """
 function flatten(s::QSum, in_sum::Bool = false, in_sum_comp::Bool = false)
     # first, fully flatten the body
@@ -27,7 +27,7 @@ function flatten(s::QSum, in_sum::Bool = false, in_sum_comp::Bool = false)
 
     # if there were any base qTerms directly under `s`, keep a sum
     if !isempty(base_terms)
-        push!(out_terms, QSum(inner.statespace, qExpr(base_terms), s.indexes, s.subsystem_index, s.element_indexes, s.neq))
+        push!(out_terms, QSum(inner.statespace, QExpr(base_terms), s.indexes, s.subsystem_index, s.element_indexes, s.neq))
     end
 
     # for each nested sum, merge its indexes onto `s`'s
@@ -44,7 +44,7 @@ function flatten(s::QSum, in_sum::Bool = false, in_sum_comp::Bool = false)
         push!(out_terms, QSum(s.statespace, n.expr, merged_idxs, s.subsystem_index, merged_einds, s.neq))
     end
 
-    return qExpr(inner.statespace, out_terms)
+    return QExpr(inner.statespace, out_terms)
 end 
 
 function flatten(q::QAtomProduct, in_sum::Bool = false, in_sum_comp::Bool = false)
@@ -61,12 +61,12 @@ function flatten(q::QMultiComposite, in_sum::Bool = false, in_sum_comp::Bool = f
     return [new_q]
 end
 
-function flatten(qeq::qExpr, in_sum::Bool = false, in_sum_comp::Bool = false)::qExpr
+function flatten(qeq::QExpr, in_sum::Bool = false, in_sum_comp::Bool = false)::QExpr
     new_terms = QComposite[]
     for s in qeq.terms
         append!(new_terms, flatten(s, in_sum, in_sum_comp))
     end
-    return qExpr(qeq.statespace, new_terms)
+    return QExpr(qeq.statespace, new_terms)
 end
 
 # change from index1 to index2
@@ -134,18 +134,18 @@ function term_equal_indexes(q::QAtomProduct, index1::Int, index2::Int, subspace:
     return true, simplified_products
 end
 
-function term_equal_indexes(qExpr::qExpr, index1::Int, index2::Int, subspace::SubSpace, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool, Vector{qExpr}}
+function term_equal_indexes(QExpr::QExpr, index1::Int, index2::Int, subspace::SubSpace, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool, Vector{QExpr}}
     changed_any = false
     elements = []
-    for t in qExpr.terms
+    for t in QExpr.terms
         changed, variants = term_equal_indexes(t, index1, index2, subspace, coeff_inds1, coeff_inds2)
         append!(elements, variants)
         changed_any |= changed  # Check if any term was changed
     end
     if !changed_any
-        return false, [qExpr]
+        return false, [QExpr]
     end
-    return true, [qExpr(qExpr.statespace, elements)]
+    return true, [QExpr(QExpr.statespace, elements)]
 end
 #T <: QComposite case
 function term_equal_indexes(q::T, index1::Int, index2::Int, subspace::SubSpace, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool, Vector{T}} where T<:QComposite
@@ -177,9 +177,9 @@ function term_equal_indexes(q::T, index1::Int, index2::Int, subspace::SubSpace, 
 end
 
 """
-    neq(qeq::qExpr) -> qExpr
+    neq(qeq::QExpr) -> QExpr
 
-Transform sums into neq sums, where all indexes are different from each other, and returns a flattened qExpr with neq sums. 
+Transform sums into neq sums, where all indexes are different from each other, and returns a flattened QExpr with neq sums. 
 Considers all cases of the sums, simplifying the cases in which indexes are the same, which then reduces the order of the sum (i.e. a sum_{j} x_i y_j => sum_{j} x_i y_j + im*z_i, where we used x_i*y_i=im*z_i).
 """
 function neq(q::QObj)::QObj
@@ -199,7 +199,7 @@ function neq(q::T)::T where {T<:QMultiComposite}
     return q_copy
 end
 
-function neq(qeq::qExpr)::qExpr
+function neq(qeq::QExpr)::QExpr
     # flatten first 
     qeq = flatten(qeq)
     if length(qeq) == 0
@@ -208,7 +208,7 @@ function neq(qeq::qExpr)::qExpr
     if isa(qeq.terms[1], QSum) 
         out = neq_qsum(qeq.terms[1])
     else
-        out = qExpr(qeq.statespace, neq(qeq.terms[1]))
+        out = QExpr(qeq.statespace, neq(qeq.terms[1]))
     end
     for t in qeq.terms[2:end]
         if isa(t, QSum)
@@ -228,9 +228,9 @@ end
 
 # -------------------------------------------------------------------
 # handle one QSum
-function neq_qsum(s::QSum, index::Int=1)::qExpr
+function neq_qsum(s::QSum, index::Int=1)::QExpr
     if s.neq
-        return qExpr(s.expr.statespace, [s])   # skip
+        return QExpr(s.expr.statespace, [s])   # skip
     end
     n = length(s.element_indexes) # is at least 1
     if n < index
@@ -247,7 +247,7 @@ function neq_qsum(s::QSum, index::Int=1)::qExpr
     if index < n # recursively execute neq_qsum for higher possible indexes
         post_expr = neq_qsum(s, index + 1)
     else
-        post_expr = qExpr(ss, QComposite[s])
+        post_expr = QExpr(ss, QComposite[s])
     end
     pieces = copy(post_expr)
 
@@ -277,10 +277,10 @@ function neq_qsum(s::QSum, index::Int=1)::qExpr
                                 pieces += new_term
                             end
                         else
-                            pieces += QSum(s.statespace, qExpr(ss, new_terms), new_indexes, expr.subsystem_index, new_element_indexes, expr.neq)
+                            pieces += QSum(s.statespace, QExpr(ss, new_terms), new_indexes, expr.subsystem_index, new_element_indexes, expr.neq)
                         end
                     else # no change to sum structure
-                        pieces += QSum(s.statespace, qExpr(ss, new_terms), copy(expr.indexes), expr.subsystem_index, copy(expr.element_indexes), expr.neq)
+                        pieces += QSum(s.statespace, QExpr(ss, new_terms), copy(expr.indexes), expr.subsystem_index, copy(expr.element_indexes), expr.neq)
                     end
                 end
             else ## Old - no longer sufficient: if isa(expr, QTerm)

@@ -44,7 +44,7 @@ function reorder(q::QAtomProduct, add_at_sum::Bool,  where_defined::Vector{Vecto
     q.coeff_fun = reorder(q.coeff_fun, var_index_order)
     return q
 end
-function reorder(q::qExpr, add_at_sum::Bool, where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_index_order::Vector{Int})::qExpr
+function reorder(q::QExpr, add_at_sum::Bool, where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_index_order::Vector{Int})::QExpr
     q.terms = [reorder(qq, add_at_sum, where_defined, index_order, var_index_order) for qq in q.terms]
     return q
 end

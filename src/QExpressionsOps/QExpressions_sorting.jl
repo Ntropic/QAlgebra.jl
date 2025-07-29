@@ -16,38 +16,46 @@ function qobj_sort_key(term::QAtomProduct)
     return (tuple(0, 0, Int[], 0), sort_key(term.coeff_fun), qAtom_sort_key.(term.expr)...)
 end
 function qobj_sort_key(term::QSum)
-    return (tuple(1, term.subsystem_index, length(term.element_indexes), term.element_indexes, length(term.expr)), term.neq)
-end
-function qobj_sort_key(term::QCompositeProduct)
-    return (tuple(2, 0, Int[], 0), qAtom_sort_key.(term.expr)...) # first component specifies the type of object we are dealing with 
+    return (tuple(1, term.subsystem_index, length(term.element_indexes), term.element_indexes, qexpr_sort_key(term.expr)), term.neq)
 end
 qobj_type_index(::Type{QExp}) = 3
 qobj_type_index(::Type{QLog}) = 4 
 qobj_type_index(::Type{QCommutator}) = 5 
 function qobj_sort_key(term::T)  where T<:QComposite
-    return (tuple(qobj_type_index(typeof(term)), 0, Int[], 0), qobj_sort_key.(term.expr)...) # first component specifies the type of object we are dealing with 
+    return (tuple(qobj_type_index(typeof(term)), 0, Int[], 0), qexpr_sort_key(term.expr)) # first component specifies the type of object we are dealing with 
 end
 function qobj_sort_key(term::QPower)
-    return (tuple(6, term.n, Int[], 0), qobj_sort_key.(term.expr)...) # first component specifies the type of object we are dealing with, second the subtype
+    return (tuple(6, term.n, Int[], 0), qexpr_sort_key(term.expr)) # first component specifies the type of object we are dealing with, second the subtype
 end
 function qobj_sort_key(term::QRoot)
-    return (tuple(7, term.n, Int[], 0), qobj_sort_key.(term.expr)...) # first component specifies the type of object we are dealing with, second the subtype
+    return (tuple(7, term.n, Int[], 0), qexpr_sort_key(term.expr)) # first component specifies the type of object we are dealing with, second the subtype
 end
 
-# Sort the terms in a qExpr using the key above.
-function sort(qeq::qExpr; kwargs...)
+function qobj_sort_key(term::T)  where T<:QMultiComposite
+    return (tuple(qobj_type_index(typeof(term)), 0, Int[], 0), qexpr_sort_key.(term.expr)...) # first component specifies the type of object we are dealing with 
+end
+function qobj_sort_key(term::QCompositeProduct)
+    return (tuple(2, 0, Int[], 0), qexpr_sort_key.(term.expr)) # first component specifies the type of object we are dealing with 
+end
+
+function qexpr_sort_key(term::QExpr)
+    return tuple(length(term), qobj_sort_key.(term.terms)...)
+end
+
+# Sort the terms in a QExpr using the key above.
+function sort(qeq::QExpr; kwargs...)
     # first the internal sort 
     terms = [sort(t) for t in qeq.terms]
     # now the outer sort 
     sorted_terms = _sort(terms, kwargs...)
-    return qExpr(qeq.statespace, sorted_terms)
+    return QExpr(qeq.statespace, sorted_terms)
 end
 function sort(qprod::QAtomProduct; kwargs...)  # don't sort qprod 
     return copy(qprod)
 end
 function sort(qcomp::T; kwargs...) where T<:QMultiComposite # only sort recursively but not expr itself (outer most layer)
     new_qcomp = copy(qcomp)
-    new_exprs::Vector{qExpr} = []
+    new_exprs::Vector{QExpr} = []
     for term in qcomp.expr 
         push!(new_exprs, sort(term))
     end 
