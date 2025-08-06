@@ -3,7 +3,7 @@ using Documenter
 
 
 makedocs(;
-    modules=[QAlgebra, QAlgebra.FFunctions],
+    modules=[QAlgebra, QAlgebra.CFunctions],
     sitename="QAlgebra.jl Documentation",
     format = Documenter.HTML(prettyurls = get(ENV, "CI", nothing) == "true"),
     pages=[
@@ -12,7 +12,7 @@ makedocs(;
             "Default Values" => "api/defaults.md",
             "Operator Spaces" => "api/QSpace.md",
             "QExpressions" => "api/QExpressions.md",
-            "FFunctions" => "api/FFunctions.md", 
+            "CFunctions" => "api/CFunctions.md", 
             "Other" => "api/other.md"
         ]
     ],

@@ -116,7 +116,7 @@ function term_equal_indexes(q::QAtomProduct, index1::Int, index2::Int, subspace:
         push!(coeff_variants, coeffs)
         changed_any |= changed  # Check if any term was changed
     end
-    changed, new_coeff_fun = FFunctions.term_equal_indexes(q.coeff_fun, coeff_inds1, coeff_inds2)
+    changed, new_coeff_fun = CFunctions.term_equal_indexes(q.coeff_fun, coeff_inds1, coeff_inds2)
     changed_any |= changed
     if !changed_any
         return false, [q]

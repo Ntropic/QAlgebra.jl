@@ -31,26 +31,26 @@ function converse_nonimplication(A::Vector{Vector{Bool}}, B::Vector{Vector{Bool}
     return broadcast.(cnimp, A, B) 
 end
 
-# FFunctions
+# CFunctions
 """ 
     which_continuum_acting(q::QObj)::Vector{Vector{Bool}}
 
 Returns a vector of vectors of booleans. Each inner vetor specifies which of its subsystem indexes are acted upon by the QObj. 
-This includes actions from FFunctions. Th function should only be applied after substituting all QAbstract terms. 
+This includes actions from CFunctions. Th function should only be applied after substituting all QAbstract terms. 
 Their present can be checked via `contains_abstract(q)`.
 """
-function which_continuum_acting(f::FAtom, where_continuums_f::Vector{Vector{Vector{Int}}})::Vector{Vector{Bool}}
+function which_continuum_acting(f::CAtom, where_continuums_f::Vector{Vector{Vector{Int}}})::Vector{Vector{Bool}}
     where_non_trivial::Vector{Vector{Bool}} = []
     for where_f in where_continuums_f
         push!(where_non_trivial, reduce(.|, [f.var_exponents[w] .!= 0 for w in where_f]))
     end
     return where_non_trivial
 end
-function which_continuum_acting(f::FSum, where_continuums_f::Vector{Vector{Vector{Int}}})::Vector{Vector{Bool}}
+function which_continuum_acting(f::CSum, where_continuums_f::Vector{Vector{Vector{Int}}})::Vector{Vector{Bool}}
     # or of the individual terms 
     return reduce(vecvec_or, [which_continuum_acting(t, where_continuums_f) for t in f.terms])
 end
-function which_continuum_acting(f::FRational, where_continuums_f::Vector{Vector{Vector{Int}}})::Vector{Vector{Bool}}
+function which_continuum_acting(f::CRational, where_continuums_f::Vector{Vector{Vector{Int}}})::Vector{Vector{Bool}}
     return vecvec_or(which_continuum_acting(f.numer, where_continuums_f), which_continuum_acting(f.denom, where_continuums_f))
 end
 

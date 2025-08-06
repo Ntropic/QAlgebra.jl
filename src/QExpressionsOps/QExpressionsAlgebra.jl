@@ -15,8 +15,15 @@ end
 function is_numeric(e::QAtom, statespace::StateSpace)
     error("is_numeric (with given statespace) not implemented for QAbstract subtype $(typeof(e))")
 end
+function is_numeric(e::QAtomProduct) 
+    return all([is_numeric(x, e.statespace) for x in e.expr]) || iszero(e.coeff_fun)
+end
 function is_numeric(e::T) where T<:QComposite
-    error("is_numeric (without given statespace) not implemented for QComposite subtype $(typeof(e))")
+    return is_numeric(e.expr) || iszero(e.coeff_fun)
+    #error("is_numeric (without given statespace) not implemented for QComposite subtype $(typeof(e))")
+end
+function is_numeric(e::T) where T<:QMultiComposite
+    return iszero(e.coeff_fun) || all([is_numeric(e1, statespace) for e1 in e.expr])
 end
 
 function is_numeric(t::QTerm, statespace::StateSpace)::Bool
@@ -24,9 +31,6 @@ function is_numeric(t::QTerm, statespace::StateSpace)::Bool
 end
 function is_numeric(t::QAbstract, statespace::StateSpace)::Bool
     return false 
-end
-function is_numeric(p::QAtomProduct)::Bool
-    return all(is_numeric(t, p.statespace) for t in p.expr) || iszero(p.coeff_fun)
 end
 function is_numeric(s::QSum)::Bool
     return is_numeric(s.expr)
@@ -38,7 +42,39 @@ function is_numeric(expr::QExpr)::Bool
     if isempty(terms)
         return true  # No terms = numeric 0
     else
-        return all(is_numeric(t, expr_s.statespace) for t in terms)
+        return all(is_numeric(t) for t in terms)
+    end
+end
+
+function isaQAtomProduct(q::QExpr)::Bool
+    if length(q) > 1
+        return false
+    else
+        # length(q) == 1 
+        if isa(q.terms[1], QAtomProduct)
+            return true
+        end
+    end
+end
+import Base: isone
+function isone(q::QAtomProduct)::Bool 
+    if is_numeric(q) 
+        c = q.coeff_fun
+        if isnumeric(c)
+            if isa(c, CAtom)
+                return isone(c.coeff)
+            else 
+                return isone(simplify(c))
+            end
+        end
+    end
+    return false
+end
+function isone(q::QExpr)::Bool
+    if isaQAtomProduct(q)
+        isone(q.terms[1])
+    else
+        return false
     end
 end
 
@@ -146,6 +182,16 @@ function +(Q1::QExpr, Q2::T)::QExpr where T<:QComposite
     push!(new_terms, Q2)
     return QExpr(Q1.statespace, new_terms)
 end
+function +(Q1::QExpr, N::Number)::QExpr 
+    new_terms = copy(Q1.terms)
+    push!(new_terms, QAtomProduct(Q1.statespace, N, QTerm(Q1.statespace.neutral_op)))
+    return QExpr(Q1.statespace, new_terms)
+end
+function +(N::Number, Q1::QExpr)::QExpr 
+    new_terms = copy(Q1.terms)
+    push!(new_terms, QAtomProduct(Q1.statespace, N, QTerm(Q1.statespace.neutral_op)))
+    return QExpr(Q1.statespace, new_terms)
+end
 
 #### Binary - ####################################################################
 function -(Q1::QExpr, Q2::QExpr)::QExpr
@@ -156,6 +202,16 @@ end
 function -(Q1::QExpr, Q2::T)::QExpr where T<:QComposite
     new_terms = copy(Q1.terms)
     push!(new_terms, .-Q2)
+    return QExpr(Q1.statespace, new_terms)
+end
+function -(Q1::QExpr, N::Number)::QExpr 
+    new_terms = copy(Q1.terms)
+    push!(new_terms, QAtomProduct(Q1.statespace, -N, QTerm(Q1.statespace.neutral_op)))
+    return QExpr(Q1.statespace, new_terms)
+end
+function -(N::Number, Q1::QExpr)::QExpr 
+    new_terms = copy((-Q1).terms)
+    push!(new_terms, QAtomProduct(Q1.statespace, N, QTerm(Q1.statespace.neutral_op)))
     return QExpr(Q1.statespace, new_terms)
 end
 
@@ -172,8 +228,8 @@ function trivial_multiply(Q1::QAtomProduct, Q2::QAtomProduct)::QAtomProduct
     if n2 > 0
         newexpr[n1+1:end] = e2
     end
-    return QAtomProduct(Q1.statespace, FFunctions.simplify(Q1.coeff_fun*Q2.coeff_fun), newexpr)
-    #return QAtomProduct(Q1.statespace, FFunctions.simplify(Q1.coeff_fun*Q2.coeff_fun), vcat(Q1.expr, Q2.expr))
+    return QAtomProduct(Q1.statespace, CFunctions.simplify(Q1.coeff_fun*Q2.coeff_fun), newexpr)
+    #return QAtomProduct(Q1.statespace, CFunctions.simplify(Q1.coeff_fun*Q2.coeff_fun), vcat(Q1.expr, Q2.expr))
 end
 # Multiplies two QTerm’s from the same statespace. Returns a vector of QTerm’s that are the result of this multiplication and corresponding ComplexRational coefficients. 
 function multiply_qterm(t1::QTerm, t2::QTerm, statespace::StateSpace)::Tuple{Vector{QTerm}, Vector{ComplexRational}}

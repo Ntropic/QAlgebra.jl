@@ -1,6 +1,6 @@
 module StringUtils
 
-export subscript_indexes, superscript_indexes, var_substitution, var_substitution_latex, str2sub, str2sup, term_pre_split, separate_terms, expstr_separate, symbol2formatted
+export subscript_indexes, superscript_indexes, var_substitution, var_substitution_latex, str2sub, str2sup, term_pre_split, separate_terms, expstr_separate, symbol2formatted, brace
 
 """
     subscript_indexes::Dict{Char, String}
@@ -225,6 +225,18 @@ function expstr_separate(expstr::String)::Tuple{String,Int}
         exp = parse(Int, b)
     end
     return expstr, exp
+end
+
+""" 
+    brace(x::String; do_latex::Bool=true)::String
+Brace a string with parentheses. 
+""" 
+function brace(x::String; do_latex::Bool=true)::String
+    if do_latex 
+        return raw"\left(" * x * raw"\right)"
+    else
+        return "(" * x * ")"
+    end
 end
 
 end

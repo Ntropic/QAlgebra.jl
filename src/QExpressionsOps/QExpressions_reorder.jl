@@ -19,16 +19,16 @@ function where_defined_to_index_order(statespace::StateSpace, where_defined::Vec
     return op_inds, var_inds
 end
 
-### FFunction
-function reorder(f::FAtom, var_index_order::Vector{Int})::FAtom
+### CFunction
+function reorder(f::CAtom, var_index_order::Vector{Int})::CAtom
     var_exponents = f.var_exponents[var_index_order]
-    return FAtom(copy(f.coeff), var_exponents)
+    return CAtom(copy(f.coeff), var_exponents)
 end
-function reorder(f::FSum, var_index_order::Vector{Int})::FSum
+function reorder(f::CSum, var_index_order::Vector{Int})::CSum
     f.terms = [reorder(ff, var_index_order) for ff in f.terms]
     return f
 end
-function reorder(f::FRational, var_index_order::Vector{Int})::FRational
+function reorder(f::CRational, var_index_order::Vector{Int})::CRational
     f.numer = reorder(f.numer, var_index_order)
     f.denom = reorder(f.denom, var_index_order)
     return f

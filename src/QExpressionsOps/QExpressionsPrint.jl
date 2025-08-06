@@ -112,7 +112,7 @@ function QComposite2string(q::QAtomProduct; do_latex::Bool=true, braced::Bool=tr
     if is_numeric(q)
         curr_sign, curr_str = to_stringer(q.coeff_fun, variable_str_vec(q, do_latex=do_latex), braced=false, do_frac=do_frac)
         if return_if_braced
-            return curr_sign, curr_str, false
+            return curr_sign, curr_str, length(q.coeff_fun) == 1
         else
             return curr_sign, curr_str
         end
@@ -156,7 +156,7 @@ function QComposite2string(q::QCompositeProduct; do_latex::Bool=true, braced::Bo
         push!(all_strings, new_str)
     end
     # concatenate strings 
-    connector = do_latex ? raw"\cdot" : "⋅"
+    connector = "" # do_latex ? raw"\cdot" : "⋅"
     total_string = join(all_strings, connector) 
     if return_if_braced 
         return total_sign, total_string, true 
@@ -243,9 +243,9 @@ function QComposites2string(terms::AbstractVector{<: QComposite}; do_latex::Bool
     return string
 end
 
-import ..FFunctions: how_to_combine_Fs
-function group_qAtomProducts(qs::Vector{QAtomProduct})::Vector{Union{QAtomProduct, Tuple{Union{FAtom, FSum}, Vector{QAtomProduct}}}}
-    coeffs_funs::Vector{Union{FAtom, FSum}} = [q.coeff_fun for q in qs]
+import ..CFunctions: how_to_combine_Fs
+function group_qAtomProducts(qs::Vector{QAtomProduct})::Vector{Union{QAtomProduct, Tuple{Union{CAtom, CSum}, Vector{QAtomProduct}}}}
+    coeffs_funs::Vector{Union{CAtom, CSum}} = [q.coeff_fun for q in qs]
     coeff_groups, indexes = how_to_combine_Fs(coeffs_funs)
     new_qs = []
     for (coeffs, indexes) in zip(coeff_groups, indexes)
@@ -270,7 +270,7 @@ function qAtomProduct_group2string(qs::QAtomProduct; do_latex::Bool=true, braced
     curr_sign, operator_str = QComposite2string(qs, do_latex=do_latex, braced=braced, do_frac=do_frac)
     return curr_sign, "", operator_str
 end
-function qAtomProduct_group2string(qs::Tuple{Union{FAtom, FSum}, Vector{QAtomProduct}}; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true)::Tuple{Bool, String, String}
+function qAtomProduct_group2string(qs::Tuple{Union{CAtom, CSum}, Vector{QAtomProduct}}; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true)::Tuple{Bool, String, String}
     # assume the qs can be simple grouped (see the functions: simple_combinable_Fs, group_Fs)
     F = qs[1]
     qs = qs[2]
@@ -285,13 +285,6 @@ function allnegative(x::Tuple{Bool, String})::Bool
 end
 function allnegative(x::Vector{Tuple{Bool, String}})::Bool
     return all(allnegative, x)
-end
-function brace(x::String; do_latex::Bool=true)::String
-    if do_latex 
-        return raw"\left(" * x * raw"\right)"
-    else
-        return "(" * x * ")"
-    end
 end
 function QExpr2string(q::QExpr; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_grouping::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     # outputs sign, string, {optional return_grouping:} single_group::Bool   => return grouping implies that the expression will be braced if it isn't already! , hence the outputted sign is handled differently 
@@ -327,14 +320,16 @@ function QExpr2string(q::QExpr; do_latex::Bool=true, braced::Bool=true, do_frac:
                 push!(all_strings, (curr_sign, first*second))
             end
         end
+        is_braced::Bool = false
         for term in other_terms
-            push!(all_strings, QComposite2string(term, do_latex=do_latex, braced=braced, do_frac=do_frac))
+            curr_sign, curr_str, is_braced = QComposite2string(term, do_latex=do_latex, braced=braced, do_frac=do_frac, return_if_braced=true)
+            push!(all_strings, (curr_sign, curr_str))
         end
         
         # make QComposites2string better, by allowing a third output in case of single group. to traverse multiple layers of Composites within composites. 
         if return_grouping 
             # do we switch the sign? 
-            if allnegative(all_strings) || ( get_default(:FLIP_IF_FIRST_TERM_NEGATIVE) && all_strings[1][1] )
+            if allnegative(all_strings) || (FLIP_IF_FIRST_TERM_NEGATIVE  && all_strings[1][1] )
                 # switch signs 
                 first_sign = true 
                 all_strings = [(!sign, s) for (sign, s) in all_strings]
@@ -359,7 +354,14 @@ function QExpr2string(q::QExpr; do_latex::Bool=true, braced::Bool=true, do_frac:
             end
         end
         if return_grouping 
+            println("="^10*"> ", total_string, " <"*"="^10)
+            println(length(all_strings), " ", length(groups))
             single_group::Bool = length(all_strings) == 1   # length(groups) == 1 || 
+            if single_group && length(groups) == 0
+                # is other_term 
+                println(single_group)
+                single_group = true 
+            end
             return first_sign, total_string, single_group
         else
             return first_sign, total_string

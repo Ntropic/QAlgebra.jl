@@ -3,7 +3,7 @@ module QAlgebra
 using Preferences
 # === Default Coefficient Preferences ===
 const DEFAULT_COEFF_PREFS = Dict(
-    :FLIP_IF_FIRST_TERM_NEGATIVE => true,
+    :FLIP_IF_FIRST_TERM_NEGATIVE  => true,
     :DO_BRACED => true
     )
 
@@ -23,15 +23,20 @@ function default_if_nothing(x, key)
     return x === nothing ? get_default(key) : x
 end
 
+# --- Module-level global variables (not const) ---
+# These are initialized immediately at module load time
+FLIP_IF_FIRST_TERM_NEGATIVE  = get_default(:FLIP_IF_FIRST_TERM_NEGATIVE )
+DO_BRACED = get_default(:DO_BRACED)
+
 """
     set_flip_if_first_term_negative(mode::Bool)
 Sets a new default value for the first mode and saves it persistently.
 First mode specifies whether braced terms with a leading negative are flipped or only if all terms are negative.
 """
 function set_flip_if_first_term_negative(mode::Bool)
-    set_default(:FLIP_IF_FIRST_TERM_NEGATIVE, mode)
+    set_default(:FLIP_IF_FIRST_TERM_NEGATIVE , mode)
+    @eval $(Symbol(:FLIP_IF_FIRST_TERM_NEGATIVE)) = $mode
 end
-
 
 """
     set_do_braced(b::Bool)
@@ -39,17 +44,21 @@ Sets a new default value for :DO_BRACED. Toggles whether terms are grouped when 
 """
 function set_do_braced(mode::Bool)
     set_default(:DO_BRACED, mode)
+    @eval $(Symbol(:DO_BRACED)) = $mode
 end
 
-export get_default, set_flip_if_first_term_negative, set_do_braced
+
+
+export get_default, set_flip_if_first_term_negative, set_do_braced, FLIP_IF_FIRST_TERM_NEGATIVE , DO_BRACED
 
 include("StringUtils.jl")
 using .StringUtils
-export symbol2formatted, str2sub, str2sup
+export symbol2formatted, str2sub, str2sup, brace
 
-include("FFunctions.jl")
-using .FFunctions
-export FFunction, FAtom, FSum, FRational, isnumeric, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
+include("CFunctions.jl")
+using .CFunctions
+export CFunction, CAtom, CSum, CRational, CProd, CExp, CLog
+export isnumeric, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key, recursive_sort
 
 include("QSpace.jl")
 using .QSpace
@@ -60,7 +69,7 @@ include("QExpressions.jl")
 using .QExpressions
 export QObj, QAtom, QAbstract, QComposite, QCompositeProduct, QMultiComposite, QTerm, QAtomProduct, QExpr, QSum, Sum, ∑, diff_QEq, base_operators, flatten, neq, d_dt
 export QCommutator, QExp, QLog, QPower, power, QRoot, root, simplify, simplifyqAtomProduct
-export Dag, Commutator
+export Dag, Commutator, is_numeric, same_statespace
 export string, latex_string
 export term
 

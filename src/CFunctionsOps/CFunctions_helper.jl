@@ -4,19 +4,19 @@ function isonelike(c::ComplexRational)::Bool
     end
     return false
 end
-function printnumeric(f::FAtom)::Bool
+function printnumeric(f::CAtom)::Bool
     if isnumeric(f) && isonelike(f.coeff) 
         return false 
     end
     return true 
 end
-function printnumeric(f::FSum)::Bool
+function printnumeric(f::CSum)::Bool
     if length(f.terms) == 1 
         return printnumeric(f.terms[1])
     end 
     return true 
 end
-function printnumeric(f::FRational)::Bool
+function printnumeric(f::CRational)::Bool
     return true 
 end
 
@@ -51,7 +51,6 @@ function is_axis_multiple(v1::Vector{ComplexRational}, v2::Vector{ComplexRationa
             return false, r
         end
     end
-
     return true, r
 end
 
@@ -80,8 +79,9 @@ function common_denominator_form(v::Vector{ComplexRational})::Tuple{ComplexRatio
     return base, multiples
 end
 
-function get_coeffs_ops(f::FSum)::Tuple{Vector{ComplexRational}, Vector{Vector{Int}}}
-    return [term.coeff for term in f.terms], [term.var_exponents for term in f.terms]
+function get_coeffs_ops(f::CSum)::Tuple{Vector{ComplexRational}, Vector{Vector{Int}}}
+    return vcat(coeff.(f.terms)...), vcat(var_exponents.(f.terms)...)
+    #return [coeff(term) for term in f.terms], [term.var_exponents for term in f.terms]
 end
 
 function common_exponent_offset(exponents::Vector{Vector{Int}})::Vector{Int}
@@ -103,39 +103,39 @@ function common_exponent_offset(exponents::Vector{Vector{Int}})::Vector{Int}
     return offset
 end
 
-function isonelike(f::FAtom)::Bool
+function isonelike(f::CAtom)::Bool
     return isonelike(f.coeff)
 end
-function simple_FSum(f::FSum)::Bool
-    return all([typeof(term)==FAtom for term in f.terms])
+function simple_CSum(f::CSum)::Bool
+    return all([typeof(term)==CAtom for term in f.terms])
 end
-function simple_FSum(f::FAtom)::Bool
+function simple_CSum(f::CAtom)::Bool
     return true 
 end
 
-function separate_FSum(f::FSum )::Tuple{Bool, Union{FAtom, Nothing}, FSum}
-    if simple_FSum(f) 
+function separate_CSum(f::CSum )::Tuple{Bool, Union{CAtom, Nothing}, CSum}
+    if simple_CSum(f) 
         coeffs, vs = get_coeffs_ops(f)
         if has_common_multiple(coeffs) 
             base, multiples = common_denominator_form(coeffs)
             # get exponent offsets 
             offset = common_exponent_offset(vs)
-            new_f = FSum([FAtom(m, v.-offset) for (m, v) in zip(multiples, vs)])
-            pre_f = FAtom(base, offset)
+            new_f = CSum([CAtom(m, v.-offset) for (m, v) in zip(multiples, vs)])
+            pre_f = CAtom(base, offset)
             return true, pre_f, new_f 
         end
     end
     return false, nothing, copy(f)
 end
 
-function simple_combinable_F(t1::Union{FAtom, FSum}, t2::Union{FAtom, FSum})::Tuple{Bool, ComplexRational}
-    # Transform FAtom's to FSums 
-    if t1 isa FAtom
+function simple_combinable_F(t1::T1, t2::T2)::Tuple{Bool, ComplexRational} where {T1 <: CFunction, T2 <: CFunction}
+    # Transform CAtom's to CSums 
+    if !isa(t1, CSum)
         t1 = [t1]
     else 
         t1 = t1.terms
     end
-    if t2 isa FAtom
+    if !isa(t2, CSum)
         t2 = [t2]
     else
         t2 = t2.terms
@@ -150,7 +150,7 @@ function simple_combinable_F(t1::Union{FAtom, FSum}, t2::Union{FAtom, FSum})::Tu
         return false, ComplexRational(0, 0, 1)
     end
     
-    # check if corresponding terms have the similar exponents (i.e. the difference of exponents has to be the same for each term in FSum)
+    # check if corresponding terms have the similar exponents (i.e. the difference of exponents has to be the same for each term in CSum)
     exponents_diff = t1[1].var_exponents .- t2[1].var_exponents
     if !all([diff == 0 for diff in exponents_diff])
         return false, ComplexRational(0, 0, 1)
@@ -173,9 +173,9 @@ function simple_combinable_F(t1::Union{FAtom, FSum}, t2::Union{FAtom, FSum})::Tu
     end
     return true, ratio
 end
-# check for multiple elements in a Vector of FSum 
-function simple_combinable_Fs(ts::AbstractVector{Union{FAtom,FSum}})::Tuple{Vector{Vector{Union{FAtom, FSum}}}, Vector{Vector{Int}}}
-    groups = Vector{Vector{Union{FAtom,FSum}}}()
+# check for multiple elements in a Vector of CSum 
+function simple_combinable_Fs(ts::AbstractVector{<:CFunction})::Tuple{Vector{Vector{<:CFunction}}, Vector{Vector{Int}}}
+    groups = Vector{Vector{Union{CAtom,CSum}}}()
     indexes = Vector{Vector{Int}}()
     for (i, t) in enumerate(ts)
         placed = false
@@ -196,15 +196,15 @@ function simple_combinable_Fs(ts::AbstractVector{Union{FAtom,FSum}})::Tuple{Vect
     return groups, indexes
 end
 
-function ratios_Fs(ts::AbstractVector{Union{FAtom,FSum}})::Vector{ComplexRational}
-    if ts[1] isa FAtom 
+function ratios_Fs(ts::AbstractVector{Union{CAtom,CSum}})::Vector{ComplexRational}
+    if ts[1] isa CAtom 
         c1 = ts[1].coeff
     else 
         c1 = ts[1].terms[1].coeff
     end
     ratios = ComplexRational[ComplexRational(1,0,1)]
     for t in ts[2:end] 
-        if t isa FAtom 
+        if t isa CAtom 
             c2 = t.coeff
         else 
             c2 = t.terms[1].coeff
@@ -213,7 +213,7 @@ function ratios_Fs(ts::AbstractVector{Union{FAtom,FSum}})::Vector{ComplexRationa
     end
     return ratios
 end
-function group_Fs(ts::AbstractVector{Union{FAtom,FSum}})::Union{FAtom, FSum, Tuple{Union{FAtom, FSum}, AbstractVector{Union{FAtom, FSum}}}}
+function group_Fs(ts::AbstractVector{Union{CAtom,CSum}})::Union{CAtom, CSum, Tuple{Union{CAtom, CSum}, AbstractVector{Union{CAtom, CSum}}}}
     # find the correct way to group a group of Fs (they must be groupable, create the input vector with simple_combinable_Fs)
     if length(ts) == 1
         return ts[1]
@@ -223,25 +223,25 @@ function group_Fs(ts::AbstractVector{Union{FAtom,FSum}})::Union{FAtom, FSum, Tup
         base, multiples = common_denominator_form(ratios)
         pre_F = ts[1]*base 
 
-        if isa(pre_F, FAtom)
+        if isa(pre_F, CAtom)
             curr_var_exponents = zeros(Int, length(ts[1].var_exponents))
         else
             curr_var_exponents = zeros(Int, length(ts[1].terms[1].var_exponents))
         end
-        post_Fs = Union{FAtom, FSum}[ FAtom(m, curr_var_exponents) for m in multiples ]
+        post_Fs = Union{CAtom, CSum}[ CAtom(m, curr_var_exponents) for m in multiples ]
         return (pre_F, post_Fs)
     end
 end
 
 """
-    how_to_combine_Fs(ts::Vector{Union{FAtom, FSum}}) :: Tuple{Vector{Union{FAtom, FSum, Tuple{FAtom, Vector{Union{FAtom, FSum}}}}}, Vector{Vector{Int}}}
+    how_to_combine_Fs(ts::Vector{Union{CAtom, CSum}}) :: Tuple{Vector{Union{CAtom, CSum, Tuple{CAtom, Vector{Union{CAtom, CSum}}}}}, Vector{Vector{Int}}}
 
-Groups and combines `FAtom` and `FSum` objects in the input vector `ts` into composite structures that can be processed together. 
-Returns a tuple containing both the groups as (FFunction) elements of a Vector and the indexs corresponding to the elements in the groups. 
-The (FFunction) grouping is given either by a single FFunction element (either a single `FAtom` or a `FSum`) or by a tuple of an `FAtom` (F1) containing the shared factors, and a vector of FFunction elements (F2_i), so that 
+Groups and combines `CAtom` and `CSum` objects in the input vector `ts` into composite structures that can be processed together. 
+Returns a tuple containing both the groups as (CFunction) elements of a Vector and the indexs corresponding to the elements in the groups. 
+The (CFunction) grouping is given either by a single CFunction element (either a single `CAtom` or a `CSum`) or by a tuple of an `CAtom` (F1) containing the shared factors, and a vector of CFunction elements (F2_i), so that 
 together they represent a term of the form: F1 * (F2_1 + ... + F2_n). 
 """
-function how_to_combine_Fs(ts::Vector{Union{FAtom,FSum}}) #::Tuple{Vector{Union{FAtom,FSum, Tuple{FAtom, Vector{Union{FAtom, FSum}}}}}, Vector{Vector{Int}}}
+function how_to_combine_Fs(ts::Vector{Union{CAtom,CSum}}) #::Tuple{Vector{Union{CAtom,CSum, Tuple{CAtom, Vector{Union{CAtom, CSum}}}}}, Vector{Vector{Int}}}
     if length(ts) == 1
         return [ts[1]], [[1]]
     elseif length(ts) > 1 
@@ -254,7 +254,7 @@ end
 
 
 # Make 2 indexes equal => analogous to equally named function for qTerms in QExpressions.jl
-function term_equal_indexes(atom::FAtom, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool,FAtom}
+function term_equal_indexes(atom::CAtom, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool,CAtom}
     changed_any::Bool = false
     new_exponents = copy(atom.var_exponents)
     for (i, j) in zip(coeff_inds1, coeff_inds2)
@@ -264,20 +264,20 @@ function term_equal_indexes(atom::FAtom, coeff_inds1::Vector{Int}, coeff_inds2::
             new_exponents[i] = 0
         end
     end
-    return changed_any, FAtom(atom.coeff, new_exponents)
+    return changed_any, CAtom(atom.coeff, new_exponents)
 end
-function term_equal_indexes(fsum::FSum, inds1::Vector{Int}, inds2::Vector{Int})::Tuple{Bool,FSum}
+function term_equal_indexes(fsum::CSum, inds1::Vector{Int}, inds2::Vector{Int})::Tuple{Bool,CSum}
     changed_any::Bool = false
-    new_terms::Vector{FFunction} = []
+    new_terms::Vector{CFunction} = []
     for t in fsum.terms
         changed, new_term = term_equal_indexes(t, inds1, inds2)
         changed_any = changed_any || changed
         push!(new_terms, new_term)
     end
-    return changed_any, FSum(fsum.index, new_terms)
+    return changed_any, CSum(fsum.index, new_terms)
 end
-function term_equal_indexes(frational::FRational, inds1::Vector{Int}, inds2::Vector{Int})::Tuple{Bool,FRational}
+function term_equal_indexes(frational::CRational, inds1::Vector{Int}, inds2::Vector{Int})::Tuple{Bool,CRational}
     changed_num, new_num = term_equal_indexes(frational.num, inds1, inds2)
     changed_den, new_den = term_equal_indexes(frational.den, inds1, inds2)
-    return changed_num || changed_den, FRational(new_num, new_den)
+    return changed_num || changed_den, CRational(new_num, new_den)
 end

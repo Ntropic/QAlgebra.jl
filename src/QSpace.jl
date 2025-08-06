@@ -1,7 +1,7 @@
 module QSpace
 
 using ComplexRationals
-using ..FFunctions
+using ..CFunctions
 using ..StringUtils
 
 export OperatorSet, SubSpace, Parameter, OperatorType, StateSpace, string2operator_type, GLOBAL_STATE_SPACE
@@ -270,7 +270,7 @@ struct StateSpace
     neutral_op::Vector{Is}
     neutral_continuum_op::Vector{Vector{Is}}
     subspace_by_ind::Vector{Int}
-    fone::FAtom
+    fone::CAtom
     # Abstract operators
     operatortypes::Vector{OperatorType}
     operator_names::Vector{String}
@@ -441,7 +441,7 @@ struct StateSpace
         vars_str::Vector{String} = [p.var_str for p in vars]
 
         neutral_op = [s.op_set.neutral_element for s in subspaces for key in s.keys]
-        fone = FAtom(ComplexRational(1,0,1), zeros(Int, length(vars)))
+        fone = CAtom(ComplexRational(1,0,1), zeros(Int, length(vars)))
         if !isa(operators, Vector) 
             operators = [operators]
         end

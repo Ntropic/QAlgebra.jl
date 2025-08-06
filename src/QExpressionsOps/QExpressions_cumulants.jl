@@ -209,7 +209,7 @@ end
 function Cumulant(q::QAbstract, statespace::StateSpace, kwargs...)::QCumulant
     error("Cumulant not defined for qAbstract!")
 end
-function Cumulant(coeff_fun::FFunction, atom::QTerm, statespace::StateSpace)::QCumulant
+function Cumulant(coeff_fun::CFunction, atom::QTerm, statespace::StateSpace)::QCumulant
     where_acting = where_acting_index(atom, statespace)
     order = length(where_acting)
     red_cum = ReducedIndexedCumulant(order)
@@ -222,13 +222,13 @@ function Cumulant(qprod::QAtomProduct, red_cum_list::ReducedCumulantList)::QCumu
     end
     return Cumulant(qprod.coeff_fun, qprod.terms[1].expr[1], qprod.statespace, red_cum_list)
 end
-function Cumulant(coeff_fun::FFunction, atom::QTerm, statespace::StateSpace, red_cum_list::ReducedCumulantList)::QCumulant
+function Cumulant(coeff_fun::CFunction, atom::QTerm, statespace::StateSpace, red_cum_list::ReducedCumulantList)::QCumulant
     where_acting = where_acting_index(atom, statespace)
     order = length(where_acting)
     return _Cumulant(coeff_fun, atom, statespace, order, where_acting, red_cum_list(order))
 end
 
-@inline function _Cumulant(coeff_fun::FFunction, atom::QTerm, statespace::StateSpace, order::Int, where_acting::Vector{Int}, red_cum::ReducedIndexedCumulant)::QCumulant
+@inline function _Cumulant(coeff_fun::CFunction, atom::QTerm, statespace::StateSpace, order::Int, where_acting::Vector{Int}, red_cum::ReducedIndexedCumulant)::QCumulant
     curr_op_indexes = atom.op_indices
     neutral_op = statespace.neutral_op
     # create indexed cumulant to this order 

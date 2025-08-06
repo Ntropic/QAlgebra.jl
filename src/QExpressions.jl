@@ -1,11 +1,11 @@
 module QExpressions
 using ..QSpace
-using ..FFunctions
+using ..CFunctions
 using ..StringUtils
 using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, ^, product, iszero, copy
 using ..QAlgebra: get_default 
-using ..FFunctions: isnumeric
+using ..CFunctions: isnumeric
 export QObj, QAtom, QAbstract, QComposite, QCompositeProduct, QMultiComposite, QTerm, QAtomProduct, QExpr, QSum, Sum, ∑, diff_QEq, base_operators, simplify, simplifyqAtomProduct, flatten, neq, d_dt
 
 # ==========================================================================================================================================================
@@ -93,18 +93,18 @@ It contains:
 """
 mutable struct QAtomProduct <: QComposite
     statespace::StateSpace         # State space of the product.
-    coeff_fun::FFunction            # function of scalar parameters => has +,-,*,/,^ defined 
+    coeff_fun::CFunction            # function of scalar parameters => has +,-,*,/,^ defined 
     expr::Vector{QAtom}             # Vector of qAtoms (qTerms or QAbstract).
     separate_expectation_values::Bool 
-    function QAtomProduct(statespace::StateSpace, coeff::FFunction, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false)
+    function QAtomProduct(statespace::StateSpace, coeff::CFunction, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false)
         new(statespace, coeff, expr, separate_expectation_values)
     end
     function QAtomProduct(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::QAtom, separate_expectation_values::Bool=false)
-        f_fun = FAtom(coeff, var_exponents)
+        f_fun = CAtom(coeff, var_exponents)
         return new(statespace, f_fun, [expr], separate_expectation_values)
     end
     function QAtomProduct(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::AbstractVector{<:QAtom}, separate_expectation_values::Bool=false)
-        f_fun = FAtom(coeff, var_exponents)
+        f_fun = CAtom(coeff, var_exponents)
         return new(statespace, f_fun, expr, separate_expectation_values)
     end
     function QAtomProduct(statespace::StateSpace, coeff::Number, expr::AbstractVector{<:QAtom}, separate_expectation_values::Bool=false)
@@ -165,6 +165,7 @@ It contains:
 """
 mutable struct QSum <: QComposite
     statespace::StateSpace
+    coeff_fun::CFunction  
     expr::QExpr       # The expression being summed over.    # use expr in other QComposites except for QAtomProduct
     indexes::Vector{String}   # The summation index (e.g. "i").
     subsystem_index::Int  # The subspace index where the summation index was found.
@@ -172,7 +173,7 @@ mutable struct QSum <: QComposite
     neq::Bool
 end
 function copy(q::QSum)::QSum
-    return QSum(q.statespace, copy(q.expr), copy(q.indexes), q.subsystem_index, copy(q.element_indexes), q.neq)
+    return QSum(q.statespace, copy(q.coeff_fun), copy(q.expr), copy(q.indexes), q.subsystem_index, copy(q.element_indexes), q.neq)
 end
 
 """
@@ -252,7 +253,7 @@ function Sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bo
             error("Duplicate indexes found in the input.")
         end
         e_inds = sort(e_inds)
-        return QExpr(ss, [QSum(ss, expr, index_strs, the_s_ind, e_inds, neq)])
+        return QExpr(ss, [QSum(ss, ss.fone, expr, index_strs, the_s_ind, e_inds, neq)])
     else
         return expr
     end
@@ -290,10 +291,12 @@ length(q::QExpr) = length(q.terms)
 
 iszero(q::QExpr) = length(q.terms) == 0 || all(iszero, q.terms)
 iszero(q::QAtomProduct) = iszero(q.coeff_fun)
-iszero(q::T) where T<:QComposite = iszero(q.expr)
-iszero(q::T) where T<:QMultiComposite = any(iszero, q.expr)
+iszero(q::T) where T<:QComposite = iszero(q.coeff_fun) || iszero(q.expr)
+iszero(q::T) where T<:QMultiComposite = iszero(q.coeff_fun) || any(iszero, q.expr) 
 
-
+function simplify_rules(q::T)::T where T <: QComposite
+    return q 
+end
 
 include("QExpressionsOps/QExpressions_functions.jl")
 include("QExpressionsOps/QExpressions_helper.jl") # Helper functions for QAtomProduct simplify

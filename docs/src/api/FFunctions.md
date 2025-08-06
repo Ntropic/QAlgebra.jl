@@ -1,18 +1,18 @@
-# FFunctions
+# CFunctions
 
-The `FFunctions` module provides the structs and operations needed to express functions of classical variables. 
+The `CFunctions` module provides the structs and operations needed to express functions of classical variables. 
 
 ```@meta
-CurrentModule = QAlgebra.FFunctions
+CurrentModule = QAlgebra.CFunctions
 ```
 
 ## Types / Structs
 
 ```@docs
-FFunction
-FAtom
-FSum
-FRational
+CFunction
+CAtom
+CSum
+CRational
 ```
 
 
@@ -33,4 +33,4 @@ how_to_combine_Fs
 
 ## Arithmetic & Operations
 The module overloads the following arithmetic operations for objects of the structs defined above: `+`, `-`, `*`, `/`, `^`, `==`, `ìnv`, `sort!`, `sort`, `copy`, `gcd`, `adjoint`, `conj`
-You can also use `FFunction.simplify` to simplify your expressions, but this function is not explicitely exported.
+You can also use `CFunction.simplify` to simplify your expressions, but this function is not explicitely exported.
