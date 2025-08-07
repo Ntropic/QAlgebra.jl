@@ -4,13 +4,9 @@ function simplify(s::CAtom)
     return s 
 end
 
-function simplify(s::CSum)
-    # first simplify the lower levels 
-    elements = [simplify(e) for e in s.terms]
-    s = CSum(elements)
-    recursive_sort!(s)
+function simplify_CSum(elements::AbstractVector{<:CFunction})
+    sort!(elements)
     i = 1
-    elements = s.terms
     new_elements = CFunction[]
     curr_element = elements[1]
     for i in 2:length(elements)
@@ -34,14 +30,16 @@ function simplify(s::CSum)
         push!(new_elements, curr_element)
     end
     if length(new_elements) == 0 
-        push!(new_elements, CAtom(0, zeros(Int, dims(s))))
+        push!(new_elements, CAtom(0, zeros(Int, dims(elements[1]))))
     end
-    return CSum(new_elements)
+    return CSum(new_elements, Val{:nosimp}())
+end
+function simplify(s::CSum)
+    # first simplify the lower levels 
+    return simplify_CSum(s.terms)
 end
 
-function simplify(r::CRational)
-    n = simplify(r.numer)
-    d = simplify(r.denom)
+function simplify_CRational(n::CFunction, d::CFunction)
     # remove fractions in coefficients in Rational
     curr_div = vcat(divisors(n), divisors(d))
     factor = lcm(curr_div...)
@@ -71,40 +69,45 @@ function simplify(r::CRational)
     elseif isa(d, CRational)
         return (n*d.denom) / d.numer
     else
-        return CRational(n, d)
+        return CRational(n, d, Val{:nosimp}())
     end
 end
+function simplify(r::CRational)
+    return simplify_CRational(r.numer, r.denom)
+end
 
-function simplify(e::CExp)
-    y = simplify(e.x)
+function simplify_CExp(coeff::ComplexRational, x::CFunction)
     # exp(log(y)) ⇒ y
-    if y isa CLog
-        return y.x
+    if x isa CLog
+        return x.x * coeff 
     # exp(0) ⇒ 1
-    elseif iszero(y)
-        return CAtom(1, zeros(Int, dims(y)))
-    else
-        return CExp(y)
+    elseif iszero(x)
+        return CAtom(coeff, zeros(Int, dims(x)))
     end
+    return CExp(coeff, x, Val{:nosimp}())
+end
+function simplify(e::CExp)
+    return simplify_CExp(e.coeff, e.x)
 end
 
-function simplify(l::CLog)
-    y = simplify(l.x)
+function simplify_CLog(coeff::ComplexRational, x::CFunction)
     # log(exp(y)) ⇒ y
-    if y isa CExp
-        return y
+    if x isa CExp
+        return x.x * coeff 
     end
     # log(1) ⇒ 0
-    if isone(y)
-        return CAtom(0, zeros(Int, dims(y)))
+    if isone(x)
+        return CAtom(0, zeros(Int, dims(x)))
     end
-    return CLog(y)
+    return CLog(coeff, x, Val{:nosimp}()) 
 end
-
+function simplify(l::CLog)
+    return simplify_CLog(l.coeff, l.x)
+end
 
 # CAtom, CSum, CProd, CRational, CExp, CLog
 
-function simplify(p::CProd)
+function simplify_CProd(coeff::ComplexRational, terms::AbstractVector{<:CFunction})
     #    simplify(p::CProd) -> CFunction
     # Normalize a product by
     #  • flattening nested CProd  
@@ -112,7 +115,7 @@ function simplify(p::CProd)
     #  • merging at most one CSum and one CRational via `*`  
     #  • sorting all remaining factors (commutative)  
     #  • pulling out common divisors into coeff
-    coeff, atoms, sums, rats, exps, logs = collect_prod_terms(p)   # also simplifies recursively! 
+    coeff, atoms, sums, rats, exps, logs = collect_prod_terms(coeff, terms)   # also simplifies recursively! 
 
     # 1) combine atoms back into one
     has_term = false
@@ -121,31 +124,31 @@ function simplify(p::CProd)
         for a in atoms
             var_ex .+= a.var_exponents
         end
-        base_atom = CAtom(coeff, var_ex)
+        base_atom = CAtom(ComplexRational(1,0,1), var_ex)
         # 2) multiply sums/rationals (there’s at most one of each)
         term = base_atom
         has_term = true
     end
     if !isempty(sums)
         if has_term
-            term = simplify(term * reduce(*, sums))
+            term = term * reduce(*, sums)
         else
             if length(sums)==1
-                term = sums
+                term = sums[1]
             else
-                term = simplify(reduce(*, sums))
+                term = reduce(*, sums)
             end
             has_term = true
         end
     end
     if !isempty(rats)
         if has_term
-            term = simplify(term * reduce(*, rats))
+            term = term * reduce(*, rats)
         else
             if length(rats)==1
-                term = rats
+                term = rats[1]
             else
-                term = simplify(reduce(*, rats))
+                term = reduce(*, rats)
             end
             has_term = true
         end
@@ -167,16 +170,20 @@ function simplify(p::CProd)
     sort!(final_terms[2:end])
 
     # 6) if only one term, drop the CProd wrapper
-    return length(final_terms)==1 ? final_terms[1] : CProd(final_terms...)
+    return CProd(coeff, final_terms, Val{:nosimp}())
 end
+
+function simplify(p::CProd)
+    return simplify_CProd(p.coeff, p.terms)
+end
+
 # Helper 
-function collect_prod_terms(p::CProd)
-    coeff = ComplexRational(1,0,1)
+function collect_prod_terms(coeff::ComplexRational, terms::AbstractVector{<:CFunction})
     atoms, sums, rats, exps, logs = CAtom[], CSum[], CRational[], CExp[], CLog[]
-    for t in p.terms
+    for t in terms
         t = simplify(t)
         if t isa CProd
-            c2, a2,s2,r2,e2,l2 = collect_prod_terms(t)
+            c2, a2,s2,r2,e2,l2 = collect_prod_terms(t.coeff, t.terms)
             coeff *= c2
             append!(atoms, a2); append!(sums, s2)
             append!(rats,  r2); append!(exps, e2); append!(logs, l2)
@@ -259,19 +266,24 @@ function unify_add(a::CAtom, b::CAtom)::CFunction
     return CAtom(absum, copy(a.var_exponents))
 end
 function unify_add(a::CSum, b::CSum)::CFunction
-    return simplify(a+b)
+    error("CSum shouldn't contain another CSum!")
+    #return a+b
+end
+function unify_add(a::CProd, b::CProd)::CFunction
+    absum = a.coeff+b.coeff
+    return CProd(absum, copy(a.terms), Val{:nosimp}())
 end
 function unify_add(a::CRational, b::CRational)::CFunction
     simple_numer = simplify(a.numer+b.numer)
-    return CRational(simple_numer, copy(a.denom))
+    return CRational(simple_numer, copy(a.denom), Val{:nosimp}())
 end
 function unify_add(a::CExp, b::CExp)::CFunction
     absum = a.coeff+b.coeff
-    return CExp(absum, copy(a.x))
+    return CExp(absum, copy(a.x), Val{:nosimp}())
 end
 function unify_add(a::CLog, b::CLog)::CFunction
     absum = a.coeff+b.coeff
-    return CLog(absum, copy(a.x))
+    return CLog(absum, copy(a.x), Val{:nosimp}())
 end 
 
 issimple(f::CFunction) = error("Not implemented for type $(typeof(f)).")
@@ -310,11 +322,17 @@ function vec_multiply(x::CAtom, vector::Vector{Int})::CAtom
     return CAtom(x.coeff, x.var_exponents + vector)
 end
 function vec_multiply(x::CSum, vector::Vector{Int})::CSum
-    return CSum([vec_multiply(t, vector) for t in x.terms])
+    return CSum([vec_multiply(t, vector) for t in x.terms], Val{:nosimp}())
 end
 function vec_multiply(x::CRational, vector::Vector{Int})::CRational
-    return CRational(vec_multiply(x.numer), vec_multiply(x.denom))
+    return CRational(vec_multiply(x.numer), vec_multiply(x.denom), Val{:nosimp}())
 end
+function vec_multiply(x::CProd, vector::Vector{Int})::CProd
+    terms = x.terms
+    terms[1] = vec_multiply(terms[1], vector)   
+    return CProd(x.coeff, terms, Val{:nosimp}()) 
+end
+
 
 # Assumes that the divisors are 1 
 function numer(a::T) where T <: CFunction
@@ -328,7 +346,7 @@ function numer(s::CSum)::Vector{Int}
     return vcat([numer(t) for t in s.terms]...)
 end
 function numer(a::CProd)::Vector{Int}
-    return [s.coeff.a, s.coeff.b]
+    return [a.coeff.a, a.coeff.b]
 end
 function numer(s::CRational)::Vector{Int}
     return vcat(numer(s.numer), numer(s.denom))

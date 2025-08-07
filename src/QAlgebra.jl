@@ -58,7 +58,7 @@ export symbol2formatted, str2sub, str2sup, brace
 include("CFunctions.jl")
 using .CFunctions
 export CFunction, CAtom, CSum, CRational, CProd, CExp, CLog
-export isnumeric, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key, recursive_sort
+export isnumeric, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
 
 include("QSpace.jl")
 using .QSpace

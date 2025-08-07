@@ -3,7 +3,7 @@ import Base: +, -, *, /, ^, ==
 
 # addition always builds a flat sum
 +(a::T) where {T <: CFunction}  =  a 
-+(a::Ta, b::Tb) where {Ta <: CFunction, Tb <: CFunction}  = CSum( vcat(_terms(a), _terms(b)) )
++(a::Ta, b::Tb) where {Ta <: CFunction, Tb <: CFunction}  = CSum( vcat(_terms(a), _terms(b)))
 +(a::T, b::Number) where {T <: CFunction}  =  a+CAtom(b, zeros(Int, dims(a)))
 +(b::Number, a::T) where {T <: CFunction}  =  a+b
 
@@ -11,11 +11,11 @@ import Base: +, -, *, /, ^, ==
 import Base: -, +
 
 -(a::CAtom) = CAtom(-a.coeff, a.var_exponents)
--(s::CSum) = CSum([ -t for t in s.terms ])
--(r::CRational) = CRational(-r.numer, r.denom)
--(a::CProd) = CProd(-a.coeff, a.terms)
--(a::CExp) = CExp(-a.coeff, a.x)
--(a::CLog) = CLog(-a.coeff, a.x)
+-(s::CSum) = CSum([ -t for t in s.terms ], Val{:nosimp}())
+-(r::CRational) = CRational(-r.numer, r.denom, Val{:nosimp}())
+-(a::CProd) = CProd(-a.coeff, a.terms, Val{:nosimp}())
+-(a::CExp) = CExp(-a.coeff, a.x, Val{:nosimp}())
+-(a::CLog) = CLog(-a.coeff, a.x, Val{:nosimp}())
 -(a::CFunction, b::CFunction) = a + (-b)
 -(a::CFunction, b::Number)  = a + CAtom(-b, zeros(Int, dims(a)))
 -(b::Number, a::CFunction)  = CAtom(b, zeros(Int, dims(a))) - a
@@ -27,8 +27,8 @@ import Base: -, +
 
 # atom‐level ×
 *(a::CAtom, b::CAtom)     = CAtom(crationalize(a.coeff*b.coeff), a.var_exponents .+ b.var_exponents)
-*(a::CAtom, r::CRational) = CRational(CSum(a)*r.numer, r.denom)
-*(r::CRational, a::CAtom) = CRational(r.numer*CSum(a), r.denom)
+*(a::T, r::CRational) where {T<:CFunction} = CRational(a*r.numer, r.denom)
+*(r::CRational, a::T) where {T<:CFunction} = CRational(r.numer*a, r.denom)
 *(a::CRational, b::CRational) = CRational(a.numer*b.numer, a.denom*b.denom)
 
 *(a::CSum, b::CRational) = CRational(a*b.numer, b.denom)
@@ -51,15 +51,24 @@ end
 *(b::CProd, a::CSum) = CProd(b.coeff, vcat(a, b.terms))
 *(a::CProd, b::CProd) = CProd(a.coeff*b.coeff, sort!(vcat(a.terms, b.terms)))
 *(a::CExp, b::CExp) = CExp(a.coeff*b.coeff, a.x+b.x)
+function *(a::CRational, b::CProd) 
+    ind = findfirst(x -> isa(x, Union{CAtom, CSum, CRational}), b.terms)
+    if ind === nothing
+        return CRational(a.numer*b, a.denom) 
+    end
+    term_ind = b.terms[ind] * a
+    return CProd(b.coeff , vcat(b.terms[1:ind-1], term_ind, b.terms[ind+1:end]))
+end 
+*(a::CProd, b::CRational) = b * a
 
 # number 
 function *(a::CAtom, b::Number)  
     return CAtom(a.coeff*b, a.var_exponents)
 end
-*(a::CSum, b::Number)  = CSum([ x*b for x in a.terms ])
-*(a::CRational, b::Number) = CRational(a.numer*b, a.denom)
+*(a::CSum, b::Number)  = CSum([ x*b for x in a.terms ], Val{:nosimp}())
+*(a::CRational, b::Number) = CRational(a.numer*b, a.denom, Val{:nosimp}())
 function *(a::CProd, b::Number)
-    return CProd(a.coeff*b, a.terms)
+    return CProd(a.coeff*b, a.terms, Val{:nosimp}())
 end
 function *(a::CLog, b::Number)
     return CLog(b*a.coeff, a.x)
@@ -76,32 +85,32 @@ multiply_one(a::CRational, b::Int) = (a.numer * b) / (a.denom * b)
 /(A::CAtom, B::CSum)      = CRational(A, B)
 /(A::CSum, b::CAtom)      = CSum([ x/b for x in A.terms ])
 /(a::CAtom, b::CAtom)     = CAtom(a.coeff/b.coeff, a.var_exponents .- b.var_exponents)
-/(a::CAtom, r::CRational) = CRational(CSum(a)*r.denom, r.numer)
-/(r::CRational, a::CAtom) = CRational(r.numer, r.denom*CSum(a))
+/(a::CAtom, r::CRational) = CRational(a*r.denom, r.numer)
+/(r::CRational, a::CAtom) = CRational(r.numer, r.denom*a)
 /(a::CRational, b::CRational) = CRational(a.numer*b.denom, a.denom*b.numer)
 /(a::CRational, b::CSum)  = CRational(a.numer, a.numer*b)
 /(a::CSum, b::CRational)  = CRational(a*b.denom, b.numer)
 /(a::CAtom, b::Number)  = CAtom(a.coeff/b, a.var_exponents)
-/(a::CRational, b::Number)  = CRational(a.numer, a.denom*b)
+/(a::CRational, b::Number)  = CRational(a.numer, a.denom*b, Val{:nosimp}())
 function /(a::CSum, n::Number) 
-    return CSum([ x/n for x in a.terms ])
+    return CSum([ x/n for x in a.terms ], Val{:nosimp}())
 end
 function /(a::CProd, n::Number) 
-    return CProd(a.coeff/n, a.terms)
+    return CProd(a.coeff/n, a.terms, Val{:nosimp}())
 end
 function /(a::CLog, n::Number) 
-    return CLog(a.coeff/n, a.x)
+    return CLog(a.coeff/n, a.x, Val{:nosimp}())
 end
 function /(a::CExp, n::Number) 
-    return CExp(a.coeff/n, a.x)
+    return CExp(a.coeff/n, a.x, Val{:nosimp}())
 end
 /(n::Number, a::T)  where T <: CFunction  = CAtom(n, zeros(Int, dims(a))) / a
 
-/(a::T1, b::T2) where {T1 <: CFunction, T2 <: CFunction} = CRational(a, b)
+/(a::T1, b::T2) where {T1 <: CFunction, T2 <: CFunction} = CRational(a, b, Val{:nosimp}()) # Continue Here -> needs two variants 
 function /(a::CProd, b::CAtom) 
     ind = findfirst(x -> isa(x, Union{CAtom, CSum, CRational}), a.terms)
     if ind === nothing
-        return CRational(a, b) 
+        return CRational(a, b, Val{:nosimp}()) 
     end
     cb = b.coeff
     term_ind = a.terms[ind] / b * cb

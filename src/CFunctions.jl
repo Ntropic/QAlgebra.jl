@@ -40,7 +40,7 @@ struct CAtom <: CFunction
         return new(c, copy(var_exponents))
     end
     function CAtom(coeff::ComplexRational, var_exponents::Vector{Int})
-        return new(copy(coeff), copy(var_exponents))
+        return new(coeff, copy(var_exponents))
     end
     function CAtom(coeff::Number, var_exponents::Vector{Int})
         c = crationalize(coeff+0im)
@@ -48,9 +48,7 @@ struct CAtom <: CFunction
     end
 end
 
-function copy(x::CAtom)
-    return CAtom(copy(x.coeff), copy(x.var_exponents))
-end
+copy(x::CAtom) =  CAtom(x.coeff, x.var_exponents)
 coeff(a::CAtom) = [a.coeff]
 var_exponents(a::CAtom) = [a.var_exponents]
 dims(q::CAtom) = length(q.var_exponents)
@@ -59,7 +57,6 @@ length(a::CAtom) = 1
 
 """
     CSum(terms::AbstractVector{<:CFunction})
-    CSum(ts::CFunction...)
 
 Constructs a sum of `CFunction` terms.
 - Flattens any nested `CSum` automatically.
@@ -67,24 +64,22 @@ Constructs a sum of `CFunction` terms.
 """
 struct CSum <: CFunction
     terms::Vector{CFunction}
-    function CSum(ts::AbstractVector{<:CFunction})
-        flat = CFunction[]
+    function CSum(ts::AbstractVector{<:CFunction}) 
         if length(ts) == 1
             return copy(ts[1])
         end
         for t in ts
             if t isa CSum
-                append!(flat, copy.(t.terms))
-            else
-                push!(flat, copy(t))
+                error("Shouldn't have a CSum in a CSum!")  # remove this loop later on 
             end
         end
-        return new(flat)
+        return simplify_CSum(ts)
+    end
+    function CSum(ts::AbstractVector{<:CFunction}, ::Val{:nosimp})
+        return new(copy.(ts))
     end
 end
-
-CSum(ts::CFunction...) = CSum(collect(ts))
-copy(x::CSum) = CSum(copy.(x.terms))
+copy(x::CSum) = CSum(x.terms, Val{:nosimp}())
 coeff(x::CSum) = [ComplexRational(1,0,1)] #error("Sums don't have a coeff, you likely have a sum in a sum, this shouldn't happen. Please inform the developers. ")
 var_exponents(x::CSum) = error("Sums don't have var_exponents, you likely have a sum in a sum, this shouldn't happen. Please inform the developers. ")
 dims(q::CSum) = dims(q.terms[1])
@@ -95,21 +90,19 @@ struct CProd <: CFunction
     coeff::ComplexRational
     terms::Vector{CFunction}
     function CProd(coeff::ComplexRational, terms::AbstractVector{<:CFunction})
-        terms_copy = copy.(terms)
-        recursive_sort!(terms_copy)
-        if length(terms_copy) == 1
-            return terms_copy[1] / coeff
+        if length(terms) == 1
+            return terms[1] * coeff
         end
-        return new(copy(coeff), terms_copy)
+        return simplify_CProd(coeff, terms)
+    end
+    function CProd(coeff::ComplexRational, terms::AbstractVector{<:CFunction}, ::Val{:nosimp})
+        return new(coeff, copy.(terms))
     end
 end
-function CProd(terms::Vector{CFunction})
+function CProd(terms::AbstractVector{<:CFunction})
     CProd(ComplexRational(1, 0, 1), terms)
 end
-function CProd(ts::CFunction...)
-    CProd(ComplexRational(1, 0, 1), collect(ts))
-end
-copy(x::CProd) = CProd(copy(x.coeff), copy.(x.terms))
+copy(x::CProd) = CProd(x.coeff, x.terms, Val{:nosimp}())
 coeff(x::CProd) = [x.coeff]
 var_exponents(x::CProd) = vcat(var_exponents.(x.terms)...)
 dims(q::CProd) = dims(q.terms[1])
@@ -123,11 +116,14 @@ Represents a rational function with numerator `numer` and denominator `denom`, b
 struct CRational <: CFunction
     numer::CFunction
     denom::CFunction
-    function CRational(numer::CFunction, denom::CFunction)
-        new(copy(numer), copy(denom))
+    function CRational(numer::T, denom::S) where {T <: CFunction, S <: CFunction}  
+        return simplify_CRational(numer, denom)
+    end
+    function CRational(numer::T, denom::S,  ::Val{:nosimp}) where {T <: CFunction, S <: CFunction}  
+        return new(copy(numer), copy(denom))
     end
 end
-copy(x::CRational) = CRational(copy(x.numer), copy(x.denom))
+copy(x::CRational) = CRational(x.numer, x.denom, Val{:nosimp}())
 coeff(x::CRational) = coeff(x.numer) #/coeff(x.denom)
 var_exponents(x::CRational) = var_exponents(x.numer)   #vcat(var_exponents.(x.numer), var_exponents.(var_exponents.(x.denom)))
 dims(q::CRational) = dims(q.numer) 
@@ -137,17 +133,20 @@ length(q::CRational) = max(length(q.numer), length(q.denom))
 struct CExp <: CFunction
     coeff::ComplexRational
     x::CFunction
-    function CExp(coeff::ComplexRational, x::CFunction)
-        new(copy(coeff), copy(x))
+    function CExp(coeff::ComplexRational, x::T,  ::Val{:nosimp}) where T <: CFunction
+        new(coeff, copy(x))
     end
-    function CExp(x::CFunction)
-        new(ComplexRational(1,0,1), copy(x))
+    function CExp(coeff::ComplexRational, x::T) where T <: CFunction
+        return simplify_CExp(coeff, x)
     end
+end
+function CExp(x::CFunction)
+    CExp(ComplexRational(1,0,1), x)
 end
 function exp(x::CFunction)
     return CExp(x) 
 end
-copy(x::CExp) = CExp(copy(x.coeff), copy(x.x))
+copy(x::CExp) = CExp(copy(x.coeff), copy(x.x), Val{:nosimp}())
 coeff(x::CExp) = [x.coeff]
 var_exponents(x::CExp) = [zeros(Int, dims(x))]
 dims(q::CExp) = dims(q.x)
@@ -157,17 +156,20 @@ length(q::CExp) = 1
 struct CLog <: CFunction
     coeff::ComplexRational
     x::CFunction
-    function CLog(coeff::ComplexRational, x::CFunction)
+    function CLog(coeff::ComplexRational, x::T,  ::Val{:nosimp}) where T <: CFunction
         new(copy(coeff), copy(x))
     end
-    function CLog(x::CFunction)
-        new(ComplexRational(1,0,1), copy(x))
+    function CLog(coeff::ComplexRational, x::T)  where T <: CFunction
+        return simplify_CLog(coeff, x)
     end
 end
+function CLog(x::CFunction)
+        CLog(ComplexRational(1,0,1), copy(x))
+    end
 function log(x::CFunction)
     return CLog(x) 
 end
-copy(x::CLog) = CLog(copy(x.coeff), copy(x.x))
+copy(x::CLog) = CLog(copy(x.coeff), copy(x.x), Val{:nosimp}())
 coeff(x::CLog) = [x.coeff] 
 var_exponents(x::CLog) = [zeros(Int, dims(x))]
 dims(q::CLog) = dims(q.x)
@@ -241,9 +243,14 @@ function min_exponents(s::CSum)::Vector{Int}
     end
     return min_vals
 end
-#function min_exponents(p::CProd)::Vector{Int}
-#
-#end
+function min_exponents(p::CProd)::Vector{Int}
+    min_vals = min_exponents(p.terms[1])
+    for term in p.terms[2:end]
+        new_min = min_exponents(term)
+        min_vals = min.(min_vals, new_min)
+    end 
+    return min_vals
+end
 function min_exponents(r::CRational)::Vector{Int}
     min_vals = min_exponents(r.numer)
     min_vals2 = min_exponents(r.denom)
@@ -255,6 +262,7 @@ end
 function min_exponents(x::CLog)::Vector{Int}
     return zeros(Int, length(min_exponents(x.x)))
 end
+
 
 import Base: length, getindex, iterate, deleteat!, reverse
 length(p::CFunction)::Int = 1
