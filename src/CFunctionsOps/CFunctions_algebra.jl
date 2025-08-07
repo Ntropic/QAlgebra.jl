@@ -13,7 +13,7 @@ import Base: -, +
 -(a::CAtom) = CAtom(-a.coeff, a.var_exponents)
 -(s::CSum) = CSum([ -t for t in s.terms ])
 -(r::CRational) = CRational(-r.numer, r.denom)
--(a::CProd) = CProd(-a.coeff, a.exponents)
+-(a::CProd) = CProd(-a.coeff, a.terms)
 -(a::CExp) = CExp(-a.coeff, a.x)
 -(a::CLog) = CLog(-a.coeff, a.x)
 -(a::CFunction, b::CFunction) = a + (-b)
@@ -21,7 +21,7 @@ import Base: -, +
 -(b::Number, a::CFunction)  = CAtom(b, zeros(Int, dims(a))) - a
 
 # distribute * over sums
-*(A::CSum, B::CSum)       = CSum([ x*y for x in A.terms,   y in B.terms ])
+*(a::CSum, b::CSum) = CSum([ x*y for x in a.terms for y in b.terms ])
 *(s::CSum, a::T) where {T<:CFunction}   = CSum([ x*a for x in s.terms ])
 *(a::T, s::CSum) where {T<:CFunction}   = s*a
 
@@ -47,8 +47,10 @@ function *(a::CProd, b::T) where T <: CFunction
     return CProd(ca[1]*cb[1], sort!(vcat(a.terms, b/cb[1])))
 end
 *(a::T, b::CProd) where T <: CFunction = b*a 
-*(a::CProd, b::CProd) = CProd(coeff(a)*coeff(b), sort!(vcat(a.terms, b.terms)))
-
+*(a::CSum, b::CProd) = CProd(b.coeff, vcat(a, b.terms))
+*(b::CProd, a::CSum) = CProd(b.coeff, vcat(a, b.terms))
+*(a::CProd, b::CProd) = CProd(a.coeff*b.coeff, sort!(vcat(a.terms, b.terms)))
+*(a::CExp, b::CExp) = CExp(a.coeff*b.coeff, a.x+b.x)
 
 # number 
 function *(a::CAtom, b::Number)  
@@ -77,7 +79,7 @@ multiply_one(a::CRational, b::Int) = (a.numer * b) / (a.denom * b)
 /(a::CAtom, r::CRational) = CRational(CSum(a)*r.denom, r.numer)
 /(r::CRational, a::CAtom) = CRational(r.numer, r.denom*CSum(a))
 /(a::CRational, b::CRational) = CRational(a.numer*b.denom, a.denom*b.numer)
-/(a::CRational, b::CSum)  = CRational(a.numer, b.numer*b)
+/(a::CRational, b::CSum)  = CRational(a.numer, a.numer*b)
 /(a::CSum, b::CRational)  = CRational(a*b.denom, b.numer)
 /(a::CAtom, b::Number)  = CAtom(a.coeff/b, a.var_exponents)
 /(a::CRational, b::Number)  = CRational(a.numer, a.denom*b)

@@ -24,7 +24,7 @@ A single term with a complex‐rational coefficient and integer exponents for ea
 - The `Int` and `Rational` constructors wrap the coefficient into a `ComplexRational`.
 - `var_exponents[j]` is the exponent of variable _j_.
 """
-mutable struct CAtom <: CFunction
+struct CAtom <: CFunction
     coeff::ComplexRational
     var_exponents::Vector{Int}
     function CAtom(coeff::Int, var_exponents::Vector{Int})
@@ -65,7 +65,7 @@ Constructs a sum of `CFunction` terms.
 - Flattens any nested `CSum` automatically.
 - Variadic form `CSum(a, b, c)` is provided for convenience.
 """
-mutable struct CSum <: CFunction
+struct CSum <: CFunction
     terms::Vector{CFunction}
     function CSum(ts::AbstractVector{<:CFunction})
         flat = CFunction[]
@@ -85,13 +85,13 @@ end
 
 CSum(ts::CFunction...) = CSum(collect(ts))
 copy(x::CSum) = CSum(copy.(x.terms))
-coeff(x::CSum) = error("Sums don't have a coeff, you likely have a sum in a sum, this shouldn't happen. Please inform the developers. ")
+coeff(x::CSum) = [ComplexRational(1,0,1)] #error("Sums don't have a coeff, you likely have a sum in a sum, this shouldn't happen. Please inform the developers. ")
 var_exponents(x::CSum) = error("Sums don't have var_exponents, you likely have a sum in a sum, this shouldn't happen. Please inform the developers. ")
 dims(q::CSum) = dims(q.terms[1])
 length(q::CSum) = length(q.terms)
 
 
-mutable struct CProd <: CFunction
+struct CProd <: CFunction
     coeff::ComplexRational
     terms::Vector{CFunction}
     function CProd(coeff::ComplexRational, terms::AbstractVector{<:CFunction})
@@ -115,13 +115,12 @@ var_exponents(x::CProd) = vcat(var_exponents.(x.terms)...)
 dims(q::CProd) = dims(q.terms[1])
 length(q::CProd) = max(length.(q.terms)...)
 
-
 """
     CRational(numer::CSum, denom::CSum)
 
 Represents a rational function with numerator `numer` and denominator `denom`, both sums of `CFunction` terms.
 """
-mutable struct CRational <: CFunction
+struct CRational <: CFunction
     numer::CFunction
     denom::CFunction
     function CRational(numer::CFunction, denom::CFunction)
@@ -129,13 +128,13 @@ mutable struct CRational <: CFunction
     end
 end
 copy(x::CRational) = CRational(copy(x.numer), copy(x.denom))
-coeff(x::CRational) = coeff.(x.numer) #/coeff(x.denom)
+coeff(x::CRational) = coeff(x.numer) #/coeff(x.denom)
 var_exponents(x::CRational) = var_exponents(x.numer)   #vcat(var_exponents.(x.numer), var_exponents.(var_exponents.(x.denom)))
 dims(q::CRational) = dims(q.numer) 
 length(q::CRational) = max(length(q.numer), length(q.denom))
 
 
-mutable struct CExp <: CFunction
+struct CExp <: CFunction
     coeff::ComplexRational
     x::CFunction
     function CExp(coeff::ComplexRational, x::CFunction)
@@ -155,7 +154,7 @@ dims(q::CExp) = dims(q.x)
 length(q::CExp) = 1
 
 
-mutable struct CLog <: CFunction
+struct CLog <: CFunction
     coeff::ComplexRational
     x::CFunction
     function CLog(coeff::ComplexRational, x::CFunction)
@@ -173,7 +172,6 @@ coeff(x::CLog) = [x.coeff]
 var_exponents(x::CLog) = [zeros(Int, dims(x))]
 dims(q::CLog) = dims(q.x)
 length(q::CLog) = 1
-
 
 
 

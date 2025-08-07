@@ -4,30 +4,39 @@ function simplify(s::CAtom)
     return s 
 end
 
-function simplify(e::CExp)
-    y = simplify(e.x)
-    # exp(log(y)) ⇒ y
-    if y isa CLog
-        return y.x
-    # exp(0) ⇒ 1
-    elseif iszero(simplify(y))
-        return CAtom(1, zeros(Int, dims(y)))
-    else
-        return CExp(y)
+function simplify(s::CSum)
+    # first simplify the lower levels 
+    elements = [simplify(e) for e in s.terms]
+    s = CSum(elements)
+    recursive_sort!(s)
+    i = 1
+    elements = s.terms
+    new_elements = CFunction[]
+    curr_element = elements[1]
+    for i in 2:length(elements)
+        if typeof(curr_element) == typeof(elements[i]) 
+            if addable(curr_element, elements[i])
+                curr_element = unify_add(curr_element, elements[i])
+            else
+                if !iszero(curr_element)
+                    push!(new_elements, curr_element)
+                end
+                curr_element = elements[i]
+            end 
+        else
+            if !iszero(curr_element)
+                push!(new_elements, curr_element)
+            end
+            curr_element = elements[i]
+        end
     end
-end
-
-function simplify(l::CLog)
-    y = simplify(l.x)
-    # log(exp(y)) ⇒ y
-    if y isa CExp
-        return y
+    if !iszero(curr_element)
+        push!(new_elements, curr_element)
     end
-    # log(1) ⇒ 0
-    if isone(y)
-        return CAtom(0, zeros(Int, dims(y)))
+    if length(new_elements) == 0 
+        push!(new_elements, CAtom(0, zeros(Int, dims(s))))
     end
-    return CLog(y)
+    return CSum(new_elements)
 end
 
 function simplify(r::CRational)
@@ -56,7 +65,7 @@ function simplify(r::CRational)
     end
     # if denom now has exactly one term, collapse back to a sum
     if length(d) == 0 || iszero(d)
-        error("Divinding by zero")
+        error("Dividing by zero")
     elseif isa(d, CAtom)
         return n / d 
     elseif isa(d, CRational)
@@ -66,52 +75,43 @@ function simplify(r::CRational)
     end
 end
 
-function simplify(s::CSum)
-    # first simplify the lower levels 
-    elements = [simplify(e) for e in s.terms]
-    s = CSum(elements)
-    recursive_sort!(s)
-    i = 1
-    elements = s.terms
-    new_elements = CFunction[]
-    curr_element = elements[1]
-    for i in 2:length(elements)
-        if typeof(curr_element) == typeof(elements[i]) 
-            if unifiable(curr_element, elements[i])
-                curr_element = unify(curr_element, elements[i])
-            else
-                if !iszero(curr_element)
-                    push!(new_elements, curr_element)
-                end
-                curr_element = elements[i]
-            end 
-        else
-            if !iszero(curr_element)
-                push!(new_elements, curr_element)
-            end
-            curr_element = elements[i]
-        end
+function simplify(e::CExp)
+    y = simplify(e.x)
+    # exp(log(y)) ⇒ y
+    if y isa CLog
+        return y.x
+    # exp(0) ⇒ 1
+    elseif iszero(y)
+        return CAtom(1, zeros(Int, dims(y)))
+    else
+        return CExp(y)
     end
-    if !iszero(curr_element)
-        push!(new_elements, curr_element)
+end
+
+function simplify(l::CLog)
+    y = simplify(l.x)
+    # log(exp(y)) ⇒ y
+    if y isa CExp
+        return y
     end
-    if length(new_elements) == 0 
-        push!(new_elements, CAtom(0, zeros(Int, dims(s))))
+    # log(1) ⇒ 0
+    if isone(y)
+        return CAtom(0, zeros(Int, dims(y)))
     end
-    return CSum(new_elements)
+    return CLog(y)
 end
 
 
+# CAtom, CSum, CProd, CRational, CExp, CLog
 
-#    simplify(p::CProd) -> CFunction
-# Normalize a product by
-#  • flattening nested CProd  
-#  • merging all CAtom → single coeff & one “pure” CAtom  
-#  • merging at most one CSum and one CRational via `*`  
-#  • sorting all remaining factors (commutative)  
-#  • pulling out common divisors into coeff
 function simplify(p::CProd)
-
+    #    simplify(p::CProd) -> CFunction
+    # Normalize a product by
+    #  • flattening nested CProd  
+    #  • merging all CAtom → single coeff & one “pure” CAtom  
+    #  • merging at most one CSum and one CRational via `*`  
+    #  • sorting all remaining factors (commutative)  
+    #  • pulling out common divisors into coeff
     coeff, atoms, sums, rats, exps, logs = collect_prod_terms(p)   # also simplifies recursively! 
 
     # 1) combine atoms back into one
@@ -156,6 +156,9 @@ function simplify(p::CProd)
     final_terms = CFunction[]
     if has_term
         push!(final_terms, term)
+    end
+    if length(exps) > 1 
+        exps = [reduce(*, exps)] # * is defined for CExp and CExp
     end
     append!(final_terms, exps)
     append!(final_terms, logs)
@@ -212,37 +215,64 @@ end
 firstnegative(x::CExp)  = is_negative(x.coeff)
 firstnegative(x::CLog)  = is_negative(x.coeff)
 
-
-function unifiable(a::CAtom, b::CAtom)::Bool
+#### can be added?!
+function addable(a::CFunction, b::CFunction)
+    error("Unimplemented addable for $typeof(a) and $typeof(b).")
+end
+function addable(a::CAtom, b::CAtom)::Bool
     return a.var_exponents == b.var_exponents
 end
-function unifiable(a::CRational, b::CRational)::Bool
-    return a.denom == b.denom
-end
-function unifiable(a::CSum, b::CSum)::Bool
+function addable(a::CSum, b::CSum)::Bool
     true
 end
-# assume inifiable
-function unify(a::CAtom, b::CAtom)::CFunction
-    absum = a.coeff+b.coeff
-    if iszero(absum)
-        var_zeros = zeros(Int, dims(a))
-        return CAtom(0, var_zeros)
+function addable(a::CProd, b::CProd)::Bool
+    if length(a.terms) != length(b.terms) 
+        return false
     end
-    return CAtom(absum, copy(a.var_exponents))
-end
-function unify(a::CRational, b::CRational)::CFunction
-    simple_numer = simplify(a.numer+b.numer)
-    if iszero(simple_numer)
-        var_zeros = zeros(Int, dims) 
-        return CAtom(0, var_zeros)
+    for (el_a, el_b) in zip(a.terms, b.terms)
+        if el_a != el_b
+            return false
+        end
     end
-    return CRational(simple_numer, a.denom)
+    return true
 end
-function unify(a::CSum, b::CSum)::CFunction
-    return simplify(a+b)
+function addable(a::CRational, b::CRational)::Bool  
+    return a.denom == b.denom
+end
+function addable(a::CExp, b::CExp)::Bool
+    if a.x == b.x
+        return true
+    end 
+    return false
+end
+function addable(a::CLog, b::CLog)::Bool
+    if a.x == b.x
+        return true
+    end 
+    return false
 end
 
+
+# assume addable
+function unify_add(a::CAtom, b::CAtom)::CFunction
+    absum = a.coeff+b.coeff
+    return CAtom(absum, copy(a.var_exponents))
+end
+function unify_add(a::CSum, b::CSum)::CFunction
+    return simplify(a+b)
+end
+function unify_add(a::CRational, b::CRational)::CFunction
+    simple_numer = simplify(a.numer+b.numer)
+    return CRational(simple_numer, copy(a.denom))
+end
+function unify_add(a::CExp, b::CExp)::CFunction
+    absum = a.coeff+b.coeff
+    return CExp(absum, copy(a.x))
+end
+function unify_add(a::CLog, b::CLog)::CFunction
+    absum = a.coeff+b.coeff
+    return CLog(absum, copy(a.x))
+end 
 
 issimple(f::CFunction) = error("Not implemented for type $(typeof(f)).")
 issimple(f::CSum) = all(t -> isa(t, CAtom), f.terms)
