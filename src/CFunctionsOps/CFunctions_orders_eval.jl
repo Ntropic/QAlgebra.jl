@@ -39,7 +39,7 @@ Precomputes powers of each variable for fast evaluation:
 - Returns `xpows` such that `xpows[j][k+1] == x[j]^k` for `k = 0:max_exp[j]`.
 - Lengths of `x` and `max_exp` must agree.
 """
-function build_xpows(x::Vector{<:Number}, max_exp::Vector{Int})::Vector{Vector}
+function build_xpows(x::Vector{T}, max_exp::Vector{Int})::Vector{Vector{T}}  where T <: Number
     @assert length(x) == length(M)
     xpows = [Vector{typeof(x[i])}(undef, length(x)) for i in eachindex(x)]
     for j in eachindex(x)
@@ -48,6 +48,7 @@ function build_xpows(x::Vector{<:Number}, max_exp::Vector{Int})::Vector{Vector}
     return xpows
 end
 
+ctimes(c::ComplexRational, d::T) where T <: Number = (c.a+im*c.b)/c.c * d
 """
     evaluate(a::CAtom, xpows::Vector{Vector})       -> Number
     evaluate(s::CSum, xpows::Vector{Vector})        -> Number
@@ -55,28 +56,40 @@ end
 
 Evaluates the expression using precomputed powers `xpows` (as returned by `build_xpows`) for faster repeated evaluation.
 """
-function evaluate(a::CAtom, x::AbstractVector{<:Number})
-    a.coeff * prod(x[i]^a.var_exponents[i] for i in eachindex(a.var_exponents))
+function evaluate(a::CAtom, x::Vector{<:Number})
+    ctimes(a.coeff , prod(x[i]^a.var_exponents[i] for i in eachindex(a.var_exponents)))
 end
-function evaluate(s::CSum, x::AbstractVector{<:Number})
+function evaluate(s::CSum, x::Vector{<:Number})
     sum(evaluate(t, x) for t in s.terms)
 end
-function evaluate(r::CRational, x::AbstractVector{<:Number})
+function evaluate(r::CRational, x::Vector{<:Number})
     evaluate(r.numer, x) / evaluate(r.denom, x)
+end
+function evaluate(e::CExp, x::Vector{<:Number})
+    ctimes(e.coeff , exp(evaluate(e.x, x)))
+end
+function evaluate(l::CLog, x::Vector{<:Number})
+    ctimes(l.coeff , log(evaluate(l.x, x)))
 end
 
 # Evaluate but with xpows
 function evaluate(a::CAtom, xpows::Vector{Vector})
-    a.coeff * prod(
+    ctimes(a.coeff , prod(
         a.var_exponents[i] >= 0 ?
             xpows[i][a.var_exponents[i] + 1] :
             1 / xpows[i][abs(a.var_exponents[i]) + 1]
         for i in eachindex(a.var_exponents)
-    )
+    ))
 end
-function evaluate(s::CSum, xpows::Vector{Vector})
+function evaluate(s::CSum, xpows::Vector{Vector{T}}) where T <: Number
     return sum(evaluate(t, xpows) for t in s.terms)
 end
-function evaluate(r::CRational, xpows::Vector{Vector})
+function evaluate(r::CRational, xpows::Vector{Vector{T}}) where T <: Number
     return evaluate(r.numer, xpows) / evaluate(r.denom, xpows)
+end
+function evaluate(l::CLog, xpows::Vector{Vector{T}}) where T <: Number
+    ctimes(l.coeff , exp(evaluate(l.x, xpows)))
+end
+function evaluate(l::CLog, xpows::Vector{Vector{T}}) where T <: Number
+    ctimes(l.coeff , log(evaluate(l.x, xpows)))
 end

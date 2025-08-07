@@ -278,6 +278,7 @@ include("CFunctionsOps/CFunctions_algebra.jl")
 include("CFunctionsOps/CFunctions_sort.jl")
 include("CFunctionsOps/CFunctions_simplify.jl")
 include("CFunctionsOps/CFunctions_orders_eval.jl")
+include("CFunctionsOps/CFunctions_expand.jl")
 include("CFunctionsOps/CFunctions_helper.jl")
 include("CFunctionsOps/CFunctions_print.jl")
 
