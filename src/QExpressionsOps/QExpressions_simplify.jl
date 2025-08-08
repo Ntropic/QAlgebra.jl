@@ -27,7 +27,7 @@ function same_term_type(t1::S, t2::T)::Bool where {S<:QComposite, T<:QComposite}
 end
 
 function combine_term(t1::QAtomProduct, t2::QAtomProduct)::QAtomProduct
-    return QAtomProduct(t1.statespace, CFunctions.simplify(t1.coeff_fun + t2.coeff_fun), t1.expr)
+    return QAtomProduct(t1.statespace, t1.coeff_fun + t2.coeff_fun, t1.expr)
 end
 function combine_term(s1::QSum, s2::QSum)::QSum
     return QSum(s1.statespace, simplify(s1.expr + s2.expr), s1.indexes, s1.subsystem_index, s1.element_indexes, s1.neq)

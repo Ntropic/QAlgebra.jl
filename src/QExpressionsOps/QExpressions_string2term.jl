@@ -118,7 +118,7 @@ function term(statespace::StateSpace, coeff::Number, operator_str::String)
     for comb in Iterators.product(coeffs_and_terms...)
         curr_coeff = reduce(*, [c[1] for c in comb])*coeff
         curr_atoms = [c[2] for c in comb]
-        push!(products, QAtomProduct(statespace, curr_coeff, copy(var_exponents), curr_atoms))
+        push!(products, QAtomProduct(statespace, CAtom(curr_coeff, var_exponents), curr_atoms))
     end
     return QExpr(statespace, products)
 end

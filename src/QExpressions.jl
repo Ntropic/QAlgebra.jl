@@ -49,9 +49,12 @@ A `QTerm` represents a single term in a quantum expression. It contains:
 """
 struct QTerm <: QAtom
     op_indices::Vector{Is}
+    function QTerm(op_indices::Vector{Is})
+        return new(copy(op_indices))
+    end
 end
 function copy(q::QTerm)::QTerm
-    return QTerm(copy(q.op_indices))
+    return QTerm(q.op_indices)
 end
 
 """
@@ -73,12 +76,12 @@ mutable struct QAbstract <: QAtom
     dag::Bool
     operator_type::OperatorType
     index_map::Vector{Tuple{Int,Int}}
-end
-function QAbstract(operator_type::OperatorType, key_index::Int, sub_index::Int=-1, exponent::Int=1, dag::Bool=false; index_map::Vector{Tuple{Int,Int}}=Tuple{Int,Int}[])
-    return QAbstract(key_index, sub_index, exponent, dag, operator_type, index_map)
+    function QAbstract(operator_type::OperatorType, key_index::Int, sub_index::Int=-1, exponent::Int=1, dag::Bool=false; index_map::Vector{Tuple{Int,Int}}=Tuple{Int,Int}[])
+        return new(key_index, sub_index, exponent, dag, operator_type, copy.(index_map))
+    end
 end
 function copy(q::QAbstract)::QAbstract
-    return QAbstract(q.key_index, q.sub_index, q.exponent, q.dag, q.operator_type, copy(q.index_map))
+    return QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, q.dag, index_map=q.index_map)
 end
 
 
@@ -96,28 +99,21 @@ mutable struct QAtomProduct <: QComposite
     coeff_fun::CFunction            # function of scalar parameters => has +,-,*,/,^ defined 
     expr::Vector{QAtom}             # Vector of qAtoms (qTerms or QAbstract).
     separate_expectation_values::Bool 
-    function QAtomProduct(statespace::StateSpace, coeff::CFunction, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false)
-        new(statespace, coeff, expr, separate_expectation_values)
+    function QAtomProduct(statespace::StateSpace, coeff::T, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false) where T <: CFunction
+        new(statespace, copy(coeff), copy.(expr), separate_expectation_values)
     end
-    function QAtomProduct(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::QAtom, separate_expectation_values::Bool=false)
-        f_fun = CAtom(coeff, var_exponents)
-        return new(statespace, f_fun, [expr], separate_expectation_values)
+    function QAtomProduct(statespace::StateSpace, coeff::T, expr::S, separate_expectation_values::Bool=false) where {T <: CFunction, S <: QAtom}
+        new(statespace, copy(coeff), [copy(expr)], separate_expectation_values)
     end
-    function QAtomProduct(statespace::StateSpace, coeff::Number, var_exponents::Vector{Int}, expr::AbstractVector{<:QAtom}, separate_expectation_values::Bool=false)
-        f_fun = CAtom(coeff, var_exponents)
-        return new(statespace, f_fun, expr, separate_expectation_values)
+    function QAtomProduct(statespace::StateSpace, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false) 
+        new(statespace, copy(statespace.fone), copy.(expr), separate_expectation_values)
     end
-    function QAtomProduct(statespace::StateSpace, coeff::Number, expr::AbstractVector{<:QAtom}, separate_expectation_values::Bool=false)
-        f_fun = coeff* statespace.fone
-        return new(statespace, f_fun, expr, separate_expectation_values)
-    end
-    function QAtomProduct(statespace::StateSpace, coeff::Number, expr::QAtom, separate_expectation_values::Bool=false)
-        f_fun = coeff * statespace.fone
-        return new(statespace, f_fun, [expr], separate_expectation_values)
+    function QAtomProduct(statespace::StateSpace, expr::S, separate_expectation_values::Bool=false) where {S <: QAtom}
+        new(statespace, copy(statespace.fone), [copy(expr)], separate_expectation_values)
     end
 end
 function copy(q::QAtomProduct)::QAtomProduct
-    return QAtomProduct(q.statespace, copy(q.coeff_fun), [copy(s) for s in q.expr], q.separate_expectation_values)
+    return QAtomProduct(q.statespace, q.coeff_fun, q.expr, q.separate_expectation_values)
 end
 
 """
@@ -137,18 +133,18 @@ mutable struct QExpr <: QObj
         end
         return new(statespace, terms)
     end
-end
-function QExpr(statespace::StateSpace, prod::T) where T<:QComposite
-    return QExpr(statespace, [prod])
-end
-function QExpr(statespace::StateSpace, terms::QAtom)
-    return QExpr(statespace, QAtomProduct(statespace, statespace.fone, [terms]))
-end
-function QExpr(terms::AbstractVector{<:QComposite})
-    return QExpr(terms[1].statespace, terms)
+    function QExpr(terms::AbstractVector{<:QComposite})
+        return new(terms[1].statespace, copy.(terms))
+    end
+    function QExpr(statespace::StateSpace, prod::T) where T<:QComposite
+        return new(statespace, QComposite[copy(prod)])
+    end
+    function QExpr(statespace::StateSpace, terms::QAtom)
+        return new(statespace, QComposite[QAtomProduct(statespace,terms)])
+    end
 end
 function copy(q::QExpr)::QExpr
-    return QExpr(q.statespace, [copy(s) for s in q.terms])
+    return QExpr(q.statespace, q.terms)
 end
 
 """
@@ -165,15 +161,17 @@ It contains:
 """
 mutable struct QSum <: QComposite
     statespace::StateSpace
-    coeff_fun::CFunction  
     expr::QExpr       # The expression being summed over.    # use expr in other QComposites except for QAtomProduct
     indexes::Vector{String}   # The summation index (e.g. "i").
     subsystem_index::Int  # The subspace index where the summation index was found.
     element_indexes::Vector{Int}    # The position in that subspace.
     neq::Bool
+    function QSum(statespace::StateSpace, expr::QExpr, indexes::Vector{String}, subsystem_index::Int, element_indexes::Vector{Int}, neq::Bool)
+        return new(statespace,  expr, copy(indexes), subsystem_index, copy.(element_indexes), neq)
+    end
 end
 function copy(q::QSum)::QSum
-    return QSum(q.statespace, copy(q.coeff_fun), copy(q.expr), copy(q.indexes), q.subsystem_index, copy(q.element_indexes), q.neq)
+    return QSum(q.statespace,q.expr, q.indexes, q.subsystem_index, q.element_indexes, q.neq)
 end
 
 """
@@ -253,7 +251,7 @@ function Sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bo
             error("Duplicate indexes found in the input.")
         end
         e_inds = sort(e_inds)
-        return QExpr(ss, [QSum(ss, ss.fone, expr, index_strs, the_s_ind, e_inds, neq)])
+        return QExpr(ss, [QSum(ss, expr, index_strs, the_s_ind, e_inds, neq)])
     else
         return expr
     end
@@ -291,12 +289,9 @@ length(q::QExpr) = length(q.terms)
 
 iszero(q::QExpr) = length(q.terms) == 0 || all(iszero, q.terms)
 iszero(q::QAtomProduct) = iszero(q.coeff_fun)
+iszero(q::QSum) = iszero(q.expr)
 iszero(q::T) where T<:QComposite = iszero(q.coeff_fun) || iszero(q.expr)
 iszero(q::T) where T<:QMultiComposite = iszero(q.coeff_fun) || any(iszero, q.expr) 
-
-function simplify_rules(q::T)::T where T <: QComposite
-    return q 
-end
 
 include("QExpressionsOps/QExpressions_functions.jl")
 include("QExpressionsOps/QExpressions_helper.jl") # Helper functions for QAtomProduct simplify

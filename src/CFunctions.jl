@@ -27,6 +27,10 @@ A single term with a complex‐rational coefficient and integer exponents for ea
 struct CAtom <: CFunction
     coeff::ComplexRational
     var_exponents::Vector{Int}
+    function CAtom(var_exponents::Vector{Int})
+        c = ComplexRational(1, 0, 1)
+        return new(c, copy(var_exponents))
+    end
     function CAtom(coeff::Int, var_exponents::Vector{Int})
         c = ComplexRational(coeff, 0, 1)
         return new(c, copy(var_exponents))

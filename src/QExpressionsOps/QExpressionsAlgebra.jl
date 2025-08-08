@@ -184,12 +184,12 @@ function +(Q1::QExpr, Q2::T)::QExpr where T<:QComposite
 end
 function +(Q1::QExpr, N::Number)::QExpr 
     new_terms = copy(Q1.terms)
-    push!(new_terms, QAtomProduct(Q1.statespace, N, QTerm(Q1.statespace.neutral_op)))
+    push!(new_terms, QAtomProduct(Q1.statespace, Q1.statespace.fone*N, QTerm(Q1.statespace.neutral_op)))
     return QExpr(Q1.statespace, new_terms)
 end
 function +(N::Number, Q1::QExpr)::QExpr 
     new_terms = copy(Q1.terms)
-    push!(new_terms, QAtomProduct(Q1.statespace, N, QTerm(Q1.statespace.neutral_op)))
+    push!(new_terms, QAtomProduct(Q1.statespace, Q1.statespace.fone*N, QTerm(Q1.statespace.neutral_op)))
     return QExpr(Q1.statespace, new_terms)
 end
 
@@ -206,12 +206,12 @@ function -(Q1::QExpr, Q2::T)::QExpr where T<:QComposite
 end
 function -(Q1::QExpr, N::Number)::QExpr 
     new_terms = copy(Q1.terms)
-    push!(new_terms, QAtomProduct(Q1.statespace, -N, QTerm(Q1.statespace.neutral_op)))
+    push!(new_terms, QAtomProduct(Q1.statespace, -Q1.statespace.fone*N, QTerm(Q1.statespace.neutral_op)))
     return QExpr(Q1.statespace, new_terms)
 end
 function -(N::Number, Q1::QExpr)::QExpr 
     new_terms = copy((-Q1).terms)
-    push!(new_terms, QAtomProduct(Q1.statespace, N, QTerm(Q1.statespace.neutral_op)))
+    push!(new_terms, QAtomProduct(Q1.statespace, Q1.statespace.fone*N, QTerm(Q1.statespace.neutral_op)))
     return QExpr(Q1.statespace, new_terms)
 end
 
@@ -228,8 +228,7 @@ function trivial_multiply(Q1::QAtomProduct, Q2::QAtomProduct)::QAtomProduct
     if n2 > 0
         newexpr[n1+1:end] = e2
     end
-    return QAtomProduct(Q1.statespace, CFunctions.simplify(Q1.coeff_fun*Q2.coeff_fun), newexpr)
-    #return QAtomProduct(Q1.statespace, CFunctions.simplify(Q1.coeff_fun*Q2.coeff_fun), vcat(Q1.expr, Q2.expr))
+    return QAtomProduct(Q1.statespace, Q1.coeff_fun*Q2.coeff_fun, newexpr)
 end
 # Multiplies two QTerm’s from the same statespace. Returns a vector of QTerm’s that are the result of this multiplication and corresponding ComplexRational coefficients. 
 function multiply_qterm(t1::QTerm, t2::QTerm, statespace::StateSpace)::Tuple{Vector{QTerm}, Vector{ComplexRational}}
