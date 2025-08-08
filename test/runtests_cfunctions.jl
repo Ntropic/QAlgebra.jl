@@ -1,129 +1,74 @@
-using Test
-using QAlgebra
+CF_TYPES = (CAtom, CExp, CLog, CRational, CProd, CSum)
+VARS = ["x", "y"]
 
-
-# 1) List all your CFunction subtypes here:
-const CF_TYPES = (CAtom, CExp, CLog, CRational, CProd, CSum)
-
-
-function gen_examples(::Type{T}, depth::Int, max_depth::Int) where T<:CFunction
-    # -- one small collection of truly atomic CAtom examples:
-    atomic = [
-        CAtom(1,      [0,0]),
-        CAtom(2,      [1,0]),
-        CAtom(3//2,   [0,1]),
-        CAtom(crationalize(1+2im), [1,1])
-    ]
-    # convenience:
-    a = atomic[1]
-
-    # at max depth, return exactly one “simple” example per type
-    if depth >= max_depth
-        if T === CAtom
-            return [a]
-        elseif T === CSum
-            return [CSum([a, a])]
-        elseif T === CProd
-            return [CProd(a, a)]
-        elseif T === CRational
-            return [CRational(a, a)]
-        elseif T === CExp
-            return [CExp(a)]
-        elseif T === CLog
-            return [CLog(a)]
-        else
-            error("Unhandled type $T")
-        end
-    end
-
-    # otherwise depth < max_depth: build composites
-    if T === CAtom
-        return atomic
-    elseif T === CSum
-        ex = CFunction[]
-        for U in EXAMPLE_TYPES, V in EXAMPLE_TYPES
-            e1 = gen_examples(U, depth+1, max_depth)[1]
-            e2 = gen_examples(V, depth+1, max_depth)[1]
-            push!(ex, CSum([e1,e2]))
-        end
-        return ex
-    elseif T === CProd
-        ex = CFunction[]
-        for U in EXAMPLE_TYPES, V in EXAMPLE_TYPES
-            e1 = gen_examples(U, depth+1, max_depth)[1]
-            e2 = gen_examples(V, depth+1, max_depth)[1]
-            push!(ex, CProd(e1, e2))
-        end
-        return ex
-    elseif T === CRational
-        ex = CFunction[]
-        for U in EXAMPLE_TYPES, V in EXAMPLE_TYPES
-            e1 = gen_examples(U, depth+1, max_depth)[1]
-            e2 = gen_examples(V, depth+1, max_depth)[1]
-            push!(ex, CRational(e1, e2))
-        end
-        return ex
-    elseif T === CExp
-        ex = CFunction[]
-        for U in EXAMPLE_TYPES
-            e1 = gen_examples(U, depth+1, max_depth)[1]
-            push!(ex, CExp(e1))
-        end
-        return ex
-    elseif T === CLog
-        ex = CFunction[]
-        for U in EXAMPLE_TYPES
-            e1 = gen_examples(U, depth+1, max_depth)[1]
-            push!(ex, CLog(e1))
-        end
-        return ex
-    else
-        error("Unhandled type $T")
-    end
-end
-
-@testset "CFunctions Tests" begin
-    # First check that we are checking all subtypes 
-    list_of_subtypes = subtypes(CFunction)
-    for T in list_of_subtypes
-        @assert T in list_of_subtypes "Type $T not included in test -> add to test!"
-    end
-
+@testset "CFunction Tests" begin
     max_depth = 2
     # collect by type
     examples_by_type = Dict{DataType, Vector{CFunction}}()
-    for T in EXAMPLE_TYPES
-        examples_by_type[T] = gen_examples(T, 0, max_depth)
+    @testset "CFunction Examples Generation Tests" begin
+        for T in CF_TYPES
+            examples_by_type[T] = CFunctions_gen_examples(T, 0, max_depth)
+        end
     end
+    #line("Finished creating examples of all types." )
+
     # flatten
     all_ex = reduce(vcat, values(examples_by_type))
 
     # a fixed small var‐name list for to_string
-    const VARS = ["x", "y"]
 
-    @testset "CFunctions smoke tests" begin
 
-        # string generation
+    # string generation
+    @testset "CFunction String Generation Tests" begin
         for ex in all_ex
-            @test try stringer(ex)    true catch _ false end
-            @test try to_string(ex, VARS)    true catch _ false end
+            @test_succeeds to_string(ex, VARS)   "to_string($ex) failed"
+            @test_succeeds to_string(ex, VARS, do_latex=true)   "to_string($ex, VARS, do_latex=true) failed"
         end
+    end
+    #line("Finished creating strings and LaTeXStrings of all examples.")
 
-        # binary arithmetic on every pair
+    # binary arithmetic on every pair
+    @testset "CFunction Arithmetic Tests" begin
         for ex1 in all_ex, ex2 in all_ex
-            @test try _ = ex1 + ex2; true  catch _ false end
-            @test try _ = ex1 * ex2; true  catch _ false end
-            @test try _ = ex1 / ex2; true  catch _ false end
+            @test_succeeds ex1 + ex2  "$ex1 + $ex2 failed"
+            @test_succeeds ex1 - ex2  "$ex1 - $ex2 failed"
+            @test_succeeds ex1 * ex2  "$ex1 * $ex2 failed"
+            if !iszero(ex2) 
+                @test_succeeds ex1 / ex2  "$ex1 / $ex2 failed"
+            end
         end
+    end
 
-        # simplify, sorting, recursive_sort!
+    # simplify, sorting, recursive_sort!
+    @testset "CFunction Simplification Tests" begin
         for ex1 in all_ex, ex2 in all_ex
-            @test try _ = simplify(ex1);                   true catch _ false end
-            @test try _ = simplify(ex1 + ex2);             true catch _ false end
-            @test try recursive_sort!(ex1);                true catch _ false end
-            @test try _ = sort!([ex1, ex2]);               true catch _ false end
+            @test_succeeds QAlgebra.CFunctions.simplify(ex1)    "simplify($ex1) failed"         
         end
+    end
 
+    # prepare a test point (all examples use 2 variables by construction)
+    xv = [1.3, 0.7]
+    xpows = build_xpows(xv, max_exponents(all_ex))
+
+    #line("Testing evaluate(..., xv) and evaluate(..., xpows)")
+    @testset "CFunction Evaluate Tests" begin
+        for ex in all_ex
+            @test_succeeds evaluate(ex, xv)      "evaluate($ex, xv) failed"
+            @test_succeeds evaluate(ex, xpows)   "evaluate($ex, xpows) failed"
+        end
+    end
+    #line("Testing expand modes")
+
+    @testset "CFunction Expand Tests" begin
+        for ex in all_ex
+            # Taylor‐expand all CExp up to order 2
+            @test_succeeds expand(ex, :Taylor, CExp, 2)     "expand(:Taylor, CExp) on $ex failed"
+            # Taylor‐expand all CLog up to order 2
+            @test_succeeds expand(ex, :Taylor, CLog, 2)     "expand(:Taylor, CLog) on $ex failed"
+            # Distribute rationals over sums
+            @test_succeeds expand(ex, :Rational, CRational) "expand(:Rational, CRational) on $ex failed"
+            # Apply algebraic log rules
+            @test_succeeds expand(ex, :Log, CLog)           "expand(:Log, CLog) on $ex failed"
+        end
     end
 end
-

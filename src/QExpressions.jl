@@ -4,7 +4,7 @@ using ..CFunctions
 using ..StringUtils
 using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, ^, product, iszero, copy
-using ..QAlgebra: get_default 
+using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
 using ..CFunctions: isnumeric
 export QObj, QAtom, QAbstract, QComposite, QCompositeProduct, QMultiComposite, QTerm, QAtomProduct, QExpr, QSum, Sum, ∑, diff_QEq, base_operators, simplify, simplifyqAtomProduct, flatten, neq, d_dt
 

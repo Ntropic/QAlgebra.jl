@@ -201,8 +201,8 @@ iszero(a::CAtom)        = iszero(a.coeff)
 iszero(s::CSum)         = isempty(s.terms) || all(iszero, s.terms)
 iszero(p::CProd)        = iszero(p.coeff) || all(iszero, p.terms)
 iszero(r::CRational)    = iszero(r.numer)
-iszero(x::CExp)         = false
-iszero(x::CLog)         = false
+iszero(x::CExp)         = iszero(x.coeff)
+iszero(x::CLog)         = iszero(x.coeff)
 
 isempty(s::CSum)        = isempty(s.terms)
 

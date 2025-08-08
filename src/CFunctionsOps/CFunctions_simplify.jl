@@ -65,7 +65,10 @@ function simplify_CRational(n::CFunction, d::CFunction)
     if length(d) == 0 || iszero(d)
         error("Dividing by zero")
     elseif isa(d, CAtom)
-        return n / d 
+        if isnumeric(d)
+            return n/d.coeff
+        end
+        return CRational(n, d, Val{:nosimp}())
     elseif isa(d, CRational)
         return (n*d.denom) / d.numer
     else
@@ -170,6 +173,9 @@ function simplify_CProd(coeff::ComplexRational, terms::AbstractVector{<:CFunctio
     sort!(final_terms[2:end])
 
     # 6) if only one term, drop the CProd wrapper
+    if length(final_terms) == 1
+        return coeff*final_terms[1]
+    end
     return CProd(coeff, final_terms, Val{:nosimp}())
 end
 
