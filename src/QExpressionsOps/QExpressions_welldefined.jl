@@ -108,7 +108,7 @@ function are_indexes_defined(q::QSum, where_defined::Vector{Vector{Bool}})::Bool
     if !all(where_defined[outer_ind][element_indexes] .== false)
         error("Summation indexes already defined, cannot sum over defined indexes!")
     end
-    new_where_defined = deepcopy(where_defined)
+    new_where_defined = copy.(where_defined)
     new_where_defined[outer_ind][element_indexes] .= true
     # check the summation QExpr 
     return are_indexes_defined(q.expr, new_where_defined)

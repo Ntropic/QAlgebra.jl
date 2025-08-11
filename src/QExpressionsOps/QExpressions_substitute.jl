@@ -119,16 +119,12 @@ end
 function substitute(a::QAbstract, r::QAtom, targ::T) where T<:QComposite
     # T<:QMultiComposite is *also* <:QComposite, 
     # so we need the QMultiComposite method to be more specific
-    cp = copy(targ)
-    cp.expr = substitute(a, r, targ.expr)
-    return [cp]  # Tuple or Vector, depending on your convention
+    return [modify_expr(targ, substitute(a, r, targ.expr))]
 end
 
 # For anything that holds *many* sub‑expressions
 function substitute(a::QAbstract, r::QAtom, targ::T) where T<:QMultiComposite
-    cp = copy(targ)
-    cp.expr = map(x -> substitute(a, r, x), targ.expr)
-    return [cp]
+    return [modify_expr(targ, map(x -> substitute(a, r, x), targ.expr))]
 end
 
 function substitute(abstract_op::Union{simpleQ, QAbstract}, replacement::Union{simpleQ, QAtom}, target::diff_QEq)::diff_QEq 

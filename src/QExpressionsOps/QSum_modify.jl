@@ -6,6 +6,7 @@ Flattens nested Sums in quantum Equations (QExpr).
 Does not support QSums within QComposites within QSums!
 """
 function flatten(s::QSum, in_sum::Bool = false, in_sum_comp::Bool = false)
+    s = copy(s)
     # first, fully flatten the body
     if in_sum_comp && in_sum
         error("Unsupported: QSum found inside QComposite structure within an outer QSum.")
@@ -48,17 +49,13 @@ function flatten(s::QSum, in_sum::Bool = false, in_sum_comp::Bool = false)
 end 
 
 function flatten(q::QAtomProduct, in_sum::Bool = false, in_sum_comp::Bool = false)
-    return [q] 
+    return [copy(q)] 
 end
 function flatten(q::T, in_sum::Bool = false, in_sum_comp::Bool = false) where T<:QComposite
-    new_q = copy(q)
-    new_q.expr = flatten(q.expr)
-    return [new_q]
+    return [modify_expr(q, flatten(q.expr))]
 end
 function flatten(q::QMultiComposite, in_sum::Bool = false, in_sum_comp::Bool = false)
-    new_q = copy(q)
-    new_q.expr = [flatten(x) for x in q.expr]
-    return [new_q]
+    return [modify_expr(q, flatten.(q.expr))]
 end
 
 function flatten(qeq::QExpr, in_sum::Bool = false, in_sum_comp::Bool = false)::QExpr
@@ -85,7 +82,7 @@ function term_equal_indexes(term::QTerm, index1::Int, index2::Int, subspace::Sub
     new_terms = QTerm[]
     new_coeffs = ComplexRational[]
     for (coeff, op) in results
-        new_term = deepcopy(term)
+        new_term = copy(term)
         new_term.op_indices[index2] = op
         new_term.op_indices[index1] = neutral
         push!(new_terms, new_term)
@@ -155,9 +152,7 @@ function term_equal_indexes(q::T, index1::Int, index2::Int, subspace::SubSpace, 
     end
     results::Vector{T} = []
     for v in variants
-        q_new = copy(q)
-        q_new.expr = v
-        push!(results, q_new)
+        push!(results, modify_expr(q, v))
     end
     return true, results
 end
@@ -169,9 +164,7 @@ function term_equal_indexes(q::T, index1::Int, index2::Int, subspace::SubSpace, 
     end
     results::Vector{T} = []
     for v in variants
-        q_new = copy(q)
-        q_new.expr = v
-        push!(results, q_new)
+        push!(results, modify_expr(q, v))
     end
     return true, results
 end
@@ -189,14 +182,10 @@ function neq(q::QAtomProduct)::QAtomProduct
     return q 
 end
 function neq(q::T)::T where {T<:QComposite}
-    q_copy = copy(q)
-    q_copy.expr = neq(q.expr)
-    return q_copy
+    return modify_expr(q, neq(q.expr))
 end
 function neq(q::T)::T where {T<:QMultiComposite}
-    q_copy = copy(q)
-    q_copy.expr = [neq(t) for t in q.expr]
-    return q_copy
+    return modify_expr(q, neq.(q.expr))
 end
 
 function neq(qeq::QExpr)::QExpr
@@ -216,11 +205,6 @@ function neq(qeq::QExpr)::QExpr
             out += neq_qsum(t)
         else
             out += neq(t)
-        end
-    end
-    for t in out.terms
-        if t isa QSum
-            t.neq = true
         end
     end
     return out
@@ -277,10 +261,10 @@ function neq_qsum(s::QSum, index::Int=1)::QExpr
                                 pieces += new_term
                             end
                         else
-                            pieces += QSum(s.statespace, QExpr(ss, new_terms), new_indexes, expr.subsystem_index, new_element_indexes, expr.neq)
+                            pieces += QSum(s.statespace, QExpr(ss, new_terms), new_indexes, expr.subsystem_index, new_element_indexes, true)
                         end
                     else # no change to sum structure
-                        pieces += QSum(s.statespace, QExpr(ss, new_terms), copy(expr.indexes), expr.subsystem_index, copy(expr.element_indexes), expr.neq)
+                        pieces += QSum(s.statespace, QExpr(ss, new_terms), copy(expr.indexes), expr.subsystem_index, copy(expr.element_indexes), true)
                     end
                 end
             else ## Old - no longer sufficient: if isa(expr, QTerm)

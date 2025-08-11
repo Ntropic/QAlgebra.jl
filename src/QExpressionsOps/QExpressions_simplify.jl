@@ -73,6 +73,43 @@ function simplifyqAtomProduct(p::QAtomProduct)::Vector{QComposite}
     return [ QAtomProduct(p.statespace, c * p.coeff_fun, t) for (c,t) in current ]
 end
 
+function simplify_QExpr(terms::Vector{QComposite})::Vector{QComposite}
+    # If there are no terms, return an empty QExpr.
+    if isempty(terms)
+        return QComposite[]
+    end
+    
+    # First, sort QExpr without modifying the original.
+    sorted_terms = _sort(terms)
+
+    combined_terms = QComposite[]
+    i = 1
+    curr_term = sorted_terms[1]
+    while i < length(sorted_terms)
+        # Combine adjacent like terms.
+        next_term = sorted_terms[i+1]
+        if same_term_type(curr_term, next_term)
+            curr_term = combine_term(curr_term, next_term)
+        else
+            if !iszero(curr_term)
+                push!(combined_terms, copy(curr_term))
+            end
+            curr_term = next_term
+        end
+        i += 1
+    end
+    if !iszero(curr_term)
+        if isa(curr_term, QSum)
+            simplified_curr_term = simplify(curr_term)
+            if !iszero(simplified_curr_term)
+                append!(combined_terms, simplified_curr_term)
+            end
+        else
+            push!(combined_terms, copy(curr_term))
+        end
+    end
+    return combined_terms
+end
 
 """
     simplify(q) -> simplified
@@ -91,18 +128,12 @@ Returns either a single simplified object or a list of canonical components depe
 function simplify(q::QAtomProduct)::Vector{QAtomProduct}
     return [q]
 end
-function simplify(qcomp::T)::Vector{T} where T <: QMultiComposite
-    new_exprs::Vector{QExpr} = [simplify(x) for x in qcomp.expr]
-    q = copy(qcomp)
-    q.expr = new_exprs
-    return [q]
+function simplify(q::T)::Vector{T} where T <: QMultiComposite
+    return [modify_expr(q, simplify.(q.expr))]
 end
-function simplify(p::T)::Vector{T} where T <: QComposite
-    new_p = copy(p) 
-    new_p.expr = simplify(p.expr)
-    return [new_p]
+function simplify(q::T)::Vector{T} where T <: QComposite
+    return [modify_expr(q, simplify(q.expr))]
 end 
-
 function simplify(q::QExpr)::QExpr
     # If there are no terms, return an empty QExpr.
     if isempty(q.terms)

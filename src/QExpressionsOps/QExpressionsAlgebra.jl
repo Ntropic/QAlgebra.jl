@@ -166,9 +166,7 @@ function -(t::QExpr)::QExpr
     return QExpr(t.statespace, .-t.terms)  
 end
 function -(t::T)::T where T<:QComposite
-    t_new = copy(t)
-    t_new.expr = -t_new.expr  # Negate the expression inside the composite.
-    return t_new 
+    return modify_expr(t, -t.expr)
 end
 
 #### Binary + ####################################################################
@@ -277,10 +275,10 @@ function *(p1::QAtomProduct, p2::QAtomProduct)::Vector{QAtomProduct}
     return simplifyqAtomProduct(p)    # simplify the product. 
 end
 function *(p1::QAtomProduct, num::Number)::Vector{QAtomProduct}
-    return [QAtomProduct(p1.statespace, p1.coeff_fun*num, copy(p1.expr))]
+    return [QAtomProduct(p1.statespace, p1.coeff_fun*num, p1.expr)]
 end
 function *(num::Number, p1::QAtomProduct)::Vector{QAtomProduct}
-    return [QAtomProduct(p1.statespace, p1.coeff_fun*num, copy(p1.expr))]
+    return [QAtomProduct(p1.statespace, p1.coeff_fun*num, p1.expr)]
 end
 function *(p1::T1, p2::T2)::Vector{QCompositeProduct} where {T1<:QComposite, T2<:QComposite}
     return [QCompositeProduct(vcat(p1, p2))]
@@ -290,7 +288,8 @@ function *(p1::QSum, p2::T2)::Vector{QSum} where T2<:QComposite
     for t in p1.expr
        append!(new_expr, t*p2)
     end
-    return [QSum(p1.statespace, QExpr(new_expr), p1.indexes, p1.subsystem_index, p1.element_indexes, p1.neq)]
+    println("used")
+    return [QSum(p1.statespace, QExpr(new_expr, Val(:simp)), p1.indexes, p1.subsystem_index, p1.element_indexes, p1.neq)]
 end
 function *(p1::QCompositeProduct, p2::T2)::Vector{QCompositeProduct} where T2<:QComposite
     curr_comp = p1.expr
@@ -363,12 +362,10 @@ end
 
 
 function *(Q1::T, num::Number)::Vector{QComposite} where T<:QComposite
-    Q_new = copy(Q1)
-    Q_new.expr = Q1.expr * num
-    return [Q_new]
+    return [modify_expr(Q1, Q1.expr*num)]
 end
 function *(num::Number, Q2::T)::Vector{QComposite} where T<:QComposite
-    return [Q2 * num]
+    return Q2 * num
 end
 
 ##### Exponentiation ###################################################
@@ -500,8 +497,7 @@ function Dag(qspace::StateSpace, t::QAbstract)::Vector{Tuple{QAbstract, ComplexR
     if t.operator_type.hermitian
         return Tuple{QAbstract, ComplexRational}[(t, one(ComplexRational))]
     end 
-    new_t = copy(t) 
-    new_t.dag = !t.dag 
+    new_t = dag_copy(t) 
     return Tuple{QAbstract, ComplexRational}[(new_t, one(ComplexRational))]
 end
 
@@ -537,13 +533,11 @@ function Dag(t::T)::Vector{QComposite} where T<:QComposite
     return QComposite[t_new]
 end
 function Dag(t::QMultiComposite)::Vector{QMultiComposite}
-    t_new = copy(t) 
     dag_exprs::Vector{QExpr} = []
     for expr in reverse(t.expr)
         append!(dag_exprs, Dag(expr))
     end
-    t_new.expr = dag_exprs 
-    return [t_new]
+    return [modify_expr(t, dag_exprs)]
 end
 
 adjoint(Q::QExpr) = Dag(Q)

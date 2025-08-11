@@ -53,18 +53,11 @@ end
 function sort(qprod::QAtomProduct; kwargs...)  # don't sort qprod 
     return copy(qprod)
 end
-function sort(qcomp::T; kwargs...) where T<:QMultiComposite # only sort recursively but not expr itself (outer most layer)
-    new_qcomp = copy(qcomp)
-    new_exprs::Vector{QExpr} = []
-    for term in qcomp.expr 
-        push!(new_exprs, sort(term))
-    end 
-    new_qcomp.expr = new_exprs
-    return new_qcomp
+function sort(q::T; kwargs...) where T<:QMultiComposite # only sort recursively but not expr itself (outer most layer)
+    return modify_expr(q, sort.(q.expr; kwargs...))
 end
-function sort(qcomp::T; kwargs...) where T<:QComposite
-    new_qcomp = copy(qcomp)
-    new_qcomp.expr = sort(qcomp.expr; kwargs...)
+function sort(q::T; kwargs...) where T<:QComposite
+    return modify_expr(q, sort(q.expr; kwargs...))
     return new_qcomp
 end
 

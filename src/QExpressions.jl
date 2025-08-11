@@ -53,9 +53,7 @@ struct QTerm <: QAtom
         return new(copy(op_indices))
     end
 end
-function copy(q::QTerm)::QTerm
-    return QTerm(q.op_indices)
-end
+copy(q::QTerm)::QTerm = QTerm(q.op_indices)
 
 """
     QAbstract(indices::Vector{Int})
@@ -69,7 +67,7 @@ A purely‐symbolic abstract operator
     - index_map: Keeps track of indexes, that are equal (for neq transformations)
 Is an instance of an OperatorType 
 """
-mutable struct QAbstract <: QAtom
+struct QAbstract <: QAtom
     key_index::Int
     sub_index::Int
     exponent::Int
@@ -80,9 +78,8 @@ mutable struct QAbstract <: QAtom
         return new(key_index, sub_index, exponent, dag, operator_type, copy.(index_map))
     end
 end
-function copy(q::QAbstract)::QAbstract
-    return QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, q.dag, index_map=q.index_map)
-end
+copy(q::QAbstract)::QAbstract = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, q.dag, index_map=q.index_map)
+dag_copy(q::QAbstract)::QAbstract = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, !q.dag, index_map=q.index_map)
 
 
 """ 
@@ -94,7 +91,7 @@ It contains:
     - `coeff_fun`: The function of parameters for the Operator product
     - `expr`: A vector of qAtoms (qTerms or QAbstract) that are multiplied together.
 """
-mutable struct QAtomProduct <: QComposite
+struct QAtomProduct <: QComposite
     statespace::StateSpace         # State space of the product.
     coeff_fun::CFunction            # function of scalar parameters => has +,-,*,/,^ defined 
     expr::Vector{QAtom}             # Vector of qAtoms (qTerms or QAbstract).
@@ -112,9 +109,10 @@ mutable struct QAtomProduct <: QComposite
         new(statespace, copy(statespace.fone), [copy(expr)], separate_expectation_values)
     end
 end
-function copy(q::QAtomProduct)::QAtomProduct
-    return QAtomProduct(q.statespace, q.coeff_fun, q.expr, q.separate_expectation_values)
-end
+copy(q::QAtomProduct)::QAtomProduct = QAtomProduct(q.statespace, q.coeff_fun, q.expr, q.separate_expectation_values)
+modify_expr(q::QAtomProduct, terms::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, q.coeff, terms, q.separate_expectation_values)
+modify_coeff_expr(q::QAtomProduct, coeff::CFunction, terms::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, coeff, terms, q.separate_expectation_values)
+
 
 """
     QExpr
@@ -122,7 +120,7 @@ end
 A `QExpr` represents a quantum equation, consisting of a Vector of quantum Expressions representing the additive terms of the equation.
 It also contains a reference to the state space in which the equation is defined.
 """
-mutable struct QExpr <: QObj
+struct QExpr <: QObj
     statespace::StateSpace
     terms::Vector{QComposite}              #AbstractVector{<:QComposite}    
     function QExpr(statespace::StateSpace, terms::AbstractVector{<:QComposite})
@@ -142,10 +140,11 @@ mutable struct QExpr <: QObj
     function QExpr(statespace::StateSpace, terms::QAtom)
         return new(statespace, QComposite[QAtomProduct(statespace,terms)])
     end
+    function QExpr(terms::AbstractVector{<:QComposite}, ::Val{:simp})
+        return new(terms[1].statespace, simplify_QExpr(terms))
+    end
 end
-function copy(q::QExpr)::QExpr
-    return QExpr(q.statespace, q.terms)
-end
+copy(q::QExpr)::QExpr = QExpr(q.statespace, q.terms)
 
 """
     QSum
@@ -159,7 +158,7 @@ It contains:
     - `neq`: A boolean indicating whether different indexes in the sum can refer to the same element in the subspace. 
             For example, the indexes i,j,k can refer to different elements in a much larger bath of elements. 
 """
-mutable struct QSum <: QComposite
+struct QSum <: QComposite
     statespace::StateSpace
     expr::QExpr       # The expression being summed over.    # use expr in other QComposites except for QAtomProduct
     indexes::Vector{String}   # The summation index (e.g. "i").
@@ -170,9 +169,9 @@ mutable struct QSum <: QComposite
         return new(statespace,  expr, copy(indexes), subsystem_index, copy.(element_indexes), neq)
     end
 end
-function copy(q::QSum)::QSum
-    return QSum(q.statespace,q.expr, q.indexes, q.subsystem_index, q.element_indexes, q.neq)
-end
+copy(q::QSum)::QSum = QSum(q.statespace,q.expr, q.indexes, q.subsystem_index, q.element_indexes, q.neq)
+modify_expr(q::QSum, expr::QExpr) = QSum(q.statespace, expr, q.indexes, q.subsystem_index, q.element_indexes, q.neq)
+modify_expr_indexes(q::QSum, expr::QExpr, indexes::Vector{String}, subsystem_index::Int, element_indexes::Vector{Int}) = QSum(q.statespace, expr, indexes, subsystem_index, element_indexes, q.neq)
 
 """
     diff_QEq
@@ -181,7 +180,7 @@ A `diff_QEq` represents a differential equation of the form:
 
     d/dt ⟨Op⟩ = RHS
 
-It represents time evolution of operator expectation values, and wraps the symbolic structure of such an equation.
+It represents time derivative of an operator expectation value, and wraps the symbolic structure of such an equation.
 
 # Fields
 - `left_hand_side::QTerm`: The LHS operator being differentiated.
@@ -195,9 +194,7 @@ struct diff_QEq <: QObj
     expr::QExpr 
     braket::Bool
 end
-function copy(q::diff_QEq)::diff_QEq
-    return diff_QEq(q.statespace, copy(q.left_hand_side), copy(q.expr), q.braket)
-end
+copy(q::diff_QEq)::diff_QEq = diff_QEq(q.statespace, copy(q.left_hand_side), copy(q.expr), q.braket)
 
 """
     diff_QEq(lhs::QTerm, rhs::QExpr, statespace::StateSpace; braket=true)
@@ -208,7 +205,7 @@ Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
 function diff_QEq(statespace::StateSpace, left_hand_side::QAtomProduct, expr::QExpr; braket::Bool=true)
     new_rhs = neq(expr)
-    return diff_QEq(statespace, left_hand_side, new_rhs, braket)
+    return diff_QEq(statespace, copy(left_hand_side), new_rhs, braket)
 end
 
 """
@@ -351,4 +348,5 @@ function d_dt(left_hand::Union{QAtomProduct,QExpr}, right_hand::QExpr)::diff_QEq
     # Return a diff_QEq constructed from these sides.
     return diff_QEq(qstate, left_hand, right_hand)
 end
+
 end

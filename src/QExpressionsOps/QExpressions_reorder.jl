@@ -1,4 +1,5 @@
-export reorder!
+import ..CFunctions: reorder
+export reorder
 
 function where_defined_to_index_order(statespace::StateSpace, where_defined::Vector{Vector{Bool}})::Tuple{Vector{Int}, Vector{Int}}
     # takes where_defined and the continuum indexes to determine the new order for both operators and variables 
@@ -19,20 +20,6 @@ function where_defined_to_index_order(statespace::StateSpace, where_defined::Vec
     return op_inds, var_inds
 end
 
-### CFunction
-function reorder(f::CAtom, var_index_order::Vector{Int})::CAtom
-    var_exponents = f.var_exponents[var_index_order]
-    return CAtom(copy(f.coeff), var_exponents)
-end
-function reorder(f::CSum, var_index_order::Vector{Int})::CSum
-    f.terms = [reorder(ff, var_index_order) for ff in f.terms]
-    return f
-end
-function reorder(f::CRational, var_index_order::Vector{Int})::CRational
-    f.numer = reorder(f.numer, var_index_order)
-    f.denom = reorder(f.denom, var_index_order)
-    return f
-end
 
 # QObj
 function reorder(q::QTerm, index_order::Vector{Int})::QTerm
@@ -40,21 +27,16 @@ function reorder(q::QTerm, index_order::Vector{Int})::QTerm
     return QTerm(op_indices)
 end
 function reorder(q::QAtomProduct, add_at_sum::Bool,  where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_index_order::Vector{Int})::QAtomProduct
-    q.expr = [reorder(qq, index_order) for qq in q.expr]
-    q.coeff_fun = reorder(q.coeff_fun, var_index_order)
-    return q
+    return modify_coeff_expr(q, reorder(q.coeff_fun, var_index_order), QAtom[reorder(x, index_order) for x in q.expr])
 end
 function reorder(q::QExpr, add_at_sum::Bool, where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_index_order::Vector{Int})::QExpr
-    q.terms = [reorder(qq, add_at_sum, where_defined, index_order, var_index_order) for qq in q.terms]
-    return q
+    return QExpr(q.statespace, [reorder(qq, add_at_sum, where_defined, index_order, var_index_order) for qq in q.terms])
 end
 function reorder(q::T, add_at_sum::Bool, where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_index_order::Vector{Int})::T where T <: QComposite
-    q.expr = reorder(q.expr, add_at_sum, where_defined, index_order, var_index_order)
-    return q
+    return modify_expr(q, reorder(q.expr, add_at_sum, where_defined, index_order, var_index_order))
 end
 function reorder(q::T, add_at_sum::Bool, where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_index_order::Vector{Int})::T where T <: QMultiComposite
-    q.expr = [reorder(qq, add_at_sum, where_defined, index_order, var_index_order) for qq in q.expr]
-    return q
+    modify_expr(q, [reorder(qq, add_at_sum, where_defined, index_order, var_index_order) for qq in q.expr])
 end
 function reorder(q::QSum, add_at_sum::Bool, where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_index_order::Vector{Int})::QSum
     # define improved index_order and var_index_order
@@ -70,7 +52,7 @@ function reorder(q::QSum, add_at_sum::Bool, where_defined::Vector{Vector{Bool}},
         if !all(where_defined[outer_ind][element_indexes] .== false)
             error("Summation indexes already defined, cannot sum over defined indexes!")
         end
-        new_where_defined = deepcopy(where_defined)
+        new_where_defined = copy.(where_defined)
         new_where_defined[outer_ind][element_indexes] .= true
         op_ind, var_inds = where_defined_to_index_order(q.statespace, new_where_defined)
 
@@ -93,24 +75,21 @@ function reorder(q::QSum, add_at_sum::Bool, where_defined::Vector{Vector{Bool}},
             push!(new_element_indexes, new_subind)
             push!(new_indexes, curr_subspace.keys[new_subind])
         end
-        q.expr = reorder(q.expr, add_at_sum, new_where_defined, op_ind, var_inds)
-        q.indexes = new_indexes
-        q.element_indexes = new_element_indexes
+        return modify_expr_indexes(q, reorder(q.expr, add_at_sum, new_where_defined, op_ind, var_inds), new_indexes, q.subsystem_index, new_element_indexes)
     else
-        q.expr = reorder(q.expr, add_at_sum, where_defined, index_order, var_index_order)
+        return modify_expr(q, reorder(q.expr, add_at_sum, where_defined, index_order, var_index_order))
     end
-    return q
 end
 
-"""
+"""^
     reorder!(q::diff_QEq) -> diff_QEq
 
 Reorders the indexes of continuum-subspaces to the left, so that present indexes are i,j,k and not i,k,m.
 This allows simplify to further simplify expressions, by removing 
 """
-function reorder!(q::diff_QEq)::diff_QEq
+function reorder(q::diff_QEq)::diff_QEq
     # check index order on left side 
-    q = copy(q)#deepcopy(q)
+    q = copy(q)
     where_defined_lhs = which_continuum_acting(q.left_hand_side)
     op_inds, var_inds = where_defined_to_index_order(q.statespace, where_defined_lhs)
     # check if op_inds is not sorted (i.e. not equal to 1:length(op_inds))
