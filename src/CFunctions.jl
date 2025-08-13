@@ -5,9 +5,10 @@ using ComplexRationals
 using ..QAlgebra: get_default, FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
 
 export CFunction, CAtom, CSum, CRational, CProd, CExp, CLog
-export isnumeric
+export isnumeric, coeff, var_exponents
 
 import Base: copy, exp, log, length
+import ComplexRationals: isonelike
 """
     CFunction
 

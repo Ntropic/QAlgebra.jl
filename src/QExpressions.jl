@@ -6,13 +6,13 @@ using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, ^, product, iszero, copy
 using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
 using ..CFunctions: isnumeric
-export QObj, QAtom, QAbstract, QComposite, QCompositeProduct, QMultiComposite, QTerm, QAtomProduct, QExpr, QSum, Sum, ∑, diff_QEq, base_operators, simplify, simplifyqAtomProduct, flatten, neq, d_dt
+export QObj, QAtom, QAbstract, QComposite, QCompositeN, QCompositeProduct, QMultiComposite, QTerm, QAtomProduct, QExpr, QSum, Sum, ∑, diff_QEq, base_operators, simplify, simplify_QAtomProduct, flatten, neq, d_dt
 
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
 # ==========================================================================================================================================================
 # We are constructing terms and equations as an Abstract Syntax Tree 
-Is = Union{Int,Vector{Int}}
+Is = Vector{Int}
 
 """ 
     QObj
@@ -33,6 +33,13 @@ The abstract type `QComposite` is a subtype of `QObj` and represents composite e
 such as QSum and QAtomProduct which consist of QAtom, QAbstract or QComposite objects themselves. 
 """
 abstract type QComposite <: QObj end  # products and sums of operator definitions
+""" 
+    QCompositeN
+
+The abstract type `QCompositeN` is a subtype of `QComposite` and represents composite expressions, 
+such as QPower and QRoot which have an additional element `n` with integer value.
+"""
+abstract type QCompositeN <: QComposite end  # QComposite with additional argument n
 
 """ 
     QMultiComposite 
@@ -48,9 +55,9 @@ A `QTerm` represents a single term in a quantum expression. It contains:
     - `op_indices`: A vector of indices representing the operators in the term, which are also defined in a StateSpace.
 """
 struct QTerm <: QAtom
-    op_indices::Vector{Is}
-    function QTerm(op_indices::Vector{Is})
-        return new(copy(op_indices))
+    op_indices::Vector{Vector{Int}}
+    function QTerm(op_indices::Vector{Vector{Int}})
+        return new(copy.(op_indices))
     end
 end
 copy(q::QTerm)::QTerm = QTerm(q.op_indices)
@@ -110,8 +117,9 @@ struct QAtomProduct <: QComposite
     end
 end
 copy(q::QAtomProduct)::QAtomProduct = QAtomProduct(q.statespace, q.coeff_fun, q.expr, q.separate_expectation_values)
-modify_expr(q::QAtomProduct, terms::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, q.coeff, terms, q.separate_expectation_values)
-modify_coeff_expr(q::QAtomProduct, coeff::CFunction, terms::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, coeff, terms, q.separate_expectation_values)
+modify_expr(q::QAtomProduct, expr::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, q.coeff, expr, q.separate_expectation_values)
+modify_coeff_expr(q::QAtomProduct, coeff::CFunction, expr::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, coeff, expr, q.separate_expectation_values)
+modify_coeff(q::QAtomProduct, coeff::CFunction)::QAtomProduct = QAtomProduct(q.statespace, coeff, q.expr, q.separate_expectation_values)
 
 
 """
@@ -131,6 +139,14 @@ struct QExpr <: QObj
         end
         return new(statespace, terms)
     end
+    function QExpr(statespace::StateSpace, terms::AbstractVector{<:QComposite}, ::Val{:simp})
+        if isempty(terms) 
+            # add neotral zero term
+            zero_term = QAtomProduct(statespace, statespace.fone*0, QAtom[])
+            terms = [zero_term]
+        end
+        return new(statespace, simplify_QExpr(Vector{QComposite}(terms)))
+    end
     function QExpr(terms::AbstractVector{<:QComposite})
         return new(terms[1].statespace, copy.(terms))
     end
@@ -141,10 +157,12 @@ struct QExpr <: QObj
         return new(statespace, QComposite[QAtomProduct(statespace,terms)])
     end
     function QExpr(terms::AbstractVector{<:QComposite}, ::Val{:simp})
-        return new(terms[1].statespace, simplify_QExpr(terms))
+        return new(terms[1].statespace, simplify_QExpr(Vector{QComposite}(terms)))
     end
 end
 copy(q::QExpr)::QExpr = QExpr(q.statespace, q.terms)
+length(q::QExpr) = length(q.terms)
+
 
 """
     QSum
@@ -166,6 +184,9 @@ struct QSum <: QComposite
     element_indexes::Vector{Int}    # The position in that subspace.
     neq::Bool
     function QSum(statespace::StateSpace, expr::QExpr, indexes::Vector{String}, subsystem_index::Int, element_indexes::Vector{Int}, neq::Bool)
+        return new(statespace,  expr, copy(indexes), subsystem_index, copy.(element_indexes), neq)
+    end
+    function QSum(statespace::StateSpace, expr::QExpr, indexes::Vector{String}, subsystem_index::Int, element_indexes::Vector{Int}, neq::Bool, ::Val{:simp})
         return new(statespace,  expr, copy(indexes), subsystem_index, copy.(element_indexes), neq)
     end
 end
@@ -248,7 +269,7 @@ function Sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bo
             error("Duplicate indexes found in the input.")
         end
         e_inds = sort(e_inds)
-        return QExpr(ss, [QSum(ss, expr, index_strs, the_s_ind, e_inds, neq)])
+        return QExpr(ss, [QSum(ss, expr, index_strs, the_s_ind, e_inds, neq, Val(:simp))])
     else
         return expr
     end
@@ -282,8 +303,6 @@ function getindex(q::T, i::Int) where T <: QComposite
 end
 
 # Optionally, define length and eltype.
-length(q::QExpr) = length(q.terms)
-
 iszero(q::QExpr) = length(q.terms) == 0 || all(iszero, q.terms)
 iszero(q::QAtomProduct) = iszero(q.coeff_fun)
 iszero(q::QSum) = iszero(q.expr)
@@ -293,14 +312,12 @@ iszero(q::T) where T<:QMultiComposite = iszero(q.coeff_fun) || any(iszero, q.exp
 include("QExpressionsOps/QExpressions_functions.jl")
 include("QExpressionsOps/QExpressions_helper.jl") # Helper functions for QAtomProduct simplify
 
-include("QExpressionsOps/QExpressions_string2term.jl")
 include("QExpressionsOps/QExpressions_base_operators.jl")
 include("QExpressionsOps/QExpressions_sorting.jl")
 include("QExpressionsOps/QExpressions_simplify.jl")
 
-
-
-include("QExpressionsOps/QExpressionsAlgebra.jl")
+include("QExpressionsOps/QExpressions_string2term.jl")
+include("QExpressionsOps/QExpressions_algebra.jl")
 include("QExpressionsOps/QExpressionsPrint.jl")
 
 include("QExpressionsOps/QSum_modify.jl")

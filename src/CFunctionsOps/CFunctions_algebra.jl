@@ -151,20 +151,28 @@ adjoint(f::CSum) = CSum([adjoint(t) for t in f.terms])
 adjoint(f::CRational) = CRational(adjoint(f.numer), adjoint(f.denom))
 conj(f::CFunction) = adjoint(f)
 
+function ==(a::S, b::T) where {S <: CFunction, T <: CFunction}
+    return false 
+end
+function ==(a::S, b::S) where S <: CFunction
+    error("Equality not implemented for type $S")
+end
 function ==(a::CAtom, b::CAtom)
     return (a.coeff == b.coeff && a.var_exponents == b.var_exponents)
 end
 function ==(a::CSum, b::CSum)
-    if length(a) != length(b)
-        return false
-    end
-    for i in 1:length(a) 
-        if a[i] != b[i]
-            return false
-        end
-    end
-    return true
+    return length(a) == length(b) && a.terms == b.terms
 end
 function ==(a::CRational, b::CRational)
     return (a.numer == b.numer && a.denom == b.denom)
 end
+function ==(a::CProd, b::CProd)
+    return length(a.terms) == length(b.terms) && a.coeff == b.coeff && a.terms == b.terms
+end
+function ==(a::CExp, b::CExp)
+    return a.coeff == b.coeff && a.x == b.x 
+end
+function ==(a::CLog, b::CLog) 
+    return a.coeff == b.coeff && a.x == b.x 
+end
+

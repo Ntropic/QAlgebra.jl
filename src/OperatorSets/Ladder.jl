@@ -6,7 +6,7 @@ export Ladder
 Creates the OperatorSet for a bosonic mode using creation and annihilation operators (Ladder operators: ``a^\dagger``, ``a``).
 """
 function Ladder()
-    ops = ["'", ""]  # (Creation, Annihilation)
+    ops = ["'"]  # (Creation, Annihilation) -> removed annihilation
     base_ladder = [[0, 1]]
     non_base_ops::Dict{String, Vector{Tuple{ComplexRational, Is}}} = Dict("n" => [(ComplexRational(1,0,1), [1,1])])
     function ladderstr2ind(str::String)::Vector{Tuple{ComplexRational,Vector{Int}}}
@@ -71,13 +71,6 @@ function Ladder()
         end
         return curr_str
     end
-    function ladder2str(a::Int, sym::String; formatted::Bool=true)::String
-        if a == 1
-            return ladder2str([1, 0], sym, formatted=formatted)
-        else
-            return ladder2str([0, 1], sym, formatted=formatted)
-        end
-    end
     function ladder2latex(a::Vector{Int}, sym::String)::String
         curr_str = ""
         if a[1] > 0
@@ -95,5 +88,12 @@ function Ladder()
         end
         return curr_str
     end
-    return OperatorSet("Ladder", false, 2, Int[0, 0], base_ladder, non_base_ops, ops, ladder_product, ladder_dag, ladder2str, ladder2latex)
+    function laddercommutes(a::Vector{Int}, b::Vector{Int})::Bool
+        p, q = a
+        r, s = b
+        #       a neutral,        b neutral,       both only creation, both annihilation, both number operators 
+        return (p==0 && q==0) || (r==0 && s==0) || (q==0 && s==0)  || (p==0 && r==0) ||  (p==q && r==s)
+    end
+
+    return OperatorSet("Ladder", false, 2, Int[0, 0], base_ladder, non_base_ops, ops, ladder_product, ladder_dag, ladder2str, ladder2latex, laddercommutes) 
 end

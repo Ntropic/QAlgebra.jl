@@ -18,8 +18,9 @@ We define the abstract types:
 QObj
 QAtom
 QComposite
+QCompositeN
+QMultiComposite
 ```
-Where `QObj` describes the main class of all quantum objects, with the subtypes `QAtom` and `QComposite` representing the simplest and more complex quantum objects, respectively.
 
 For the atomic operators we have 
 ```@docs
@@ -27,16 +28,22 @@ QTerm
 QAbstract
 ```
 
-- [`QTerm`](@ref) specifies a concrete operator, with components on one or multiple of the subsystems defined in a state space.
-- [`QAbstract`](@ref) is an abstract type for all quantum operators, which can later be substituted for a concrete operator, but is now only known by its properties, such as its name, types (Hermitian, unitary, and the subspaces on which it acts etc.).
-
 For composite operators we have
 ```@docs
 QAtomProduct
 QCompositeProduct
-QMultiComposite
 QSum
+QExp 
+QLog
+QPower
+QRoot
 ```
+and for multi composites
+```@docs 
+QCommutator
+QCompositeProduct
+```
+
 
 Finally we have quantum expressions that are constructed as linear combinations of composite operators and differential equations in time \( d/dt \langle \text{Op} \rangle \) which define the time derivative (of the expectation value) of a composite operator as a quantum expression
 ```@docs
@@ -81,15 +88,12 @@ string
 latex_string
 ```
 
-- [`string`](@ref) returns a Unicode string representation of an expression (for console output).
-- [`latex_string`](@ref) returns a LaTeX-compatible string representation for notebook/HTML rendering.
-
 Pretty-printing happens automatically when using `display` or `println` in environments like Jupyter or Pluto.
 
 ---
 
 ## 4. Algebraic Operations
-We overload the most common algebraic operations, such as `+`, `*`, `-`, and `/`, to work with `QTerm`, `QAbstract`, `Expr`, `QSum` and `diff_QEq` types. We forthermore add the following functions:
+We overload the most common algebraic operations, such as `+`, `*`, `-`, and `/`, to work with our introduced types. We furthermore add the following functions:
 ```@docs
 Dag
 Commutator

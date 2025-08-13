@@ -28,7 +28,7 @@ function flatten(s::QSum, in_sum::Bool = false, in_sum_comp::Bool = false)
 
     # if there were any base qTerms directly under `s`, keep a sum
     if !isempty(base_terms)
-        push!(out_terms, QSum(inner.statespace, QExpr(base_terms), s.indexes, s.subsystem_index, s.element_indexes, s.neq))
+        push!(out_terms, QSum(inner.statespace, QExpr(base_terms), s.indexes, s.subsystem_index, s.element_indexes, s.neq, Val(:simp)))
     end
 
     # for each nested sum, merge its indexes onto `s`'s
@@ -42,7 +42,7 @@ function flatten(s::QSum, in_sum::Bool = false, in_sum_comp::Bool = false)
             error("Unsupported: nested sum with different subsystem index: $(n.subsystem_index)")
         end
         merged_einds = vcat(s.element_indexes, n.element_indexes)
-        push!(out_terms, QSum(s.statespace, n.expr, merged_idxs, s.subsystem_index, merged_einds, s.neq))
+        push!(out_terms, QSum(s.statespace, n.expr, merged_idxs, s.subsystem_index, merged_einds, s.neq, Val(:simp)))
     end
 
     return QExpr(inner.statespace, out_terms)
@@ -261,10 +261,10 @@ function neq_qsum(s::QSum, index::Int=1)::QExpr
                                 pieces += new_term
                             end
                         else
-                            pieces += QSum(s.statespace, QExpr(ss, new_terms), new_indexes, expr.subsystem_index, new_element_indexes, true)
+                            pieces += QSum(s.statespace, QExpr(ss, new_terms, Val(:simp)), new_indexes, expr.subsystem_index, new_element_indexes, true)
                         end
                     else # no change to sum structure
-                        pieces += QSum(s.statespace, QExpr(ss, new_terms), copy(expr.indexes), expr.subsystem_index, copy(expr.element_indexes), true)
+                        pieces += QSum(s.statespace, QExpr(ss, new_terms, Val(:simp)), copy(expr.indexes), expr.subsystem_index, copy(expr.element_indexes), true)
                     end
                 end
             else ## Old - no longer sufficient: if isa(expr, QTerm)

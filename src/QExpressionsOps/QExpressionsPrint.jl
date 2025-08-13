@@ -5,7 +5,7 @@ import Base: string
 export string, latex_string, QExpr2string
 
 
-function operators2string(op_indices::Vector{Is}, statespace::StateSpace; do_latex::Bool=false)::String
+function operators2string(op_indices::Vector{Vector{Int}}, statespace::StateSpace; do_latex::Bool=false)::String
     op_str::String = ""
     subspaces = statespace.subspaces
     not_neutral = false
@@ -256,9 +256,7 @@ function group_qAtomProducts(qs::Vector{QAtomProduct})::Vector{Union{QAtomProduc
             post_F = coeffs[2]
             post_q = QAtomProduct[]
             for (F, i) in zip(post_F, indexes) 
-                new_p = copy(qs[i]) 
-                new_p.coeff_fun = F 
-                push!(post_q, new_p) 
+                push!(post_q, modify_coeff(qs[i], F)) 
             end
             push!(new_qs, (pre_F, post_q)) 
         end
@@ -288,10 +286,7 @@ function allnegative(x::Vector{Tuple{Bool, String}})::Bool
 end
 function QExpr2string(q::QExpr; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_grouping::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     # outputs sign, string, {optional return_grouping:} single_group::Bool   => return grouping implies that the expression will be braced if it isn't already! , hence the outputted sign is handled differently 
-    # first sort terms 
-    # q_sorted = q   # activate if debugging for checking if sorting is the problem 
-    # q_sorted = sort(q)
-    q_sorted = simplify(q)
+    q_sorted = sort(q)  # sorts by term
     if !braced # outside (not inside of a QComposite)
         if !return_grouping
             return QComposites2string(q_sorted.terms, do_latex=do_latex, braced=braced, do_frac=do_frac, separate_sign=true)

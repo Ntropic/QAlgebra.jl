@@ -6,7 +6,7 @@ using ..StringUtils
 
 export OperatorSet, SubSpace, Parameter, OperatorType, StateSpace, string2operator_type, GLOBAL_STATE_SPACE
 
-Is = Union{Int,Vector{Int}}
+Is = Vector{Int}
 """
     OperatorSet(name::String, fermion::Bool, len::Int, neutral_element::Union{Int,Vector{Int}}, base_ops::Union{Vector{Int},Vector{Vector{Int}}}, ops::Vector{String}, op_product::Function, op_dag::Function, strs2ind::Function, op2str::Function, op2latex::Function)
 
@@ -17,20 +17,52 @@ struct OperatorSet
     name::String
     fermion::Bool           # fermions have symbol aftter operator name, bosons before
     len::Int                # length of indexes describing operator
-    neutral_element::Union{Int,Vector{Int}}   # neutral element of the operator set
-    base_ops::Union{Vector{Int},Vector{Vector{Int}}}
+    neutral_element::Vector{Int}   # neutral element of the operator set
+    base_ops::Vector{Vector{Int}}
     non_base_ops::Dict{String, Vector{Tuple{ComplexRational, Is}}}
     ops::Vector{String}     # operator symbols
     op_product::Function    # takes operator indexes of two operators of this set and outputs a vector of tuples of coefficients and associated indexes for the resulting operators in this set
     op_dag::Function        # Create Complex Transpoose Conjugate
     op2str::Function        # transforms an operator index into a string for console printing
     op2latex::Function      # transforms an operator index into a LaTeX string for formatted LaTeXStrings
+    commutes::Function
+    function OperatorSet(name::String, fermion::Bool, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, non_base_ops::Dict{String, Vector{Tuple{ComplexRational, Is}}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function, commutes::Function)
+        return new(name, fermion, len, neutral_element, base_ops, non_base_ops, ops, op_product, op_dag, op2str, op2latex, commutes)
+    end
+    function OperatorSet(name::String, fermion::Bool, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, non_base_ops::Dict{String, Vector{Tuple{ComplexRational, Is}}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function)
+        function commutes(op1::Vector{Int}, op2::Vector{Int}) # multiply to test commute => probably much slower than a custom implementation
+            if op1 == op2 || op1 == neutral_element || op2 == neutral_element
+                return true
+            end
+            prod_1 = op_product(op1, op2) # isa Vector{Tuple{ComplexRational,Vector{Int}}}
+            prod_2 = op_product(op2, op1) # isa Vector{Tuple{ComplexRational,Vector{Int}}}
+            # sort prod1 and prod2
+            if length(prod_1) != length(prod_2)
+                return false
+            end
+            sort!(prod_1, by=x -> x[2])
+            sort!(prod_2, by=x -> x[2])
+            for k in 1:length(prod_1)
+                if prod_1[k][2] != prod_2[k][2] || prod_1[k][1] != -prod_2[k][1]
+                    return false
+                end
+            end
+            return true
+        end
+        return new(name, fermion, len, neutral_element, base_ops, non_base_ops, ops, op_product, op_dag, op2str, op2latex, commutes)
+    end
 end
+#function OperatorSet
 function Base.show(io::IO, os::OperatorSet)
     type_str = os.fermion ? "Fermionic" : "Bosonic"
     op_str = ""
     for i in 1:length(os.ops)
-        op_str *= os.op2str(i, "p")
+        for j in 1:os.len
+            # place the i in j'th position 
+            z = zeros(Int, os.len)
+            z[j] = i
+            op_str *= os.op2str(z, "p")
+        end
         if i == os.neutral_element
             op_str *= " (identity)"
         end
@@ -265,9 +297,7 @@ struct StateSpace
     subspaces::Vector{SubSpace}
     where_continuum::Vector{Int}
     continuum_indexes::Vector{Vector{Int}}
-    fermionic_keys::Vector{String}
-    bosonic_keys::Vector{String}
-    neutral_op::Vector{Is}
+    neutral_op::Vector{Vector{Int}}
     neutral_continuum_op::Vector{Vector{Is}}
     subspace_by_ind::Vector{Int}
     fone::CAtom
@@ -277,10 +307,9 @@ struct StateSpace
     operatortypes_commutator_mat::Matrix{Bool}
     function StateSpace(args...; operators::Union{String, Vector{String}}="A", make_global::Bool=true, kwargs...)
         subspaces = Vector{SubSpace}()
-        fermionic_keys = String[]
-        bosonic_keys = String[]
         used_strings = Set{String}()
         op_index_ind_max = 1
+        counter_keys = 0
         for (key, val) in kwargs
             key_str = String(key)
             n = 1
@@ -303,10 +332,6 @@ struct StateSpace
             # Check for a pattern key: all characters are consecutive in the alphabet.
             if n > 1
                 continuum = true
-                # must be fermionic 
-                #if !op_set.fermion       # Outdated? Check if this works!!!
-                #    error("Baths (n > 1) must be fermionic operators.")
-                #end
                 # Generate indices starting from the first character of key_str.
                 if length(key_str) > 1
                     error("Pattern key ($key_str) must be a single character for spin baths.")
@@ -314,31 +339,18 @@ struct StateSpace
                 if key_str == "t"
                     error("Letter t is reserved for time, cannot be used for baths. ")
                 end
-                start_char = key_str[1]
-                keys = [string(Char(start_char) + i) for i in 0:(n-1)]
-                indices = [length(fermionic_keys) + i for i in 1:n]
-                # Ensure no letter is reused across subspaces.
+                start_char = Char(key_str[1])
+                keys = [string(start_char + i) for i in 0:(n-1)]
+                indices = [counter_keys + i for i in 1:n]
             else
                 # Here, the index list is just the key itself.
-                if op_set.fermion
-                    index = length(fermionic_keys) + 1
-                else
-                    index = length(bosonic_keys) + 1
-                end
+                indices = [counter_keys+1]
                 keys = [key_str]
-                indices = [index]
             end
-            if continuum && !op_set.fermion
-                error("Cannot Create non fermionic Continuum Subspaces!")
-            end
+            counter_keys += n
             op_index_inds = collect(op_index_ind_max:op_index_ind_max+n-1)
             op_index_ind_max += n
             push!(subspaces, SubSpace(key_str, keys, statespace_main_ind, indices, op_index_inds, op_set, continuum, op_set.fermion))
-            if op_set.fermion
-                append!(fermionic_keys, keys)
-            else
-                append!(bosonic_keys, keys)
-            end
             for c in keys
                 if c in used_strings
                     error("Duplicate string ($c) found in subspace definitions")
@@ -361,8 +373,7 @@ struct StateSpace
         end
         # Convert state variables (positional arguments) into strings.
         # Convert state variables (positional arguments) into Parameters.
-        # first sort args by length -> this helps avoid conflicts in potential string parsing, so that alpha' and alpha are both deteccted properly for example, since we search first for alpha'...
-        args = sort(collect(args), by=length, rev=true)
+        #args = sort(collect(args), by=length, rev=true)  # first sort args by length -> this helps avoid conflicts in potential string parsing, so that alpha' and alpha are both deteccted properly for example, since we search first for alpha'...
         for arg in args
             if !isa(arg, String)
                 error("Parameters must be declared via Strings, problem with $arg.")
@@ -458,10 +469,11 @@ struct StateSpace
         neutral_continuum_op::Vector{Vector{Is}} = [[neutral_op[i] for i in cont] for cont in continuum_indexes]
         where_by_continuum_var::Vector{Vector{Vector{Int}}} = [where_by_continuum[i] for i in where_continuum]
         subspace_by_ind::Vector{Int} = zeros(Int, length(neutral_op))
-        for (i, s) in zip(where_continuum, continuum_indexes)
-            subspace_by_ind[s] .= i
+        for (i, sub) in enumerate(subspaces)
+            inds = sub.statespace_inds
+            subspace_by_ind[inds] .= i
         end
-        qss = new(vars, vars_str, vars_cont, how_many_by_continuum, where_by_continuum, where_by_continuum_var, where_by_time, where_const, subspaces, where_continuum, continuum_indexes, fermionic_keys, bosonic_keys, neutral_op, neutral_continuum_op, subspace_by_ind, fone, operatortypes, operator_names, operatortypes_commutator_mat)
+        qss = new(vars, vars_str, vars_cont, how_many_by_continuum, where_by_continuum, where_by_continuum_var, where_by_time, where_const, subspaces, where_continuum, continuum_indexes, neutral_op, neutral_continuum_op, subspace_by_ind, fone, operatortypes, operator_names, operatortypes_commutator_mat)
         if make_global
             global GLOBAL_STATE_SPACE = qss
         end

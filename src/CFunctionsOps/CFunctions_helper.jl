@@ -1,9 +1,3 @@
-function isonelike(c::ComplexRational)::Bool 
-    if c.c == 1 && ( c.b == 0 && abs(c.a) == 1 )
-        return true 
-    end
-    return false
-end
 function printnumeric(f::CAtom)::Bool
     if isnumeric(f) && isonelike(f.coeff) 
         return false 
@@ -104,13 +98,16 @@ function common_exponent_offset(exponents::Vector{Vector{Int}})::Vector{Int}
 end
 
 function isonelike(f::CAtom)::Bool
-    return isonelike(f.coeff)
+    return isonelike(f.coeff) && isnumeric(f)
 end
 function simple_CSum(f::CSum)::Bool
     return all([typeof(term)==CAtom for term in f.terms])
 end
 function simple_CSum(f::CAtom)::Bool
     return true 
+end
+function simple_CSum(f::CFunction)::Bool
+    return false 
 end
 
 function separate_CSum(f::CSum )::Tuple{Bool, Union{CAtom, Nothing}, CSum}
@@ -125,7 +122,7 @@ function separate_CSum(f::CSum )::Tuple{Bool, Union{CAtom, Nothing}, CSum}
             return true, pre_f, new_f 
         end
     end
-    return false, nothing, copy(f)
+    return false, nothing, f
 end
 
 function simple_combinable_F(t1::T1, t2::T2)::Tuple{Bool, ComplexRational} where {T1 <: CFunction, T2 <: CFunction}

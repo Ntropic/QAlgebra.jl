@@ -1,7 +1,7 @@
 function reduce_qabstract_pair(a::QAbstract, b::QAbstract, statespace::StateSpace)::Tuple{Vector{QAbstract}, Bool}
     # must be exactly the same operator subtype
     if !same_term_type(a, b)
-        if qAtom_commute(a, b, statespace)
+        if commutes_QAbstract(a, b, statespace)
             if qAtom_sort_key(b) < qAtom_sort_key(a)
                 return QAbstract[b, a], false
             end

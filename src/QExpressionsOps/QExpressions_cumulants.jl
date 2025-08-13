@@ -190,8 +190,7 @@ struct QCumulant <:QComposite  # Must be QComposite to be in QExpr's
     where_acting::Vector{Int}
 end
 
-#Is = Union{Int,Vector{Int}}
-function replace_indexes(neutral_op::Vector{Is}, curr_op_indexes::Vector{Is}, indexes::Vector{Int}) 
+function replace_indexes(neutral_op::Vector{Vector{Int}}, curr_op_indexes::Vector{Vector{Int}}, indexes::Vector{Int}) 
     new_op = copy(neutral_op)
     for ind in indexes
         new_op[ind] = copy(curr_op_indexes[ind])
