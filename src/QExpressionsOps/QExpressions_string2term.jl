@@ -37,7 +37,7 @@ function string2qterm(statespace::StateSpace, operator_str::String="")::Tuple{Ve
             curr_coeff *= combo[i][1]
             push!(curr_inds, combo[i][2])
         end
-        push!(terms, QTerm(curr_inds))
+        push!(terms, QTerm(statespace, curr_inds))
         push!(coeffs, curr_coeff)
     end
     return terms, coeffs, var_exponents
@@ -78,7 +78,7 @@ function string2qabstract(statespace::StateSpace, operator_str::String)::QAbstra
         end
     end
     operator_type = statespace.operatortypes[key_index]
-    return QAbstract(operator_type, key_index, subindex, exp, conjugate) # subindex only printed if not -1 
+    return QAbstract(statespace, operator_type, key_index, subindex, exp, conjugate) # subindex only printed if not -1
 end
 
 """

@@ -6,7 +6,7 @@ using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, ^, product, iszero, copy
 using ..QAlgebra: get_default 
 using ..FFunctions: isnumeric
-export QObj, QAtom, QAbstract, QComposite, QCompositeProduct, QMultiComposite, QTerm, QAtomProduct, qExpr, QSum, Sum, ∑, diff_QEq, base_operators, simplify, simplifyqAtomProduct, flatten, neq, d_dt
+export QObj, QAtom, QAbstract, QComposite, QCompositeProduct, QMultiComposite, QTerm, QAtomProduct, qExpr, QSum, Sum, ∑, diff_QEq, QEq, base_operators, simplify, simplifyqAtomProduct, flatten, neq, d_dt
 
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
@@ -48,10 +48,14 @@ A `QTerm` represents a single term in a quantum expression. It contains:
     - `op_indices`: A vector of indices representing the operators in the term, which are also defined in a StateSpace.
 """
 struct QTerm <: QAtom
+    statespace::StateSpace
     op_indices::Vector{Is}
+    function QTerm(statespace::StateSpace, op_indices::Vector{Is})
+        new(statespace, op_indices)
+    end
 end
 function copy(q::QTerm)::QTerm
-    return QTerm(copy(q.op_indices))
+    return QTerm(q.statespace, copy(q.op_indices))
 end
 
 """
@@ -67,6 +71,7 @@ A purely‐symbolic abstract operator
 Is an instance of an OperatorType 
 """
 mutable struct QAbstract <: QAtom
+    statespace::StateSpace
     key_index::Int
     sub_index::Int
     exponent::Int
@@ -74,11 +79,11 @@ mutable struct QAbstract <: QAtom
     operator_type::OperatorType
     index_map::Vector{Tuple{Int,Int}}
 end
-function QAbstract(operator_type::OperatorType, key_index::Int, sub_index::Int=-1, exponent::Int=1, dag::Bool=false; index_map::Vector{Tuple{Int,Int}}=Tuple{Int,Int}[])
-    return QAbstract(key_index, sub_index, exponent, dag, operator_type, index_map)
+function QAbstract(statespace::StateSpace, operator_type::OperatorType, key_index::Int, sub_index::Int=-1, exponent::Int=1, dag::Bool=false; index_map::Vector{Tuple{Int,Int}}=Tuple{Int,Int}[])
+    return QAbstract(statespace, key_index, sub_index, exponent, dag, operator_type, index_map)
 end
 function copy(q::QAbstract)::QAbstract
-    return QAbstract(q.key_index, q.sub_index, q.exponent, q.dag, q.operator_type, copy(q.index_map))
+    return QAbstract(q.statespace, q.operator_type, q.key_index, q.sub_index, q.exponent, q.dag, index_map=copy(q.index_map))
 end
 
 
@@ -128,8 +133,8 @@ It also contains a reference to the state space in which the equation is defined
 """
 mutable struct qExpr <: QObj
     statespace::StateSpace
-    terms::Vector{QComposite}              #AbstractVector{<:QComposite}    
-    function qExpr(statespace::StateSpace, terms::AbstractVector{<:QComposite})
+    terms::Vector{QObj}              #AbstractVector{<:QObj}
+    function qExpr(statespace::StateSpace, terms::AbstractVector{<:QObj})
         if isempty(terms) 
             # add neotral zero term
             zero_term = QAtomProduct(statespace, statespace.fone*0, QAtom[])
@@ -138,16 +143,16 @@ mutable struct qExpr <: QObj
         return new(statespace, terms)
     end
 end
-function qExpr(term::T) where T<:QComposite
+function qExpr(term::T) where T<:QObj
     return qExpr(term.statespace, [term])
 end
-function qExpr(statespace::StateSpace, prod::T) where T<:QComposite
+function qExpr(statespace::StateSpace, prod::T) where T<:QObj
     return qExpr(statespace, [prod])
 end
 function qExpr(statespace::StateSpace, terms::QAtom)
     return qExpr(statespace, QAtomProduct(statespace, statespace.fone, [terms]))
 end
-function qExpr(terms::AbstractVector{<:QComposite})
+function qExpr(terms::AbstractVector{<:QObj})
     return qExpr(terms[1].statespace, terms)
 end
 function copy(q::qExpr)::qExpr
@@ -193,10 +198,12 @@ It represents time evolution of operator expectation values, and wraps the symbo
 - `statespace::StateSpace`: The StateSpace in which the equation is defined.
 - `braket::Bool`: Whether to use braket notation ⟨⋯⟩ (default = `true`).
 """
-struct diff_QEq <: QObj
+abstract type QEq <: QObj end
+
+struct diff_QEq <: QEq
     statespace::StateSpace
     left_hand_side::QAtomProduct
-    expr::qExpr 
+    expr::qExpr
     braket::Bool
 end
 function copy(q::diff_QEq)::diff_QEq

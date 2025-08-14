@@ -75,13 +75,13 @@ end
         end
     end
     if !is_numeric(commuting_qterm, ss)
-        push!(curr_combo, QTerm(commuting_qterm))
+        push!(curr_combo, QTerm(ss, commuting_qterm))
     else
         return [(one(ComplexRational), [x, y])], false
     end
     push!(curr_combo, x)
     if !is_numeric(non_commuting_qterm, ss)
-        push!(curr_combo, QTerm(non_commuting_qterm))
+        push!(curr_combo, QTerm(ss, non_commuting_qterm))
     end
     return Tuple{ComplexRational, Vector{QAtom}}[(one(ComplexRational), curr_combo)], true
 end

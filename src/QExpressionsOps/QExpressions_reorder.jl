@@ -37,7 +37,7 @@ end
 # QObj
 function reorder(q::QTerm, index_order::Vector{Int})::QTerm
     op_indices = q.op_indices[index_order]
-    return QTerm(op_indices)
+    return QTerm(q.statespace, op_indices)
 end
 function reorder(q::QAtomProduct, add_at_sum::Bool,  where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_index_order::Vector{Int})::QAtomProduct
     q.expr = [reorder(qq, index_order) for qq in q.expr]

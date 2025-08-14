@@ -207,7 +207,7 @@ function multiply_qterm(t1::QTerm, t2::QTerm, statespace::StateSpace)::Tuple{Vec
             new_factor *= c[1]
             push!(new_term, c[2])
         end
-        push!(new_terms, QTerm(new_term))
+        push!(new_terms, QTerm(statespace, new_term))
         push!(new_coeffs, new_factor)
     end
     return new_terms, new_coeffs
@@ -369,7 +369,7 @@ function Identity(qspace::StateSpace)
     # Build a vector of neutral operator indexes.
     neutral_ops = [s.op_set.neutral_element for s in qspace.subspaces for key in s.keys]
     # Create a single-term qExpr.
-    return qExpr(qspace, QAtomProduct(qspace, qspace.fone, QAtom[QTerm(qspace.neutral_op)]))
+    return qExpr(qspace, QAtomProduct(qspace, qspace.fone, QAtom[QTerm(qspace, qspace.neutral_op)]))
 end
 
 """
@@ -402,7 +402,7 @@ function Dag(qspace::StateSpace, t::QTerm)::Vector{Tuple{QTerm, ComplexRational}
             curr_coeff *= combo[i][1]
             push!(curr_inds, combo[i][2])
         end
-        push!(terms, QTerm(curr_inds))
+        push!(terms, QTerm(qspace, curr_inds))
         push!(coeffs, curr_coeff)
     end
     return collect(zip(terms, coeffs))

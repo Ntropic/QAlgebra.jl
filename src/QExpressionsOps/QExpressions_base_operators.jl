@@ -40,7 +40,7 @@ function base_operators(statespace::StateSpace; do_fun::Bool=false, formatted::B
             for base_op in base_ops
                 curr_operator = copy(neutral_operator)
                 curr_operator[index] = base_op
-                term = QTerm(curr_operator)
+                term = QTerm(statespace, curr_operator)
                 curr_name = op_set.op2str(base_op, key, formatted=formatted)
                 op_dict[curr_name] = qExpr(statespace, term)
             end
@@ -53,7 +53,7 @@ function base_operators(statespace::StateSpace; do_fun::Bool=false, formatted::B
                     curr_operator = copy(neutral_operator)
                     curr_operator[index] = op[2]
                     coeff = op[1]
-                    curr_prod = QAtomProduct(statespace, coeff, copy(var_exponents), QTerm(copy(curr_operator)))
+                    curr_prod = QAtomProduct(statespace, coeff, copy(var_exponents), QTerm(statespace, copy(curr_operator)))
                     push!(curr_terms, curr_prod)
                 end
                 if formatted
@@ -71,9 +71,9 @@ function base_operators(statespace::StateSpace; do_fun::Bool=false, formatted::B
     abstract_dict::Dict{String, Union{Function, qExpr}} = Dict()
     for (key_index, (name, operatortype)) in enumerate(zip(statespace.operator_names, statespace.operatortypes))
         if do_fun
-            abstract_dict[name] = (subindex=-1) -> qExpr(statespace, QAbstract(operatortype, key_index, subindex))
+            abstract_dict[name] = (subindex=-1) -> qExpr(statespace, QAbstract(statespace, operatortype, key_index, subindex))
         else
-            abstract_dict[name] = qExpr(statespace, QAbstract(operatortype, key_index))
+            abstract_dict[name] = qExpr(statespace, QAbstract(statespace, operatortype, key_index))
         end
     end
     return var_dict, op_dict, abstract_dict
@@ -108,7 +108,7 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                 for base_op in base_ops
                     curr_operator = copy(neutral_operator)
                     curr_operator[index] = base_op
-                    term = QTerm(curr_operator)
+                    term = QTerm(statespace, curr_operator)
                     curr_name = op_set.op2str(base_op, key, formatted=formatted)
                     op_dict[curr_name] = qExpr(statespace, term)
                 end
@@ -121,7 +121,7 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                         curr_operator = copy(neutral_operator)
                         curr_operator[index] = op[2]
                         coeff = op[1]
-                        curr_prod = QAtomProduct(statespace, coeff, copy(var_exponents), QTerm(copy(curr_operator)))
+                        curr_prod = QAtomProduct(statespace, coeff, copy(var_exponents), QTerm(statespace, copy(curr_operator)))
                         push!(curr_terms, curr_prod)
                     end
                     if formatted
@@ -141,13 +141,13 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
         if do_fun 
             abstract_dict::Dict{String, Function} = Dict()  
             for (key_index, (name, operatortype)) in enumerate(zip(statespace.operator_names, statespace.operatortypes))
-                abstract_dict[name] = (subindex=-1) -> qExpr(statespace, QAbstract(operatortype, key_index, subindex))
+                abstract_dict[name] = (subindex=-1) -> qExpr(statespace, QAbstract(statespace, operatortype, key_index, subindex))
             end
             return abstract_dict
         else
             abstract_dict2::Dict{String, qExpr} = Dict()
             for (key_index, (name, operatortype)) in enumerate(zip(statespace.operator_names, statespace.operatortypes))
-                abstract_dict2[name] = qExpr(statespace, QAbstract(operatortype, key_index))
+                abstract_dict2[name] = qExpr(statespace, QAbstract(statespace, operatortype, key_index))
             end
             return abstract_dict2
         end
@@ -211,9 +211,9 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                         op_str = inner_key * "_" * key 
                     end 
                     if do_dict
-                        curr_ops[op_str] = qExpr(statespace, QTerm(copy(curr_operator)))
+                        curr_ops[op_str] = qExpr(statespace, QTerm(statespace, copy(curr_operator)))
                     else
-                        push!(ops_vec, qExpr(statespace, QTerm(copy(curr_operator))))
+                        push!(ops_vec, qExpr(statespace, QTerm(statespace, copy(curr_operator))))
                     end
                 end
 
@@ -225,7 +225,7 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                         curr_operator = copy(neutral_operator)
                         curr_operator[index] = op[2]
                         coeff = op[1]
-                        curr_prod = QAtomProduct(statespace,coeff, copy(var_exponents), QTerm(copy(curr_operator)))
+                        curr_prod = QAtomProduct(statespace,coeff, copy(var_exponents), QTerm(statespace, copy(curr_operator)))
                         push!(curr_terms, curr_prod)
                     end
                     if formatted
@@ -251,10 +251,10 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
     # check for abstract operators
     for (key_index, (curr_name, operatortype)) in enumerate(zip(statespace.operator_names, statespace.operatortypes))
         if name == curr_name
-            if do_fun 
-                return (subindex=-1) -> qExpr(statespace, QAbstract(operatortype, key_index, subindex))
+            if do_fun
+                return (subindex=-1) -> qExpr(statespace, QAbstract(statespace, operatortype, key_index, subindex))
             else
-                return qExpr(statespace, QAbstract(operatortype, key_index))
+                return qExpr(statespace, QAbstract(statespace, operatortype, key_index))
             end
         else
             if contains(name, "_")

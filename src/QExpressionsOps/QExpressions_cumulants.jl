@@ -241,9 +241,9 @@ end
         curr_atoms = Vector{QTerm}(undef, length(indexes))
         # replace indexes from neutral with tthose in qterm 
         for (i, ind) in enumerate(indexes)
-            curr_atoms[i] = QTerm(neutral_op, replace_indexes(neutral_op, curr_op_indexes, ind))
+            curr_atoms[i] = QTerm(statespace, replace_indexes(neutral_op, curr_op_indexes, ind))
         end
-        qexpr[j] = QAtomProduct(curr_atoms, coeff_fun*coeff, statespace)
+        qexpr[j] = QAtomProduct(statespace, coeff_fun*coeff, curr_atoms)
     end
     return QCumulant(statespace, copy(atom), qexpr, order, where_acting)
 end
