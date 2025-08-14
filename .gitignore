@@ -24,4 +24,5 @@ docs/site/
 Manifest.toml
 
 # prototyping/
-citation_comments.md
+**/citation_comments.md
+**/statprof*/

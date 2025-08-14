@@ -2,7 +2,7 @@ function reduce_qabstract_pair(a::QAbstract, b::QAbstract, statespace::StateSpac
     # must be exactly the same operator subtype
     if !same_term_type(a, b)
         if commutes_QAbstract(a, b, statespace)
-            if qAtom_sort_key(b) < qAtom_sort_key(a)
+            if b < a
                 return QAbstract[b, a], false
             end
         end

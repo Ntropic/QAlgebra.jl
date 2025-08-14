@@ -250,7 +250,7 @@ function group_qAtomProducts(qs::Vector{QAtomProduct})::Vector{Union{QAtomProduc
     new_qs = []
     for (coeffs, indexes) in zip(coeff_groups, indexes)
         if !( coeffs isa Tuple )
-            push!(new_qs, copy(qs[indexes[1]]))
+            push!(new_qs, qs[indexes[1]])
         else
             pre_F = coeffs[1]
             post_F = coeffs[2]
@@ -286,23 +286,23 @@ function allnegative(x::Vector{Tuple{Bool, String}})::Bool
 end
 function QExpr2string(q::QExpr; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_grouping::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     # outputs sign, string, {optional return_grouping:} single_group::Bool   => return grouping implies that the expression will be braced if it isn't already! , hence the outputted sign is handled differently 
-    q_sorted = sort(q)  # sorts by term
+    sort!(q)  # sorts by term
     if !braced # outside (not inside of a QComposite)
         if !return_grouping
-            return QComposites2string(q_sorted.terms, do_latex=do_latex, braced=braced, do_frac=do_frac, separate_sign=true)
+            return QComposites2string(q.terms, do_latex=do_latex, braced=braced, do_frac=do_frac, separate_sign=true)
         else
-            first_sign, total_string = QComposites2string(q_sorted.terms, do_latex=do_latex, braced=braced, do_frac=do_frac, separate_sign=true)
+            first_sign, total_string = QComposites2string(q.terms, do_latex=do_latex, braced=braced, do_frac=do_frac, separate_sign=true)
             return first_sign, total_string, false
         end
     else  # inside another QComposite
         # separate into QAtomProduct and other QComposite terms -> sorting puts qAtomProducts first 
         # then group qAtomProducts by their factors 
-        first_non_qAtomProduct = findfirst(x -> !isa(x, QAtomProduct), q_sorted.terms)
+        first_non_qAtomProduct = findfirst(x -> !isa(x, QAtomProduct), q.terms)
         if first_non_qAtomProduct === nothing
-            first_non_qAtomProduct = length(q_sorted.terms) + 1
+            first_non_qAtomProduct = length(q.terms) + 1
         end
-        qAtomProduct_terms::Vector{QAtomProduct} = q_sorted.terms[1:first_non_qAtomProduct-1]
-        other_terms = q_sorted.terms[first_non_qAtomProduct:end]
+        qAtomProduct_terms::Vector{QAtomProduct} = q.terms[1:first_non_qAtomProduct-1]
+        other_terms = q.terms[first_non_qAtomProduct:end]
         groups = group_qAtomProducts(qAtomProduct_terms)
         # create strings for each element 
         all_strings::Vector{Tuple{Bool, String}} = []

@@ -13,7 +13,6 @@ struct QCommutator <: QMultiComposite
         new(QCommutator(q1.statespace, copy(q1.statespace.fone), QExpr[simplify_QExpr(q1), simplify_QExpr(q2)]))
     end
 end
-copy(q::QCommutator) = QCommutator(q.statespace, q.coeff_fun, q.expr)
 modify_expr(q::QCommutator, expr::Vector{QExpr}) = QCommutator(q.statespace, q.coeff_fun, expr)
 modify_coeff_expr(q::QCommutator, coeff_fun::CFunction, expr::Vector{QExpr}) = QCommutator(q.statespace, coeff_fun, expr)
 modify_coeff(q::QCommutator, coeff_fun::CFunction) = QCommutator(q.statespace, coeff_fun, q.expr)
@@ -28,37 +27,36 @@ struct QCompositeProduct <: QMultiComposite
     coeff_fun::CFunction
     expr::Vector{QExpr} 
     function QCompositeProduct(statespace::StateSpace, coeff_fun::CFunction, expr::Vector{QExpr} )
-        new(statespace, copy(coeff_fun), expr)
+        new(statespace, coeff_fun, expr)
     end
     function QCompositeProduct(coeff_fun::CFunction, expr::Vector{QExpr} )
-        new(expr[1].statespace, copy(coeff_fun), copy.(expr))
+        new(expr[1].statespace, coeff_fun, expr)
     end
     function QCompositeProduct(coeff_fun::CFunction, expr::Vector{QComposite} )
-        new(expr[1].statespace, copy(coeff_fun), [QExpr([x]) for x in expr])
+        new(expr[1].statespace, coeff_fun, [QExpr([x]) for x in expr])
     end
     function QCompositeProduct(statespace::StateSpace, expr::Vector{QExpr} )
-        new(statespace, copy(statespace.fone), copy.(expr))
+        new(statespace, statespace.fone, expr)
     end
     function QCompositeProduct(expr::Vector{QExpr} )
-        new(expr[1].statespace, copy(expr[1].statespace.fone), copy.(expr))
+        new(expr[1].statespace, expr[1].statespace.fone, expr)
     end
     function QCompositeProduct(expr::Vector{QComposite} )
-        new(expr[1].statespace, copy(expr[1].statespace.fone), [QExpr([x]) for x in expr])
+        new(expr[1].statespace, expr[1].statespace.fone, [QExpr([x]) for x in expr])
     end
     function QCompositeProduct(statespace::StateSpace, coeff_fun::CFunction, expr::Vector{QExpr}, ::Val{:simp})
-        new(statespace, copy(coeff_fun), simplify_QExpr(expr))
+        new(statespace, coeff_fun, simplify_QExpr(expr))
     end
     function QCompositeProduct(coeff_fun::CFunction, expr::Vector{QExpr} , ::Val{:simp})
-        new(expr[1].statespace, copy(coeff_fun), simplify_QExpr(expr))
+        new(expr[1].statespace, coeff_fun, simplify_QExpr(expr))
     end
     function QCompositeProduct(statespace::StateSpace, expr::Vector{QExpr} , ::Val{:simp})
-        new(statespace, copy(statespace.fone), simplify_QExpr(expr))
+        new(statespace, statespace.fone, simplify_QExpr(expr))
     end
     function QCompositeProduct(expr::Vector{QExpr} , ::Val{:simp})
-        new(expr[1].statespace, copy(expr[1].statespace.fone), simplify_QExpr(expr))
+        new(expr[1].statespace, expr[1].statespace.fone, simplify_QExpr(expr))
     end
 end
-copy(q::QCompositeProduct) = QCompositeProduct(q.statespace, q.coeff_fun, q.expr)
 modify_expr(q::QCompositeProduct, expr::Vector{QExpr}) = QCompositeProduct(q.statespace, q.coeff_fun, expr)
 modify_coeff_expr(q::QCompositeProduct, coeff_fun::CFunction, expr::Vector{QExpr}) = QCompositeProduct(q.statespace, coeff_fun, expr)
 modify_coeff(q::QCompositeProduct, coeff_fun::CFunction) = QCompositeProduct(q.statespace, coeff_fun, q.expr)
@@ -76,13 +74,12 @@ struct QExp <: QComposite
             sum_of_coeff_funs = sum(qi.coeff_fun for qi in expr)
             return modify_coeff(expr[1], coeff_fun * exp(sum_of_coeff_funs)) 
         end
-        new(statespace, copy(coeff_fun), simplify_QExpr(expr))
+        new(statespace, coeff_fun, simplify_QExpr(expr))
     end
 end
 function exp(q::QExpr)::QExpr
     return QExpr([QExp(q.statespace, q.statespace.fone, q)])
 end
-copy(q::QExp) = QExp(q.statespace, q.coeff_fun, q.expr)
 modify_expr(q::QExp, expr::QExpr) = QExp(q.statespace, q.coeff_fun, expr)
 modify_coeff_expr(q::QExp, coeff_fun::CFunction, expr::QExpr) = QExp(q.statespace, coeff_fun, expr)
 modify_coeff(q::QExp, coeff_fun::CFunction) = QExp(q.statespace, coeff_fun, q.expr)
@@ -100,13 +97,12 @@ struct QLog <: QComposite
             sum_of_coeff_funs = sum(qi.coeff_fun for qi in expr)
             return modify_coeff(expr[1], coeff_fun * log(sum_of_coeff_funs)) 
         end
-        return new(statespace, copy(coeff_fun), simplify_QExpr(expr))
+        return new(statespace, coeff_fun, simplify_QExpr(expr))
     end
 end
 function log(q::QExpr)::QExpr
     return QExpr([QLog(q.statespace, q.statespace.fone, q)])
 end
-copy(q::QLog) = QLog(q.statespace, q.coeff_fun, q.expr)
 modify_expr(q::QLog, expr::QExpr) = QLog(q.statespace, q.coeff_fun, expr)
 modify_coeff_expr(q::QLog, coeff_fun::CFunction, expr::QExpr) = QLog(q.statespace, coeff_fun, expr)
 modify_coeff(q::QLog, coeff_fun::CFunction) = QLog(q.statespace, coeff_fun, q.expr)
@@ -122,10 +118,9 @@ struct QPower <: QCompositeN
             sum_of_coeff_funs = sum(qi.coeff_fun for qi in expr)
             return modify_coeff(expr[1], coeff_fun * power(sum_of_coeff_funs, n))
         end
-        return new(statespace, copy(coeff_fun), n, simplify_QExpr(expr))
+        return new(statespace, coeff_fun, n, simplify_QExpr(expr))
     end
 end
-copy(q::QPower) = QPower(q.statespace, q.coeff_fun, q.n, q.expr)
 modify_expr(q::QPower, expr::QExpr) = QPower(q.statespace, q.coeff_fun, q.n, expr)
 modify_coeff_expr(q::QPower, coeff_fun::CFunction, expr::QExpr) = QPower(q.statespace, coeff_fun, q.n, expr)
 modify_coeff(q::QPower, coeff_fun::CFunction) = QPower(q.statespace, coeff_fun, q.n, q.expr)
@@ -153,7 +148,7 @@ struct QRoot <: QCompositeN
             sum_of_coeff_funs = sum(qi.coeff_fun for qi in expr)
             return modify_coeff(expr[1], coeff_fun * root(sum_of_coeff_funs, n))
         end 
-        new(statespace, copy(coeff_fun), n, simplify_QExpr(expr))
+        new(statespace, coeff_fun, n, simplify_QExpr(expr))
     end
 end
 """ 
@@ -170,7 +165,6 @@ end
 function sqrt(q::QExpr)::QExpr
     return QExpr([QRoot(q.statespace, q.statespace.fone, 2, q)])
 end
-copy(q::QRoot) = QRoot(q.statespace, q.coeff_fun, q.n, q.expr)
 modify_expr(q::QRoot, expr::QExpr) = QRoot(q.statespace, q.coeff_fun, q.n, expr)
 modify_coeff_expr(q::QRoot, coeff_fun::CFunction, expr::QExpr) = QRoot(q.statespace, coeff_fun, q.n, expr)
 modify_coeff(q::QRoot, coeff_fun::CFunction) = QRoot(q.statespace, coeff_fun, q.n, q.expr)

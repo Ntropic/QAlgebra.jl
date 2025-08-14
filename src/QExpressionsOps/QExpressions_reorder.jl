@@ -89,7 +89,6 @@ This allows simplify to further simplify expressions, by removing
 """
 function reorder(q::diff_QEq)::diff_QEq
     # check index order on left side 
-    q = copy(q)
     where_defined_lhs = which_continuum_acting(q.left_hand_side)
     op_inds, var_inds = where_defined_to_index_order(q.statespace, where_defined_lhs)
     # check if op_inds is not sorted (i.e. not equal to 1:length(op_inds))

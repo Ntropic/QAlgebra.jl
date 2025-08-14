@@ -59,8 +59,10 @@ struct QTerm <: QAtom
     function QTerm(op_indices::Vector{Vector{Int}})
         return new(copy.(op_indices))
     end
+    function QTerm(op_indices::Vector{Vector{Int}}, ::Val{:nocopy})
+        return new(op_indices)
+    end
 end
-copy(q::QTerm)::QTerm = QTerm(q.op_indices)
 
 """
     QAbstract(indices::Vector{Int})
@@ -85,9 +87,8 @@ struct QAbstract <: QAtom
         return new(key_index, sub_index, exponent, dag, operator_type, copy.(index_map))
     end
 end
-copy(q::QAbstract)::QAbstract = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, q.dag, index_map=q.index_map)
 dag_copy(q::QAbstract)::QAbstract = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, !q.dag, index_map=q.index_map)
-
+add_to_index_map(q::QAbstract, added_index_pair::Tuple{Int,Int}) = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, q.dag, vcat(q.index_map, added_index_pair))
 
 """ 
     QAtomProduct
@@ -104,19 +105,18 @@ struct QAtomProduct <: QComposite
     expr::Vector{QAtom}             # Vector of qAtoms (qTerms or QAbstract).
     separate_expectation_values::Bool 
     function QAtomProduct(statespace::StateSpace, coeff::T, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false) where T <: CFunction
-        new(statespace, copy(coeff), copy.(expr), separate_expectation_values)
+        new(statespace, coeff, expr, separate_expectation_values)
     end
     function QAtomProduct(statespace::StateSpace, coeff::T, expr::S, separate_expectation_values::Bool=false) where {T <: CFunction, S <: QAtom}
-        new(statespace, copy(coeff), [copy(expr)], separate_expectation_values)
+        new(statespace, coeff, [expr], separate_expectation_values)
     end
     function QAtomProduct(statespace::StateSpace, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false) 
-        new(statespace, copy(statespace.fone), copy.(expr), separate_expectation_values)
+        new(statespace, statespace.fone, expr, separate_expectation_values)
     end
     function QAtomProduct(statespace::StateSpace, expr::S, separate_expectation_values::Bool=false) where {S <: QAtom}
-        new(statespace, copy(statespace.fone), [copy(expr)], separate_expectation_values)
+        new(statespace, statespace.fone, [expr], separate_expectation_values)
     end
 end
-copy(q::QAtomProduct)::QAtomProduct = QAtomProduct(q.statespace, q.coeff_fun, q.expr, q.separate_expectation_values)
 modify_expr(q::QAtomProduct, expr::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, q.coeff, expr, q.separate_expectation_values)
 modify_coeff_expr(q::QAtomProduct, coeff::CFunction, expr::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, coeff, expr, q.separate_expectation_values)
 modify_coeff(q::QAtomProduct, coeff::CFunction)::QAtomProduct = QAtomProduct(q.statespace, coeff, q.expr, q.separate_expectation_values)
@@ -148,10 +148,10 @@ struct QExpr <: QObj
         return new(statespace, simplify_QExpr(Vector{QComposite}(terms)))
     end
     function QExpr(terms::AbstractVector{<:QComposite})
-        return new(terms[1].statespace, copy.(terms))
+        return new(terms[1].statespace, copy(terms))
     end
     function QExpr(statespace::StateSpace, prod::T) where T<:QComposite
-        return new(statespace, QComposite[copy(prod)])
+        return new(statespace, QComposite[prod])
     end
     function QExpr(statespace::StateSpace, terms::QAtom)
         return new(statespace, QComposite[QAtomProduct(statespace,terms)])
@@ -184,10 +184,10 @@ struct QSum <: QComposite
     element_indexes::Vector{Int}    # The position in that subspace.
     neq::Bool
     function QSum(statespace::StateSpace, expr::QExpr, indexes::Vector{String}, subsystem_index::Int, element_indexes::Vector{Int}, neq::Bool)
-        return new(statespace,  expr, copy(indexes), subsystem_index, copy.(element_indexes), neq)
+        return new(statespace,  expr, copy(indexes), subsystem_index, copy(element_indexes), neq)
     end
     function QSum(statespace::StateSpace, expr::QExpr, indexes::Vector{String}, subsystem_index::Int, element_indexes::Vector{Int}, neq::Bool, ::Val{:simp})
-        return new(statespace,  expr, copy(indexes), subsystem_index, copy.(element_indexes), neq)
+        return new(statespace,  expr, copy(indexes), subsystem_index, copy(element_indexes), neq)
     end
 end
 copy(q::QSum)::QSum = QSum(q.statespace,q.expr, q.indexes, q.subsystem_index, q.element_indexes, q.neq)
@@ -226,7 +226,7 @@ Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
 function diff_QEq(statespace::StateSpace, left_hand_side::QAtomProduct, expr::QExpr; braket::Bool=true)
     new_rhs = neq(expr)
-    return diff_QEq(statespace, copy(left_hand_side), new_rhs, braket)
+    return diff_QEq(statespace, left_hand_side, new_rhs, braket)
 end
 
 """
@@ -268,7 +268,7 @@ function Sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bo
         if length(e_inds) != length(unique(e_inds))
             error("Duplicate indexes found in the input.")
         end
-        e_inds = sort(e_inds)
+        sort!(e_inds)
         return QExpr(ss, [QSum(ss, expr, index_strs, the_s_ind, e_inds, neq, Val(:simp))])
     else
         return expr
@@ -313,7 +313,7 @@ include("QExpressionsOps/QExpressions_functions.jl")
 include("QExpressionsOps/QExpressions_helper.jl") # Helper functions for QAtomProduct simplify
 
 include("QExpressionsOps/QExpressions_base_operators.jl")
-include("QExpressionsOps/QExpressions_sorting.jl")
+include("QExpressionsOps/QExpressions_sort.jl")
 include("QExpressionsOps/QExpressions_simplify.jl")
 
 include("QExpressionsOps/QExpressions_string2term.jl")

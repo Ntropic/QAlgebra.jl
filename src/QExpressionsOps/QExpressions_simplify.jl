@@ -56,14 +56,14 @@ function simplify_QExpr(terms::Vector{QComposite})::Vector{QComposite}
     end
     
     # First, sort QExpr without modifying the original.
-    sorted_terms = _sort(terms)
+    sort!(terms)
 
     combined_terms = QComposite[]
     i = 1
-    curr_term = sorted_terms[1]
-    while i < length(sorted_terms)
+    curr_term = terms[1]
+    while i < length(terms)
         # Combine adjacent like terms.
-        next_term = sorted_terms[i+1]
+        next_term = terms[i+1]
         if same_term_type(curr_term, next_term)
             curr_term = combine_term_sum(curr_term, next_term)
         else

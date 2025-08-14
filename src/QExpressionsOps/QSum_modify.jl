@@ -1,4 +1,5 @@
 #### Flatten 
+import Base.Iterators: flatten
 """
 flatten(qeq::QExpr) -> QExpr
 
@@ -6,7 +7,6 @@ Flattens nested Sums in quantum Equations (QExpr).
 Does not support QSums within QComposites within QSums!
 """
 function flatten(s::QSum, in_sum::Bool = false, in_sum_comp::Bool = false)
-    s = copy(s)
     # first, fully flatten the body
     if in_sum_comp && in_sum
         error("Unsupported: QSum found inside QComposite structure within an outer QSum.")
@@ -49,7 +49,7 @@ function flatten(s::QSum, in_sum::Bool = false, in_sum_comp::Bool = false)
 end 
 
 function flatten(q::QAtomProduct, in_sum::Bool = false, in_sum_comp::Bool = false)
-    return [copy(q)] 
+    return [q] 
 end
 function flatten(q::T, in_sum::Bool = false, in_sum_comp::Bool = false) where T<:QComposite
     return [modify_expr(q, flatten(q.expr))]
@@ -82,10 +82,10 @@ function term_equal_indexes(term::QTerm, index1::Int, index2::Int, subspace::Sub
     new_terms = QTerm[]
     new_coeffs = ComplexRational[]
     for (coeff, op) in results
-        new_term = copy(term)
-        new_term.op_indices[index2] = op
-        new_term.op_indices[index1] = neutral
-        push!(new_terms, new_term)
+        op_indices = copy(term.op_indices)
+        op_indices[index2] = op
+        op_indices[index1] = neutral
+        push!(new_terms, QTerm(op_indices, Val(:nocopy)))
         push!(new_coeffs, coeff)
     end
     return true, new_terms, new_coeffs
@@ -95,9 +95,7 @@ function term_equal_indexes(abstract::QAbstract, index1::Int, index2::Int, subsp
     op_type = abstract.operator_type
     non_trivial_op_indices = op_type.non_trivial_op_indices
     if non_trivial_op_indices[index2]
-        new_abstract = copy(abstract)
-        push!(new_abstract.index_map, (index1, index2))
-        return true, QAbstract[new_abstract], ComplexRational[ComplexRational(1,0,1)]
+        return true, QAbstract[add_to_index_map(abstract, (index1, index2))], ComplexRational[ComplexRational(1,0,1)]
     end
     # append this rule to the index map 
     return false, QAbstract[abstract], ComplexRational[ComplexRational(1,0,1)]
@@ -264,7 +262,7 @@ function neq_qsum(s::QSum, index::Int=1)::QExpr
                             pieces += QSum(s.statespace, QExpr(ss, new_terms, Val(:simp)), new_indexes, expr.subsystem_index, new_element_indexes, true)
                         end
                     else # no change to sum structure
-                        pieces += QSum(s.statespace, QExpr(ss, new_terms, Val(:simp)), copy(expr.indexes), expr.subsystem_index, copy(expr.element_indexes), true)
+                        pieces += QSum(s.statespace, QExpr(ss, new_terms, Val(:simp)), expr.indexes, expr.subsystem_index, expr.element_indexes, true)
                     end
                 end
             else ## Old - no longer sufficient: if isa(expr, QTerm)

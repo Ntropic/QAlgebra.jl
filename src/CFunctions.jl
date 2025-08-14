@@ -71,7 +71,7 @@ struct CSum <: CFunction
     terms::Vector{CFunction}
     function CSum(ts::AbstractVector{<:CFunction}) 
         if length(ts) == 1
-            return copy(ts[1])
+            return ts[1]
         end
         for t in ts
             if t isa CSum
@@ -81,7 +81,7 @@ struct CSum <: CFunction
         return simplify_CSum(ts)
     end
     function CSum(ts::AbstractVector{<:CFunction}, ::Val{:nosimp})
-        return new(copy.(ts))
+        return new(ts)
     end
 end
 copy(x::CSum) = CSum(x.terms, Val{:nosimp}())
@@ -89,7 +89,7 @@ coeff(x::CSum) = [ComplexRational(1,0,1)] #error("Sums don't have a coeff, you l
 var_exponents(x::CSum) = error("Sums don't have var_exponents, you likely have a sum in a sum, this shouldn't happen. Please inform the developers. ")
 dims(q::CSum) = dims(q.terms[1])
 length(q::CSum) = length(q.terms)
-reorder(f::CSum, var_index_order::Vector{Int})::CSum = CSum(reorder.(f.terms, Ref(var_index_order)) )
+reorder(f::CSum, var_index_order::Vector{Int}) = CSum(reorder.(f.terms, Ref(var_index_order)) )
 
 
 struct CProd <: CFunction
@@ -102,7 +102,7 @@ struct CProd <: CFunction
         return simplify_CProd(coeff, terms)
     end
     function CProd(coeff::ComplexRational, terms::AbstractVector{<:CFunction}, ::Val{:nosimp})
-        return new(coeff, copy.(terms))
+        return new(coeff, copy(terms))
     end
 end
 function CProd(terms::AbstractVector{<:CFunction})
@@ -113,7 +113,7 @@ coeff(x::CProd) = [x.coeff]
 var_exponents(x::CProd) = vcat(var_exponents.(x.terms)...)
 dims(q::CProd) = dims(q.terms[1])
 length(q::CProd) = max(length.(q.terms)...)
-reorder(f::CProd, var_index_order::Vector{Int})::CSum = CProd(f.coeff, reorder.(f.terms, Ref(var_index_order)) )
+reorder(f::CProd, var_index_order::Vector{Int})= CProd(f.coeff, reorder.(f.terms, Ref(var_index_order)) )
 
 
 """
