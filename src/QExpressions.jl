@@ -6,7 +6,7 @@ using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, ^, product, iszero, copy
 using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
 using ..CFunctions: isnumeric
-export QObj, QAtom, QAbstract, QComposite, QCompositeN, QCompositeProduct, QMultiComposite, QTerm, QAtomProduct, QExpr, QSum, Sum, ∑, diff_QEq, base_operators, simplify, simplify_QAtomProduct, flatten, neq, d_dt
+export QEq, QObj, QAtom, QAbstract, QComposite, QCompositeN, QCompositeProduct, QMultiComposite, QTerm, QAtomProduct, QExpr, QSum, Sum, ∑, diff_QEq, base_operators, simplify, simplify_QAtomProduct, flatten, neq, d_dt
 
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
@@ -47,6 +47,14 @@ abstract type QCompositeN <: QComposite end  # QComposite with additional argume
 Abstract type for composite expressions that contain a Vector of QExpr objects.
 """
 abstract type QMultiComposite <: QComposite end
+
+""" 
+    QEq
+
+The abstract type `QEq` is the base type for all quantum expressions in this module.
+"""
+abstract type QEq end  # most general
+
 
 """
     QTerm
@@ -209,7 +217,7 @@ It represents time derivative of an operator expectation value, and wraps the sy
 - `statespace::StateSpace`: The StateSpace in which the equation is defined.
 - `braket::Bool`: Whether to use braket notation ⟨⋯⟩ (default = `true`).
 """
-struct diff_QEq <: QObj
+struct diff_QEq <: QEq
     statespace::StateSpace
     left_hand_side::QAtomProduct
     expr::QExpr 

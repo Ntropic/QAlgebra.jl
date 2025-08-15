@@ -349,7 +349,11 @@ function numer(s::CAtom)::Vector{Int}
     return [s.coeff.a, s.coeff.b]
 end
 function numer(s::CSum)::Vector{Int}
-    return vcat([numer(t) for t in s.terms]...)
+    ints::Vector{Int} = Int[]
+    for t in s.terms 
+        append!(ints, numer(t))
+    end
+    return ints 
 end
 function numer(a::CProd)::Vector{Int}
     return [a.coeff.a, a.coeff.b]
