@@ -95,7 +95,7 @@ function QubitPM(symbol::String="")::OperatorSet
         # everything commutes with 4, otherwise must be the same
         return (op1[1] == 4 || op2[1] == 4 || op1[1] == op2[1])
     end
-    return OperatorSet("PM Qubit", true, 1, [4], base_pm, non_base_ops, ops, pm_product, pm_dag, pm2str, pm2latex, pmcommutes)
+    return OperatorSet("PM Qubit", "Fermion", 1, [4], base_pm, non_base_ops, ops, pm_product, pm_dag, pm2str, pm2latex, pmcommutes)
 end
 # Test 
 #q = QubitPM()

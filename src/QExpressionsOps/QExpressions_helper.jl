@@ -63,8 +63,8 @@ end
 end
 
 @inline function simplify_pair(x::QAbstract, y::QTerm, ss::StateSpace)
-    commuting_qterm = copy(ss.neutral_op)
-    non_commuting_qterm = copy(ss.neutral_op)
+    commuting_qterm = copy(ss.I_op)
+    non_commuting_qterm = copy(ss.I_op)
     c_abstract = where_acting(x, ss)
     curr_combo = Vector{QAtom}()
     for (i, (b, q_ind)) in enumerate(zip(c_abstract, y.op_indices))

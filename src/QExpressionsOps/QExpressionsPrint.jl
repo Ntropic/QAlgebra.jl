@@ -12,7 +12,7 @@ function operators2string(op_indices::Vector{Vector{Int}}, statespace::StateSpac
     i = 0
     for subspace in subspaces
         op_set = subspace.op_set
-        for (ind, key) in zip(subspace.statespace_inds, subspace.keys)
+        for (ind, key) in zip(subspace.ss_inner_ind, subspace.keys)
             i += 1
             curr_op_ind = op_indices[i]
             if op_set.neutral_element != curr_op_ind

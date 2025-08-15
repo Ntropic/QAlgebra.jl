@@ -32,7 +32,7 @@ function simplify_CSum(elements::AbstractVector{<:CFunction})
     if length(new_elements) == 0 
         push!(new_elements, CAtom(0, zeros(Int, dims(elements[1]))))
     end
-    return CSum(new_elements, Val{:nosimp}())
+    return CSum(new_elements, Val(:nosimp))
 end
 function simplify(s::CSum)
     # first simplify the lower levels 
@@ -68,11 +68,11 @@ function simplify_CRational(n::CFunction, d::CFunction)
         if isnumeric(d)
             return n/d.coeff
         end
-        return CRational(n, d, Val{:nosimp}())
+        return CRational(n, d, Val(:nosimp))
     elseif isa(d, CRational)
         return (n*d.denom) / d.numer
     else
-        return CRational(n, d, Val{:nosimp}())
+        return CRational(n, d, Val(:nosimp))
     end
 end
 function simplify(r::CRational)
@@ -87,7 +87,7 @@ function simplify_CExp(coeff::ComplexRational, x::CFunction)
     elseif iszero(x)
         return CAtom(coeff, zeros(Int, dims(x)))
     end
-    return CExp(coeff, x, Val{:nosimp}())
+    return CExp(coeff, x, Val(:nosimp))
 end
 function simplify(e::CExp)
     return simplify_CExp(e.coeff, e.x)
@@ -102,7 +102,7 @@ function simplify_CLog(coeff::ComplexRational, x::CFunction)
     if isone(x)
         return CAtom(0, zeros(Int, dims(x)))
     end
-    return CLog(coeff, x, Val{:nosimp}()) 
+    return CLog(coeff, x, Val(:nosimp)) 
 end
 function simplify(l::CLog)
     return simplify_CLog(l.coeff, l.x)
@@ -176,7 +176,7 @@ function simplify_CProd(coeff::ComplexRational, terms::AbstractVector{<:CFunctio
     if length(final_terms) == 1
         return coeff*final_terms[1]
     end
-    return CProd(coeff, final_terms, Val{:nosimp}())
+    return CProd(coeff, final_terms, Val(:nosimp))
 end
 
 function simplify(p::CProd)
@@ -277,19 +277,19 @@ function unify_add(a::CSum, b::CSum)::CFunction
 end
 function unify_add(a::CProd, b::CProd)::CFunction
     absum = a.coeff+b.coeff
-    return CProd(absum, copy(a.terms), Val{:nosimp}())
+    return CProd(absum, copy(a.terms), Val(:nosimp))
 end
 function unify_add(a::CRational, b::CRational)::CFunction
     simple_numer = simplify(a.numer+b.numer)
-    return CRational(simple_numer, copy(a.denom), Val{:nosimp}())
+    return CRational(simple_numer, copy(a.denom), Val(:nosimp))
 end
 function unify_add(a::CExp, b::CExp)::CFunction
     absum = a.coeff+b.coeff
-    return CExp(absum, copy(a.x), Val{:nosimp}())
+    return CExp(absum, copy(a.x), Val(:nosimp))
 end
 function unify_add(a::CLog, b::CLog)::CFunction
     absum = a.coeff+b.coeff
-    return CLog(absum, copy(a.x), Val{:nosimp}())
+    return CLog(absum, copy(a.x), Val(:nosimp))
 end 
 
 issimple(f::CFunction) = error("Not implemented for type $(typeof(f)).")
@@ -328,15 +328,15 @@ function vec_multiply(x::CAtom, vector::Vector{Int})::CAtom
     return CAtom(x.coeff, x.var_exponents + vector)
 end
 function vec_multiply(x::CSum, vector::Vector{Int})::CSum
-    return CSum([vec_multiply(t, vector) for t in x.terms], Val{:nosimp}())
+    return CSum([vec_multiply(t, vector) for t in x.terms], Val(:nosimp))
 end
 function vec_multiply(x::CRational, vector::Vector{Int})::CRational
-    return CRational(vec_multiply(x.numer), vec_multiply(x.denom), Val{:nosimp}())
+    return CRational(vec_multiply(x.numer), vec_multiply(x.denom), Val(:nosimp))
 end
 function vec_multiply(x::CProd, vector::Vector{Int})::CProd
     terms = x.terms
     terms[1] = vec_multiply(terms[1], vector)   
-    return CProd(x.coeff, terms, Val{:nosimp}()) 
+    return CProd(x.coeff, terms, Va(:nosimp)) 
 end
 
 

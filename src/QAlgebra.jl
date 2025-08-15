@@ -75,7 +75,7 @@ export reorder
 export string, latex_string
 export term
 
-export contains_abstract, which_continuum_acting, are_indexes_defined
+export contains_abstract, which_ensemble_acting, are_indexes_defined
 export substitute
 export reorder!
 export QExpr2string   # remove later 

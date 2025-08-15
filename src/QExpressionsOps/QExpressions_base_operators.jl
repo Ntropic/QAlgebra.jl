@@ -21,7 +21,7 @@ function base_operators(statespace::StateSpace; do_fun::Bool=false, formatted::B
     CRone = one(ComplexRational)
     var_exponents = zeros(Int, length(statespace.vars))
     #abstract_dict::Dict{String,QExpr} = Dict()
-    neutral_operator = statespace.neutral_op
+    I_operator = statespace.I_op
     for (i, var) in enumerate(statespace.vars)
         var_exponents[i] += 1
         if formatted
@@ -38,7 +38,7 @@ function base_operators(statespace::StateSpace; do_fun::Bool=false, formatted::B
         base_ops = op_set.base_ops
         for key in sub.keys
             for base_op in base_ops
-                curr_operator = copy(neutral_operator)
+                curr_operator = copy(I_operator)
                 curr_operator[index] = base_op
                 term = QTerm(curr_operator)
                 curr_name = op_set.op2str(base_op, key, formatted=formatted)
@@ -50,7 +50,7 @@ function base_operators(statespace::StateSpace; do_fun::Bool=false, formatted::B
             for (inner_key, ops) in non_base_ops
                 curr_terms::Vector{QAtomProduct} = QAtomProduct[]
                 for op in ops
-                    curr_operator = copy(neutral_operator)
+                    curr_operator = copy(I_operator)
                     curr_operator[index] = op[2]
                     coeff = op[1]
                     curr_prod = QAtomProduct(statespace, CAtom(coeff, var_exponents), [QTerm(curr_operator)])
@@ -84,7 +84,7 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
     CRone = one(ComplexRational)
     var_exponents = zeros(Int, length(statespace.vars))
     #abstract_dict::Dict{String,QExpr} = Dict()
-    neutral_operator = statespace.neutral_op
+    I_operator = statespace.I_op
     if name == "vars"
         var_dict::Dict{String,QExpr} = Dict()
         for (i, var) in enumerate(statespace.vars)
@@ -106,7 +106,7 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
             base_ops = op_set.base_ops
             for key in sub.keys
                 for base_op in base_ops
-                    curr_operator = copy(neutral_operator)
+                    curr_operator = copy(I_operator)
                     curr_operator[index] = base_op
                     term = QTerm(curr_operator)
                     curr_name = op_set.op2str(base_op, key, formatted=formatted)
@@ -118,7 +118,7 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                 for (inner_key, ops) in non_base_ops
                     curr_terms::Vector{QAtomProduct} = QAtomProduct[]
                     for op in ops
-                        curr_operator = copy(neutral_operator)
+                        curr_operator = copy(I_operator)
                         curr_operator[index] = op[2]
                         coeff = op[1]
                         curr_prod = QAtomProduct(statespace, CAtom(coeff, var_exponents), [QTerm(curr_operator)])
@@ -203,7 +203,7 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                 base_ops = op_set.base_ops
                 base_strs = op_set.ops
                 for (inner_key, base_op) in zip(base_strs, base_ops)
-                    curr_operator = copy(neutral_operator)
+                    curr_operator = copy(I_operator)
                     curr_operator[index] = base_op
                     if formatted
                         op_str = inner_key * str2sub(key)
@@ -222,7 +222,7 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                 for (inner_key, ops) in non_base_ops
                     curr_terms::Vector{QAtomProduct} = QAtomProduct[]
                     for op in ops
-                        curr_operator = copy(neutral_operator)
+                        curr_operator = copy(I_operator)
                         curr_operator[index] = op[2]
                         coeff = op[1]
                         curr_prod = QAtomProduct(statespace, CAtom(coeff, var_exponents), [QTerm(curr_operator)])

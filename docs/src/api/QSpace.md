@@ -17,11 +17,6 @@ OperatorType
 StateSpace
 ```
 
-If a global state space is defined via the `make_global` parameter in the `StateSpace` constructor, it will be stored in the global variable 
-```@docs
-GLOBAL_STATE_SPACE
-```
-
 ---
 
 ## Predefined Operator Sets

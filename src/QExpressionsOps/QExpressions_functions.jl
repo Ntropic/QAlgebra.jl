@@ -7,10 +7,10 @@ struct QCommutator <: QMultiComposite
     coeff_fun::CFunction
     expr::Vector{QExpr}
     function QCommutator(q1::QExpr, q2::QExpr)
-        new(QCommutator(q1.statespace, copy(q1.statespace.fone), QExpr[q1, q2]))
+        new(QCommutator(q1.statespace, copy(q1.statespace.c_one), QExpr[q1, q2]))
     end
     function QCommutator(q1::QExpr, q2::QExpr, ::Val{:simp})
-        new(QCommutator(q1.statespace, copy(q1.statespace.fone), QExpr[simplify_QExpr(q1), simplify_QExpr(q2)]))
+        new(QCommutator(q1.statespace, copy(q1.statespace.c_one), QExpr[simplify_QExpr(q1), simplify_QExpr(q2)]))
     end
 end
 modify_expr(q::QCommutator, expr::Vector{QExpr}) = QCommutator(q.statespace, q.coeff_fun, expr)
@@ -36,13 +36,13 @@ struct QCompositeProduct <: QMultiComposite
         new(expr[1].statespace, coeff_fun, [QExpr([x]) for x in expr])
     end
     function QCompositeProduct(statespace::StateSpace, expr::Vector{QExpr} )
-        new(statespace, statespace.fone, expr)
+        new(statespace, statespace.c_one, expr)
     end
     function QCompositeProduct(expr::Vector{QExpr} )
-        new(expr[1].statespace, expr[1].statespace.fone, expr)
+        new(expr[1].statespace, expr[1].statespace.c_one, expr)
     end
     function QCompositeProduct(expr::Vector{QComposite} )
-        new(expr[1].statespace, expr[1].statespace.fone, [QExpr([x]) for x in expr])
+        new(expr[1].statespace, expr[1].statespace.c_one, [QExpr([x]) for x in expr])
     end
     function QCompositeProduct(statespace::StateSpace, coeff_fun::CFunction, expr::Vector{QExpr}, ::Val{:simp})
         new(statespace, coeff_fun, simplify_QExpr(expr))
@@ -51,10 +51,10 @@ struct QCompositeProduct <: QMultiComposite
         new(expr[1].statespace, coeff_fun, simplify_QExpr(expr))
     end
     function QCompositeProduct(statespace::StateSpace, expr::Vector{QExpr} , ::Val{:simp})
-        new(statespace, statespace.fone, simplify_QExpr(expr))
+        new(statespace, statespace.c_one, simplify_QExpr(expr))
     end
     function QCompositeProduct(expr::Vector{QExpr} , ::Val{:simp})
-        new(expr[1].statespace, expr[1].statespace.fone, simplify_QExpr(expr))
+        new(expr[1].statespace, expr[1].statespace.c_one, simplify_QExpr(expr))
     end
 end
 modify_expr(q::QCompositeProduct, expr::Vector{QExpr}) = QCompositeProduct(q.statespace, q.coeff_fun, expr)
@@ -78,7 +78,7 @@ struct QExp <: QComposite
     end
 end
 function exp(q::QExpr)::QExpr
-    return QExpr([QExp(q.statespace, q.statespace.fone, q)])
+    return QExpr([QExp(q.statespace, q.statespace.c_one, q)])
 end
 modify_expr(q::QExp, expr::QExpr) = QExp(q.statespace, q.coeff_fun, expr)
 modify_coeff_expr(q::QExp, coeff_fun::CFunction, expr::QExpr) = QExp(q.statespace, coeff_fun, expr)
@@ -101,7 +101,7 @@ struct QLog <: QComposite
     end
 end
 function log(q::QExpr)::QExpr
-    return QExpr([QLog(q.statespace, q.statespace.fone, q)])
+    return QExpr([QLog(q.statespace, q.statespace.c_one, q)])
 end
 modify_expr(q::QLog, expr::QExpr) = QLog(q.statespace, q.coeff_fun, expr)
 modify_coeff_expr(q::QLog, coeff_fun::CFunction, expr::QExpr) = QLog(q.statespace, coeff_fun, expr)
@@ -134,7 +134,7 @@ function power(q::QExpr, n::Int)::QExpr
     if n == 1 
          return q 
     end
-    return QExpr([QPower(q.statespace, q.statespace.fone, n, q)])
+    return QExpr([QPower(q.statespace, q.statespace.c_one, n, q)])
 end
 
 
@@ -160,10 +160,10 @@ function root(q::QExpr, n::Int=2)::QExpr
     if n == 1 
         return q 
     end
-    return QExpr([QRoot(q.statespace, q.statespace.fone, n, q)])
+    return QExpr([QRoot(q.statespace, q.statespace.c_one, n, q)])
 end
 function sqrt(q::QExpr)::QExpr
-    return QExpr([QRoot(q.statespace, q.statespace.fone, 2, q)])
+    return QExpr([QRoot(q.statespace, q.statespace.c_one, 2, q)])
 end
 modify_expr(q::QRoot, expr::QExpr) = QRoot(q.statespace, q.coeff_fun, q.n, expr)
 modify_coeff_expr(q::QRoot, coeff_fun::CFunction, expr::QExpr) = QRoot(q.statespace, coeff_fun, q.n, expr)

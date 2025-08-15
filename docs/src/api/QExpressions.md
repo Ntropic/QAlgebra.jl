@@ -78,7 +78,7 @@ The following scripts perform basic checks on the quantum expressions
 ```@docs
 QAlgebra.QExpressions.is_numeric
 QAlgebra.QExpressions.contains_abstract
-QAlgebra.QExpressions.which_continuum_acting
+QAlgebra.QExpressions.which_ensemble_acting
 QAlgebra.QExpressions.are_indexes_defined
 ```
 

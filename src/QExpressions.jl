@@ -119,10 +119,10 @@ struct QAtomProduct <: QComposite
         new(statespace, coeff, [expr], separate_expectation_values)
     end
     function QAtomProduct(statespace::StateSpace, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false) 
-        new(statespace, statespace.fone, expr, separate_expectation_values)
+        new(statespace, statespace.c_one, expr, separate_expectation_values)
     end
     function QAtomProduct(statespace::StateSpace, expr::S, separate_expectation_values::Bool=false) where {S <: QAtom}
-        new(statespace, statespace.fone, [expr], separate_expectation_values)
+        new(statespace, statespace.c_one, [expr], separate_expectation_values)
     end
 end
 modify_expr(q::QAtomProduct, expr::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, q.coeff, expr, q.separate_expectation_values)
@@ -142,7 +142,7 @@ struct QExpr <: QObj
     function QExpr(statespace::StateSpace, terms::AbstractVector{<:QComposite})
         if isempty(terms) 
             # add neotral zero term
-            zero_term = QAtomProduct(statespace, statespace.fone*0, QAtom[])
+            zero_term = QAtomProduct(statespace, statespace.c_one*0, QAtom[])
             terms = [zero_term]
         end
         return new(statespace, terms)
@@ -150,7 +150,7 @@ struct QExpr <: QObj
     function QExpr(statespace::StateSpace, terms::AbstractVector{<:QComposite}, ::Val{:simp})
         if isempty(terms) 
             # add neotral zero term
-            zero_term = QAtomProduct(statespace, statespace.fone*0, QAtom[])
+            zero_term = QAtomProduct(statespace, statespace.c_one*0, QAtom[])
             terms = [zero_term]
         end
         return new(statespace, simplify_QExpr(Vector{QComposite}(terms)))

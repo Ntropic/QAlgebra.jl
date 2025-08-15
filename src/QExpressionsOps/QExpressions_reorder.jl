@@ -2,15 +2,15 @@ import ..CFunctions: reorder
 export reorder
 
 function where_defined_to_index_order(statespace::StateSpace, where_defined::Vector{Vector{Bool}})::Tuple{Vector{Int}, Vector{Int}}
-    # takes where_defined and the continuum indexes to determine the new order for both operators and variables 
+    # takes where_defined and the ensemble indexes to determine the new order for both operators and variables 
     # for each element of where_defined, we shift all the true elements to the left, and all false elements to the right, we want to get the indexes of the permutation that achieves that 
     n_vars = length(statespace.vars_str)
-    n_ops = length(statespace.neutral_op)
+    n_ops = length(statespace.I_op)
     op_inds = collect(1:n_ops)
     var_inds = collect(1:n_vars)
-    continuum_indexes = statespace.continuum_indexes
-    variable_indexes = statespace.where_by_continuum_var
-    for (w, c, vs)  in zip(where_defined, continuum_indexes, variable_indexes)
+    ensemble_indexes = statespace.subspaceinfo.ensemble_indexes
+    variable_indexes = statespace.where_by_ensemble_var
+    for (w, c, vs)  in zip(where_defined, ensemble_indexes, variable_indexes)
         w_order = sortperm(w, rev=true)
         for v in vs
             var_inds[v] = var_inds[v][w_order]
@@ -44,9 +44,9 @@ function reorder(q::QSum, add_at_sum::Bool, where_defined::Vector{Vector{Bool}},
     if add_at_sum
         subsystem = q.subsystem_index 
         element_indexes = q.element_indexes
-        # check where subsystem is among qspace.where_continuum
-        outer_ind = findfirst(x -> x == subsystem, q.statespace.where_continuum)
-        if outer_ind == nothing
+        # check where subsystem is among qspace.where_ensemble
+        outer_ind = findfirst(x -> x == subsystem, q.statespace.where_ensemble)
+        if isnothing(outer_ind)
             error("Subsystem $subsystem not found in qspace.subspace_by_ind!")
         end
         if !all(where_defined[outer_ind][element_indexes] .== false)
@@ -57,19 +57,18 @@ function reorder(q::QSum, add_at_sum::Bool, where_defined::Vector{Vector{Bool}},
         op_ind, var_inds = where_defined_to_index_order(q.statespace, new_where_defined)
 
         # we need to change the other parameters of sum aswell determining what is summed over 
-        #qspace.continuum_indexes, qspace.neutral_continuum_op 
         curr_subspace = qspace.subspaces[subsystem]
         new_element_indexes::Vector{Int} = []
         new_indexes::Vector{String} = []
         for (i, element_index) in enumerate(element_indexes)
             prev_index = curr_subspace.op_index_inds[element_index]
             new_ind = findfirst(x -> x == prev_index, op_ind)
-            if new_ind == nothing
+            if isnothing(new_ind) 
                 error("Not all element_indexes found in new indexing!")
             end
             # find in subspace 
             new_subind = findfirst(x -> x == new_ind, curr_subspace.op_index_inds)
-            if new_subind == nothing
+            if isnothing(new_subind) 
                 error("Not all element_indexes found in new indexing!")
             end
             push!(new_element_indexes, new_subind)
@@ -84,12 +83,12 @@ end
 """^
     reorder!(q::diff_QEq) -> diff_QEq
 
-Reorders the indexes of continuum-subspaces to the left, so that present indexes are i,j,k and not i,k,m.
+Reorders the indexes of ensemble-subspaces to the left, so that present indexes are i,j,k and not i,k,m.
 This allows simplify to further simplify expressions, by removing 
 """
 function reorder(q::diff_QEq)::diff_QEq
     # check index order on left side 
-    where_defined_lhs = which_continuum_acting(q.left_hand_side)
+    where_defined_lhs = which_ensemble_acting(q.left_hand_side)
     op_inds, var_inds = where_defined_to_index_order(q.statespace, where_defined_lhs)
     # check if op_inds is not sorted (i.e. not equal to 1:length(op_inds))
     if op_inds != 1:length(op_inds) 
@@ -97,7 +96,7 @@ function reorder(q::diff_QEq)::diff_QEq
         left_hand_side = reorder(q.left_hand_side, false, where_defined_lhs, op_inds, var_inds)
         # then expr 
         expr = reorder(q.expr, false, where_defined_lhs, op_inds, var_inds)
-        where_defined_lhs = which_continuum_acting(left_hand_side)
+        where_defined_lhs = which_ensemble_acting(left_hand_side)
         op_inds = collect(1:length(op_inds))
         var_inds = collect(1:length(var_inds))
         q = diff_QEq(q.statespace, left_hand_side, expr, q.braket)

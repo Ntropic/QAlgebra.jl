@@ -4,9 +4,9 @@ export term
 # --------> Terms from Strings <----------------------------------------------------------------------------------------------------------------------------
 # ==========================================================================================================================================================
 function get_op_inds(space::SubSpace, res_strings::Tuple{Vector{Vector{String}},Vector{Vector{String}},Vector{Vector{String}}})::Vector{Vector{Tuple{Number,Is}}}
-    str_elements::Vector{Vector{String}} = res_strings[space.statespace_main_ind]
+    str_elements::Vector{Vector{String}} = res_strings[space.ss_outer_ind]
     all_results::Vector{Vector{Tuple{Number,Is}}} = []
-    for sub_ind in space.statespace_inds
+    for sub_ind in space.ss_inner_ind
         curr_elements::Vector{String} = str_elements[sub_ind]
         curr_results = space.op_set.strs2ind(curr_elements)
         push!(all_results, curr_results)

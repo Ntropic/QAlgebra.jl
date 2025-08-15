@@ -174,7 +174,7 @@ function expand_cumulant_list!(cumulant_list::ReducedCumulantList, order::Int)::
 end
 
 function where_acting_index(q::QTerm, statespace::StateSpace)::Vector{Int}
-    return [i for (i, op) in enumerate(q.op_indices) if op!=statespace.neutral_op[i]]
+    return [i for (i, op) in enumerate(q.op_indices) if op!=statespace.I_op[i]]
 end
 # Order of QTerm 
 function order(q::QTerm, statespace::StateSpace)::Int
@@ -190,8 +190,8 @@ struct QCumulant <:QComposite  # Must be QComposite to be in QExpr's
     where_acting::Vector{Int}
 end
 
-function replace_indexes(neutral_op::Vector{Vector{Int}}, curr_op_indexes::Vector{Vector{Int}}, indexes::Vector{Int}) 
-    new_op = copy(neutral_op)
+function replace_indexes(I_op::Vector{Vector{Int}}, curr_op_indexes::Vector{Vector{Int}}, indexes::Vector{Int}) 
+    new_op = copy(I_op)
     for ind in indexes
         new_op[ind] = copy(curr_op_indexes[ind])
     end
@@ -229,7 +229,7 @@ end
 
 @inline function _Cumulant(coeff_fun::CFunction, atom::QTerm, statespace::StateSpace, order::Int, where_acting::Vector{Int}, red_cum::ReducedIndexedCumulant)::QCumulant
     curr_op_indexes = atom.op_indices
-    neutral_op = statespace.neutral_op
+    I_op = statespace.I_op
     # create indexed cumulant to this order 
     # create QExpr from this 
     qexpr::Vector{QComposite} = Vector{QComposite}(undef, length(red_cum.approximation))
@@ -240,7 +240,7 @@ end
         curr_atoms = Vector{QTerm}(undef, length(indexes))
         # replace indexes from neutral with tthose in qterm 
         for (i, ind) in enumerate(indexes)
-            curr_atoms[i] = QTerm(neutral_op, replace_indexes(neutral_op, curr_op_indexes, ind))
+            curr_atoms[i] = QTerm(I_op, replace_indexes(I_op, curr_op_indexes, ind))
         end
         qexpr[j] = QAtomProduct(curr_atoms, coeff_fun*coeff, statespace)
     end

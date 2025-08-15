@@ -10,10 +10,10 @@ export Dag, Commutator, is_numeric, same_statespace
 Returns true either if it is zero or it has only neutral elements for operators.
 """
 function is_numeric(op_indices::Vector{Vector{Int}}, statespace::StateSpace)::Bool
-    return statespace.neutral_op == op_indices
+    return statespace.I_op == op_indices
 end
 function is_numeric(t::QTerm, statespace::StateSpace)::Bool
-    return statespace.neutral_op == t.op_indices
+    return statespace.I_op == t.op_indices
 end
 function is_numeric(t::QAbstract, statespace::StateSpace)::Bool
     return false
@@ -67,21 +67,21 @@ end
 
 
 function where_neutral(q::QTerm, statespace::StateSpace)::Vector{Bool}
-    return [op == neut for (op, neut) in zip(q.op_indices, statespace.neutral_op)]
+    return [op == neut for (op, neut) in zip(q.op_indices, statespace.I_op)]
 end
 function where_neutral(q::QAbstract, statespace::StateSpace)::Vector{Bool}
     return q.operator_type.subspaces   # should never be modified! copy would be safer, but slower
 end
 function where_acting(q::QTerm, statespace::StateSpace)::Vector{Bool}
-    return [op != neut for (op, neut) in zip(q.op_indices, statespace.neutral_op)]
+    return [op != neut for (op, neut) in zip(q.op_indices, statespace.I_op)]
 end
 function where_acting(q::QAbstract, statespace::StateSpace)::Vector{Bool}
-    return q.operator_type.non_subspaces  # should never be modified! copy would be safer, but slower
+    return .!q.operator_type.subspaces  # should never be modified! copy would be safer, but slower
 end
 function where_acting(q::QAtomProduct)
     # combine the action of all of its constituents via OR 
     if length(q.expr) == 0
-        return zeros(Bool, length(statespace.neutral_op))
+        return zeros(Bool, length(statespace.I_op))
     else
         return reduce(.|, [where_acting(expr, statespace) for expr in q.expr])
     end
@@ -285,7 +285,7 @@ function +(Q1::QExpr, Q2::T)::QExpr where {T<:QComposite}
     return QExpr(Q1.statespace, vcat(Q1.terms, Q2))
 end
 function +(Q1::QExpr, N::Number)::QExpr
-    new_terms = vcat(Q1.terms, QAtomProduct(Q1.statespace, Q1.statespace.fone * N, QTerm(Q1.statespace.neutral_op)))
+    new_terms = vcat(Q1.terms, QAtomProduct(Q1.statespace, Q1.statespace.c_one * N, QTerm(Q1.statespace.I_op)))
     return QExpr(Q1.statespace, new_terms)
 end
 +(N::Number, Q1::QExpr)::QExpr = Q1 + N
@@ -302,7 +302,7 @@ end
 (-(Q2::T, Q1::QExpr)::QExpr) where {T<:QComposite} = -Q1 + Q2
 
 function -(Q1::QExpr, N::Number)::QExpr
-    new_terms = vcat(Q1.terms, QAtomProduct(Q1.statespace, -Q1.statespace.fone * N, QTerm(Q1.statespace.neutral_op)))
+    new_terms = vcat(Q1.terms, QAtomProduct(Q1.statespace, -Q1.statespace.c_one * N, QTerm(Q1.statespace.I_op)))
     return QExpr(Q1.statespace, new_terms)
 end
 -(N::Number, Q1::QExpr)::QExpr = -Q1 + N
@@ -326,7 +326,7 @@ end
 function multiply_qterm(t1::Vector{Vector{Int}}, t2::Vector{Vector{Int}}, ss::StateSpace)::Tuple{Vector{Vector{Is}},Vector{ComplexRational}}
     results = Vector{Vector{Tuple{ComplexRational,Is}}}()
     i = 0
-    for s in ss.subspaces, _ in eachindex(s.statespace_inds)
+    for s in ss.subspaces, _ in eachindex(s.ss_inner_ind)
         i += 1
         push!(results, s.op_set.op_product(t1[i], t2[i]))
     end
@@ -524,7 +524,7 @@ end
 
 
 function Identity(qspace::StateSpace)
-    return QExpr(qspace, QAtomProduct(qspace, qspace.fone, QAtom[QTerm(qspace.neutral_op)]))
+    return QExpr(qspace, QAtomProduct(qspace, qspace.c_one, QAtom[QTerm(qspace.I_op)]))
 end
 
 """

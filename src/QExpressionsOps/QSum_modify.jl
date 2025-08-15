@@ -93,8 +93,8 @@ end
 
 function term_equal_indexes(abstract::QAbstract, index1::Int, index2::Int, subspace::SubSpace)::Tuple{Bool, Vector{QAbstract}, Vector{ComplexRational}}
     op_type = abstract.operator_type
-    non_trivial_op_indices = op_type.non_trivial_op_indices
-    if non_trivial_op_indices[index2]
+    expanded_ss_acting = op_type.expanded_ss_acting
+    if expanded_ss_acting[index2]
         return true, QAbstract[add_to_index_map(abstract, (index1, index2))], ComplexRational[ComplexRational(1,0,1)]
     end
     # append this rule to the index map 
@@ -129,18 +129,18 @@ function term_equal_indexes(q::QAtomProduct, index1::Int, index2::Int, subspace:
     return true, simplified_products
 end
 
-function term_equal_indexes(QExpr::QExpr, index1::Int, index2::Int, subspace::SubSpace, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool, Vector{QExpr}}
+function term_equal_indexes(qexpr::QExpr, index1::Int, index2::Int, subspace::SubSpace, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool, Vector{QExpr}}
     changed_any = false
     elements = []
-    for t in QExpr.terms
+    for t in qexpr.terms
         changed, variants = term_equal_indexes(t, index1, index2, subspace, coeff_inds1, coeff_inds2)
         append!(elements, variants)
         changed_any |= changed  # Check if any term was changed
     end
     if !changed_any
-        return false, [QExpr]
+        return false, [qexpr]
     end
-    return true, [QExpr(QExpr.statespace, elements)]
+    return true, [QExpr(qexpr.statespace, elements)]
 end
 #T <: QComposite case
 function term_equal_indexes(q::T, index1::Int, index2::Int, subspace::SubSpace, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool, Vector{T}} where T<:QComposite
@@ -223,7 +223,7 @@ function neq_qsum(s::QSum, index::Int=1)::QExpr
     # 2) we consider for each sum index combination all possible 
     ss = s.expr.statespace
     sub = ss.subspaces[s.subsystem_index]
-    n_sub = length(sub.statespace_inds)
+    n_sub = length(sub.ss_inner_ind)
     # consider only one possible equality, then recursively process untill all possibilities have been checked
     curr_element = s.element_indexes[index]
     if index < n # recursively execute neq_qsum for higher possible indexes
@@ -235,14 +235,14 @@ function neq_qsum(s::QSum, index::Int=1)::QExpr
 
     # 3) now we assume index is equal to each of the parameters in subspace, with smaller index than the curr index of the sum 
     curr_ind_sum::Int = s.element_indexes[index]
-    curr_statespace_ind::Int = sub.statespace_inds[curr_ind_sum]
+    curr_statespace_ind::Int = sub.ss_inner_ind[curr_ind_sum]
 
-    coeffs_of_subspace = ss.where_by_continuum[s.subsystem_index]
+    coeffs_of_subspace = ss.where_by_ensemble[s.subsystem_index]
     curr_coeff_inds = [coeffs_of_subspace[i][curr_ind_sum] for i in 1:length(coeffs_of_subspace)]
     #println("\nnew run: ($index) : ", pieces) 
-    for (new_ind_sum, new_statespace_sum) in zip(1:curr_ind_sum-1, sub.statespace_inds[1:curr_ind_sum-1])
+    for (new_ind_sum, new_statespace_sum) in zip(1:curr_ind_sum-1, sub.ss_inner_ind[1:curr_ind_sum-1])
         new_coeff_inds = [coeffs_of_subspace[i][new_ind_sum] for i in 1:length(coeffs_of_subspace)]
-        new_statespace_ind = sub.statespace_inds[new_ind_sum]
+        new_statespace_ind = sub.ss_inner_ind[new_ind_sum]
         # check for each term in the subspace if curr_statespace_ind and new_statespace_ind are the neutral_element  
         for expr in post_expr.terms
            if isa(expr, QSum)

@@ -52,10 +52,10 @@ function qAtom_index_flip(q::QAtom, index_map::Vector{Tuple{Int,Int}}, statespac
         qs = new_qs
         cs = new_cs
     end
-    return [QAtomProduct(statespace, statespace.fone*c, [q]) for (q, c) in zip(qs, cs)]
+    return [QAtomProduct(statespace, statespace.c_one*c, [q]) for (q, c) in zip(qs, cs)]
 end
 function substitute_qAtom(abstract_op::QAbstract, replacement::QAtom, target::QTerm, statespace::StateSpace)::Vector{QAtomProduct}
-    return [QAtomProduct(statespace, statespace.fone, [target])]
+    return [QAtomProduct(statespace, statespace.c_one, [target])]
 end
 function substitute_qAtom(abstract_op::QAbstract, replacement::QAtom, target::QAbstract, statespace::StateSpace)::Vector{QAtomProduct}
     # check if its the same QAbstract operator 
@@ -70,7 +70,7 @@ function substitute_qAtom(abstract_op::QAbstract, replacement::QAtom, target::QA
         end
         return qs
     else
-        return [QAtomProduct(statespace, statespace.fone, [target])]
+        return [QAtomProduct(statespace, statespace.c_one, [target])]
     end
 end
 
