@@ -5,7 +5,7 @@ using ComplexRationals
 using ..QAlgebra: get_default, FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
 
 export CFunction, CAtom, CSum, CRational, CProd, CExp, CLog
-export isnumeric, coeff, var_exponents
+export isnumeric, coeff, var_exponents, depends_on_inds
 
 import Base: copy, exp, log, length
 import ComplexRationals: isonelike
@@ -281,6 +281,50 @@ getindex(p::CSum, i::Int) = p.terms[i]
 iterate(p::CSum, state=1) = state > length(p.terms) ? nothing : (p.terms[state], state + 1)
 deleteat!(p::CSum, i::Int) = CSum(deleteat!(p.terms, i))
 reverse(q::CSum) = CSum(reverse(q.terms))
+
+""" 
+    depends_on_inds(cfun::CFunction, inds::Vector{Int})
+
+Returns true if the CFunction depends on the indices in inds. Checks if the function is non trivial first, 
+then if the components depend on the parameters specified by their indexes in inds.
+"""
+function depends_on_inds(cfun::CAtom, inds::Vector{Int})::Bool
+    if !iszero(cfun) 
+        return any(cfun.var_exponents[inds] .> 0)  # if any of the
+    else 
+        return false
+    end     
+end
+function depends_on_inds(cfun::CSum, inds::Vector{Int})
+    for i in eachindex(cfun.terms)
+        if depends_on_inds(cfun.terms[i], inds)
+            return true
+        end
+    end
+    return false
+end
+function depends_on_inds(cfun::CProd, inds::Vector{Int})
+    if !iszero(cfun)
+        for i in eachindex(cfun.terms)
+            if depends_on_inds(cfun.terms[i], inds)
+                return true
+            end
+        end
+        return false
+    else
+        return false
+    end
+end
+function depends_on_inds(cfun::CRational, inds::Vector{Int})
+    return depends_on_inds(cfun.num, inds) || depends_on_inds(cfun.den, inds)
+end 
+function depends_on_inds(cfun::Union{CExp, CLog}, inds::Vector{Int})
+    if !iszero(cfun)
+        return depends_on_inds(cfun.exp, inds)
+    else
+        return false
+    end
+end
 
 
 include("CFunctionsOps/CFunctions_algebra.jl")

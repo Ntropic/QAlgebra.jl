@@ -4,7 +4,7 @@ export reorder
 function where_defined_to_index_order(statespace::StateSpace, where_defined::Vector{Vector{Bool}})::Tuple{Vector{Int}, Vector{Int}}
     # takes where_defined and the ensemble indexes to determine the new order for both operators and variables 
     # for each element of where_defined, we shift all the true elements to the left, and all false elements to the right, we want to get the indexes of the permutation that achieves that 
-    n_vars = length(statespace.vars_str)
+    n_vars = length(statespace.vars)
     n_ops = length(statespace.I_op)
     op_inds = collect(1:n_ops)
     var_inds = collect(1:n_vars)

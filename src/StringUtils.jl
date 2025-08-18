@@ -1,6 +1,6 @@
 module StringUtils
 
-export subscript_indexes, superscript_indexes, var_substitution, var_substitution_latex, str2sub, str2sup, term_pre_split, separate_terms, expstr_separate, symbol2formatted, brace
+export subscript_indexes, superscript_indexes, var_substitution, var_substitution_latex, str2sub, str2sup, term_pre_split, separate_terms, expstr_separate, symbol2formatted, brace, match_indexed_pattern
 
 """
     subscript_indexes::Dict{Char, String}
@@ -107,6 +107,30 @@ function brace(x::String; do_latex::Bool=true)::String
         return raw"\left(" * x * raw"\right)"
     else
         return "(" * x * ")"
+    end
+end
+
+
+"""
+    match_indexed_pattern(s::String, prefix::String, suffix::String) -> Tuple{Bool,Int}
+
+Check if `s` matches the pattern `prefix ( "_" digits )? suffix`.
+
+- If it matches with digits: returns `(true, index::Int)`.
+- If it matches without digits: returns `(true, 0)`.
+- If it doesn't match: returns `(false, 0)`.
+"""
+function match_indexed_pattern(s::String, prefix::String, suffix::String)
+    esc(x) = replace(x, r"([\\.^$|?*+()[\]{}])" => s"\\\1")
+    pat = Regex("^" * esc(prefix) * "(?:_(\\d+))?" * esc(suffix) * "\$")
+
+    m = match(pat, s)
+    if m === nothing
+        return (false, 0)
+    elseif m.captures[1] === nothing
+        return (true, 0)
+    else
+        return (true, parse(Int, m.captures[1]))
     end
 end
 

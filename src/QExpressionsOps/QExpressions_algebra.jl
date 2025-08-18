@@ -308,7 +308,7 @@ end
 -(N::Number, Q1::QExpr)::QExpr = -Q1 + N
 
 #### Multiply ####################################################################
-function trivial_multiply(Q1::QAtomProduct, Q2::QAtomProduct)::QAtomProduct
+function trivial_multiply(Q1::QAtomProduct, Q2::QAtomProduct)::QAtomProduct   # Assumes both have the same time_index!!
     e1, e2 = Q1.expr, Q2.expr
     n1, n2 = length(e1), length(e2)
 
@@ -320,10 +320,10 @@ function trivial_multiply(Q1::QAtomProduct, Q2::QAtomProduct)::QAtomProduct
     if n2 > 0
         newexpr[n1+1:end] = e2
     end
-    return QAtomProduct(Q1.statespace, Q1.coeff_fun * Q2.coeff_fun, newexpr)
+    return modify_coeff_expr(Q1, Q1.coeff_fun * Q2.coeff_fun, newexpr)
 end
 # Multiplies two QTerm’s from the same statespace. Returns a vector of QTerm’s that are the result of this multiplication and corresponding ComplexRational coefficients. 
-function multiply_qterm(t1::Vector{Vector{Int}}, t2::Vector{Vector{Int}}, ss::StateSpace)::Tuple{Vector{Vector{Is}},Vector{ComplexRational}}
+function multiply_qterm(t1::Vector{Vector{Int}}, t2::Vector{Vector{Int}}, ss::StateSpace)::Tuple{Vector{Vector{Is}},Vector{ComplexRational}} # Assumes both have the same time_index!!
     results = Vector{Vector{Tuple{ComplexRational,Is}}}()
     i = 0
     for s in ss.subspaces, _ in eachindex(s.ss_inner_ind)
@@ -350,15 +350,24 @@ end
 
 #### Main Multiplication Functions ################################################
 function *(p1::QAtomProduct, p2::QAtomProduct)::Vector{QComposite}
-    p = trivial_multiply(p1, p2)  # append the terms of p1 and p2.
-    return simplify_QAtomProduct(p)    # simplify the product. 
+    if p1.time_index == p2.time_index || (p1.time_index == 0 && !depends_on_time(p1)) || (p2.time_index == 0 && !depends_on_time(p2))  
+        p = trivial_multiply(p1, p2)  # append the terms of p1 and p2.
+        return simplify_QAtomProduct(p)    # simplify the product. 
+    else
+        return [QCompositeProduct(p1.coeff_fun * p2.coeff_fun, [p1_norm, p2_norm])]   
+end
+
+function *(num::Number, p1::QAtomProduct)::Vector{QComposite}
+    if iszero(num) 
+        return QComposite[] 
+    else
+        return [modify_coeff(p1, p1.coeff_fun * num, Val(:dont_check_time))]
+    end
 end
 function *(p1::QAtomProduct, num::Number)::Vector{QComposite}
-    return [QAtomProduct(p1.statespace, p1.coeff_fun * num, p1.expr)]
+    return num * p1
 end
-function *(num::Number, p1::QAtomProduct)::Vector{QComposite}
-    return [QAtomProduct(p1.statespace, p1.coeff_fun * num, p1.expr)]
-end
+
 function *(p1::T1, p2::T2)::Vector{QComposite} where {T1<:QComposite,T2<:QComposite}
     return [QCompositeProduct(QComposite[p1, p2])]
 end
@@ -584,7 +593,7 @@ function Dag(p::QAtomProduct)::Vector{QAtomProduct}
         curr_coeff = [a[2] for a in combo]
         coeff = reduce(*, curr_coeff)
         if !iszero(coeff)
-            push!(new_atom_products, QAtomProduct(p.statespace, coeff_fun * coeff, curr_atoms))
+            push!(new_atom_products, QAtomProduct(p.statespace, coeff_fun * coeff, curr_atoms, p.time_index, p.separate_expectation_values, Val(:dont_check_time)))
         end
     end
     return new_atom_products

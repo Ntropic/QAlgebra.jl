@@ -16,6 +16,10 @@ end
 modify_expr(q::QCommutator, expr::Vector{QExpr}) = QCommutator(q.statespace, q.coeff_fun, expr)
 modify_coeff_expr(q::QCommutator, coeff_fun::CFunction, expr::Vector{QExpr}) = QCommutator(q.statespace, coeff_fun, expr)
 modify_coeff(q::QCommutator, coeff_fun::CFunction) = QCommutator(q.statespace, coeff_fun, q.expr)
+each_term(q::QMultiComposite) = q.expr
+each_coeff(q::QMultiComposite)::Vector{CFunction} = CFunction[q.coeff_fun; flatmap_to(each_coeff, each_term(q), CFunction)]
+each_term(q::QComposite) = [q.expr]
+each_coeff(q::QComposite)::Vector{CFunction} = CFunction[q.coeff_fun; each_coeff(q.expr)]
 
 """ 
     QCompositeProduct

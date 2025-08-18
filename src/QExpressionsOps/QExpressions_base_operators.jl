@@ -25,7 +25,7 @@ function base_operators(statespace::StateSpace; do_fun::Bool=false, formatted::B
     for (i, var) in enumerate(statespace.vars)
         var_exponents[i] += 1
         if formatted
-            vars_str = var.var_str
+            vars_str = var.var_str_fun()
         else
             vars_str = var.var_name
         end

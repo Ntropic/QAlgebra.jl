@@ -106,7 +106,6 @@ struct StateSpace
 
     # Parameter fields:
     vars::Vector{Parameter}
-    vars_str::Vector{String}
     how_many_by_ensemble::Dict{Int,Int}   # for ensemble subspaces, how many variables do we have 
     where_by_ensemble::Dict{Int,Vector{Vector{Int}}}   # for ensemble subspaces, where are our variables  
     where_by_ensemble_var::Vector{Vector{Vector{Int}}}
@@ -241,8 +240,6 @@ struct StateSpace
         end
 
         # Generate the string representations
-        vars_str::Vector{String} = [p.var_str for p in vars]
-
         c_one = CAtom(ComplexRational(1,0,1), zeros(Int, length(vars)))
         
         where_by_ensemble_var::Vector{Vector{Vector{Int}}} = [where_by_ensemble[i] for i in where_ensemble]
@@ -253,14 +250,14 @@ struct StateSpace
         end
         qss = new( subspaces, subspaceinfo, I_op, I_ensemble_op,                                            # Subspace Structure 
                 operatortypes, operator_names, operatortypes_commutator_mat,                                # Abstract Operators 
-                vars, vars_str, how_many_by_ensemble, where_by_ensemble, where_by_ensemble_var, where_by_time, where_const, subspace_by_ind, c_one)   # Variables 
+                vars, how_many_by_ensemble, where_by_ensemble, where_by_ensemble_var, where_by_time, where_const, subspace_by_ind, c_one)   # Variables 
         return qss
     end
 end
 # Define the custom show for StateSpace.
 function Base.show(io::IO, statespace::StateSpace)
     # First line: StateSpace and its variables.
-    var_str = join([p.var_str for p in statespace.vars], ", ")
+    var_str = join([p.var_str_fun() for p in statespace.vars], ", ")
     println(io, "StateSpace: [" * var_str * "]")
     # Then print each subspace on its own line.
     for ss in statespace.subspaces

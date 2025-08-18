@@ -1,3 +1,18 @@
+"""
+    flatmap_to(f, xs, ::Type{T}) where T
+
+Apply `f` to each element of `xs` (where each result is a `Vector{T}`),
+and return all results concatenated into a single `Vector{T}`.
+"""
+function flatmap_to(f, xs, ::Type{T})::Vector{T} where T
+    out = Vector{T}()
+    for x in xs
+        append!(out, f(x))
+    end
+    return out
+end
+
+
 function reduce_qabstract_pair(a::QAbstract, b::QAbstract, statespace::StateSpace)::Tuple{Vector{QAbstract}, Bool}
     # must be exactly the same operator subtype
     if !same_term_type(a, b)

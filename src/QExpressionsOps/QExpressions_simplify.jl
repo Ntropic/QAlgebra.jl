@@ -119,7 +119,7 @@ function simplify_QAtomProduct(p::QAtomProduct)::Vector{QComposite}
         end
     end
     # wrap the final products
-    return [ QAtomProduct(p.statespace, c * p.coeff_fun, t) for (c,t) in current ]
+    return [ modify_coeff_expr(p, c * p.coeff_fun, t, Val(:dont_check_time)) for (c,t) in current ] # dont  check time because we are only adding coefficient multiplication
 end
 
 #function simplify_QCompositeProduct(p::QCompositeProduct)::Vector{QComposite}

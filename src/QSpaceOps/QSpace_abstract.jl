@@ -16,13 +16,14 @@ struct OperatorType
         if length(name) == 0
             error("OperatorType name cannot be empty.")
         end
-        new(name, operator_index, hermitian, unitary, acting_ss, expanded_ss_acting)
+        new(name, operator_index, hermitian, unitary, of_time, subsystems,acting_ss, expanded_ss_acting)
     end
 end
 function string2operator_type(operator_index::Int, s::String, subspace_keys::Vector{String}, dim::Int, subspaces::Vector{SubSpace})
     # use name(U,H) notation, separate the name from the brace. and parse the , separated elements within the brace to determine which properties are true (by default all are false) 
     hermitian = false 
     unitary = false 
+    of_time = false
     acting_ss::Vector{Bool} = [true for _ in subspace_keys]
     name::String = ""
     modified_subspace_keys::Vector{String} = ["!"*key for key in subspace_keys]
@@ -32,9 +33,10 @@ function string2operator_type(operator_index::Int, s::String, subspace_keys::Vec
             brace = split(brace, ")")[1]  # Output: "U,H"
             tokens = split(brace, ",")  # Output: ["U", "H"]
             tokens = [strip(t) for t in tokens]
+            of_time = "t" in tokens
             hermitian = "H" in tokens
             unitary = "U" in tokens 
-            token_list = vcat(["H", "U"], subspace_keys, modified_subspace_keys)
+            token_list = vcat(["t", "H", "U"], subspace_keys, modified_subspace_keys)
             # if any token not in token_list, return error
             for token in tokens
                 if !(token in token_list)
@@ -80,7 +82,7 @@ function string2operator_type(operator_index::Int, s::String, subspace_keys::Vec
             end
         end
     end
-    return OperatorType(name, operator_index, hermitian=hermitian, unitary=unitary, acting_ss=acting_ss, expanded_ss_acting=expanded_ss_acting)
+    return OperatorType(name, operator_index, hermitian=hermitian, unitary=unitary, of_time=of_time, acting_ss=acting_ss, expanded_ss_acting=expanded_ss_acting)
 end
 function operator_type2string(p::OperatorType, time_index::Int=0)
     curr_str = p.name 

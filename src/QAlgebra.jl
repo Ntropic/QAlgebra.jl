@@ -53,7 +53,7 @@ export get_default, set_flip_if_first_term_negative, set_do_braced, FLIP_IF_FIRS
 
 include("StringUtils.jl")
 using .StringUtils
-export symbol2formatted, str2sub, str2sup, brace
+export symbol2formatted, str2sub, str2sup, brace, match_indexed_pattern
 
 include("CFunctions.jl")
 using .CFunctions
@@ -63,7 +63,7 @@ export isnumeric, coeff, var_exponents, expand
 
 include("QSpace.jl")
 using .QSpace
-export OperatorSet, SubSpace, Parameter, OperatorType, StateSpace, string2operator_type, GLOBAL_STATE_SPACE
+export OperatorSet, SubSpace, Parameter, OperatorType, StateSpace, string2operator_type
 export QubitPauli, QubitPM, Ladder
 
 include("QExpressions.jl")
