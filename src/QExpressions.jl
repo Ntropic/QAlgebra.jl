@@ -55,8 +55,6 @@ The abstract type `QEq` is the base type for all quantum expressions in this mod
 """
 abstract type QEq end  # most general
 
-include("QExpressionsOps/QExpressions_time_dependence.jl")
-
 """
     QTerm
 
@@ -112,41 +110,23 @@ struct QAtomProduct <: QComposite
     statespace::StateSpace         # State space of the product.
     coeff_fun::CFunction            # function of scalar parameters => has +,-,*,/,^ defined 
     expr::Vector{QAtom}             # Vector of qAtoms (qTerms or QAbstract).
-    time_index::Int
     separate_expectation_values::Bool 
-    function QAtomProduct(statespace::StateSpace, coeff::T, expr::AbstractVector{<:QAtom}= QAtom[], time_index::Int=0, separate_expectation_values::Bool=false, ::Val{:dont_check_time}) where T <: CFunction
-        new(statespace, coeff, expr, time_index, separate_expectation_values)
+    function QAtomProduct(statespace::StateSpace, coeff::T, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false) where T <: CFunction
+        new(statespace, coeff, expr, separate_expectation_values)
     end
-    function QAtomProduct(statespace::StateSpace, coeff::T, expr::AbstractVector{<:QAtom}= QAtom[], time_index::Int=0, separate_expectation_values::Bool=false) where T <: CFunction
-        if time_index != 0 && depends_on_time(coeff, statespace.param_info)
-            time_index = 0
-        end
-        new(statespace, coeff, expr, time_index, separate_expectation_values)
+    function QAtomProduct(statespace::StateSpace, coeff::T, expr::S, separate_expectation_values::Bool=false) where {T <: CFunction, S <: QAtom}
+        new(statespace, coeff, [expr], separate_expectation_values)
     end
-    function QAtomProduct(statespace::StateSpace, coeff::T, expr::S, time_index::Int=0, separate_expectation_values::Bool=false) where {T <: CFunction, S <: QAtom}
-        if time_index != 0 && depends_on_time(coeff, statespace.param_info)
-            time_index = 0
-        end
-        new(statespace, coeff, [expr], time_index, separate_expectation_values)
+    function QAtomProduct(statespace::StateSpace, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false) 
+        new(statespace, statespace.c_one, expr, separate_expectation_values)
     end
-    function QAtomProduct(statespace::StateSpace, expr::AbstractVector{<:QAtom}= QAtom[], time_index::Int=0, separate_expectation_values::Bool=false) 
-        if time_index != 0 && depends_on_time(coeff, statespace.param_info)
-            time_index = 0
-        end
-        new(statespace, statespace.c_one, expr, time_index, separate_expectation_values)
-    end
-    function QAtomProduct(statespace::StateSpace, expr::S, time_index::Int=0, separate_expectation_values::Bool=false) where {S <: QAtom}
-        if time_index != 0 && depends_on_time(coeff, statespace.param_info)
-            time_index = 0
-        end
-        new(statespace, statespace.c_one, [expr], time_index, separate_expectation_values)
+    function QAtomProduct(statespace::StateSpace, expr::S, separate_expectation_values::Bool=false) where {S <: QAtom}
+        new(statespace, statespace.c_one, [expr], separate_expectation_values)
     end
 end
-modify_expr(q::QAtomProduct, expr::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, q.coeff, expr, q.time_index, q.separate_expectation_values, Val(:dont_check_time))
-modify_coeff_expr(q::QAtomProduct, coeff::CFunction, expr::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, coeff, expr, q.time_index, q.separate_expectation_values)
-modify_coeff_expr(q::QAtomProduct, coeff::CFunction, expr::Vector{QAtom}, ::Val{:dont_check_time})::QAtomProduct = QAtomProduct(q.statespace, coeff, expr, q.time_index, q.separate_expectation_values, Val(:dont_check_time))
-modify_coeff(q::QAtomProduct, coeff::CFunction)::QAtomProduct = QAtomProduct(q.statespace, coeff, q.expr, q.time_index, q.separate_expectation_values)
-modify_coeff(q::QAtomProduct, coeff::CFunction, ::Val{:dont_check_time})::QAtomProduct = QAtomProduct(q.statespace, coeff, q.expr, q.time_index, q.separate_expectation_values, Val(:dont_check_time))
+modify_expr(q::QAtomProduct, expr::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, q.coeff, expr, q.separate_expectation_values, Val(:dont_check_time))
+modify_coeff_expr(q::QAtomProduct, coeff::CFunction, expr::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, coeff, expr, q.separate_expectation_values)
+modify_coeff(q::QAtomProduct, coeff::CFunction)::QAtomProduct = QAtomProduct(q.statespace, coeff, q.expr, q.separate_expectation_values)
 each_term(q::QAtomProduct) = q.expr
 each_coeff(q::QAtomProduct)::Vector{CFunction} = [q.coeff]
 

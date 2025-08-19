@@ -1,4 +1,38 @@
 """ 
+    SubSpaceDefinitions(; kwargs...)
+
+SubSpaceDefinitions is a struct that processes the definition of the quantum subspaces, 
+"""
+struct SubSpaceDefinitions 
+    subspaces::Vector{SubSpace}  # Vector of all sub
+    used_symbols::Vector{Symbol}
+    I_op::Vector{Is}  # Vector of all neutral elements
+    I_ensemble_op::Vector{Vector{Is}}  # Vector of all neutral elements within ensembe subsystems 
+
+    function SubSpaceDefinitions(;kwargs...)
+        subspaces = Vector{SubSpace}()
+        used_symbols = Set{Symbol}()
+        key_counter = 0
+        core_keys::Vector{Symbol} = keys(kwargs)
+        for (i, (key, val)) in enumerate(kwargs) 
+            if isa(val, Tuple) 
+                ensemble_size, op_set = val  # unpacking
+            else
+                ensemble_size, op_set = 1, val
+            end
+            curr_subspace, keys_symbols = SubSpace(key, i, key_counter, ensemble_size, op_set, core_keys) 
+            key_counter += ensemble_size
+            push!(subspaces, curr_subspace)
+            append!(used_symbols, keys_symbols)
+        end
+        I_op::Vector{Is} = [s.op_set.neutral_element for s in subspaces for _ in 1:ensemble_size]
+        I_ensemble_op::Vector{Vector{Is}} = [I_op[is] for is in subspaceinfo.ensemble_indexes]
+        return new(subspaces, used_symbols, I_op, I_ensemble_op)
+    end
+end
+
+
+""" 
     SubSpace(key::String, keys::Vector{String}, ss_outer_ind::Int, ss_inner_ind::Vector{Int}, op_set::OperatorSet, ensemble::Bool, fermion::Bool)
 
 SubSpace defines a Subspace of a Hilbert space. It contains an operator set, aswell as additional information to reference and work with a subspace. 
@@ -19,7 +53,7 @@ function SubSpace(key_symbol::Symbol, ss_outer_ind::Int, index_counter::Int, ens
     key::String = String(key_symbol)
     return SubSpace(key, ss_outer_ind, index_counter, ensemble_size, op_set) 
 end
-function SubSpace(key::String, ss_outer_ind::Int, index_counter::Int, ensemble_size::Int, op_set::OperatorSet)::Tuple{SubSpace, Vector{Symbol}}
+function SubSpace(key::String, ss_outer_ind::Int, index_counter::Int, ensemble_size::Int, op_set::OperatorSet, core_keys::Vector{Symbol})::Tuple{SubSpace, Vector{Symbol}}
     if length(key) > 1 && ensemble_size > 1
         error("Currently only supports single characters for spin baths!")
     end
@@ -30,8 +64,14 @@ function SubSpace(key::String, ss_outer_ind::Int, index_counter::Int, ensemble_s
         error("For subspace pattern key \"$key\", the ensemble_size must be a positive integer. ")
     end
     start_char = Char(key[1])
+    # first attempt at keys -> subsequent letters 
     keys::String = [string(start_char + i) for i in 0:(ensemble_size-1)]
     keys_symbols::Vector{Symbol} = [Symbol(key) for key in keys]
+    # check if any of the keys_symbols are in core_keys   =========> Alternative to i,j,k,... indexing i0, i1, i2 and so on.
+    if any(keys_symbol -> keys_symbol in core_keys, keys_symbols) 
+        keys::String = [string(start_char)*"_"*string(i)  for i in 0:(ensemble_size-1)]
+        keys_symbols::Vector{Symbol} = [Symbol(key) for key in keys]
+    end
     key_symbol::Symbol = keys_symbol[1]
     ss_inner_ind::Vector{Int} = [index_counter+i for i in 1:ensemble_size]
     particle_type::String = OperatorSet.particle_type 

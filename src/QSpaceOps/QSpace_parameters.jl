@@ -55,7 +55,7 @@ struct ParameterInfo
     vars::Vector{Parameter} 
     time_var_inds::Vector{Int}
     c_one::CAtom
-
+    dim::Int
 
     function ParameterInfo(vars::Vector{Parameter}) 
         time_var_inds = Int[]
@@ -64,7 +64,8 @@ struct ParameterInfo
                 push!(time_var_inds, i)
             end
         end
-        return new(vars, time_var_inds) 
+        dim = length(vars)
+        return new(vars, time_var_inds, c_one, dim) 
     end
 end
 

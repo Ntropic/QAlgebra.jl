@@ -53,7 +53,7 @@ export get_default, set_flip_if_first_term_negative, set_do_braced, FLIP_IF_FIRS
 
 include("StringUtils.jl")
 using .StringUtils
-export symbol2formatted, str2sub, str2sup, brace, match_indexed_pattern
+export symbol2formatted, str2sub, str2sup, brace
 
 include("CFunctions.jl")
 using .CFunctions

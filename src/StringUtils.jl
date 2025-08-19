@@ -1,6 +1,7 @@
 module StringUtils
 
-export subscript_indexes, superscript_indexes, var_substitution, var_substitution_latex, str2sub, str2sup, term_pre_split, separate_terms, expstr_separate, symbol2formatted, brace, match_indexed_pattern
+export subscript_indexes, superscript_indexes, var_substitution, var_substitution_latex, 
+export str2sub, str2sup, term_pre_split, separate_terms, symbol2formatted, brace, match_indexed_pattern, brace_separate, underscore_separate
 
 """
     subscript_indexes::Dict{Char, String}
@@ -89,15 +90,6 @@ function symbol2formatted(symbol::String; do_hat::Bool=false)::Tuple{String, Str
 end
 
 
-function expstr_separate(expstr::String)::Tuple{String,Int}
-    exp::Int = 1
-    if occursin("^", expstr)
-        expstr, b = split(expstr, "^")
-        exp = parse(Int, b)
-    end
-    return expstr, exp
-end
-
 """ 
     brace(x::String; do_latex::Bool=true)::String
 Brace a string with parentheses. 
@@ -110,28 +102,65 @@ function brace(x::String; do_latex::Bool=true)::String
     end
 end
 
+# Separates strings and the komme separated elements in their braces, so that 
+#    "A(B,C)" -> ("A", ["B","C"])
+#    "A" -> ("A", [])
+function brace_separate(s::String; braces::Tuple{String, String} = ("(",")") )::Tuple{String, Vector{String}}
+    s = strip(s)
+    if length(braces[1]) != 1 || length(braces[2]) != 1
+        error("Only supports single character braces!")
+    end
+    if occursin(braces[1], s)
+        elements::Vector{String} = []
+        pref::String = ""
+        brace_ind = findall(braces[1], s)
+        brace_ind2 = findall(braces[2], s)
+        if length(brace_ind) != 1 || length(brace_ind2) != 1
+            error("Only supports a single brace pair!")
+        end
 
-"""
-    match_indexed_pattern(s::String, prefix::String, suffix::String) -> Tuple{Bool,Int}
+        brace_ind  = first(brace_ind[1])
+        brace_ind2 = first(brace_ind2[1])
 
-Check if `s` matches the pattern `prefix ( "_" digits )? suffix`.
-
-- If it matches with digits: returns `(true, index::Int)`.
-- If it matches without digits: returns `(true, 0)`.
-- If it doesn't match: returns `(false, 0)`.
-"""
-function match_indexed_pattern(s::String, prefix::String, suffix::String)
-    esc(x) = replace(x, r"([\\.^$|?*+()[\]{}])" => s"\\\1")
-    pat = Regex("^" * esc(prefix) * "(?:_(\\d+))?" * esc(suffix) * "\$")
-
-    m = match(pat, s)
-    if m === nothing
-        return (false, 0)
-    elseif m.captures[1] === nothing
-        return (true, 0)
-    else
-        return (true, parse(Int, m.captures[1]))
+        if brace_ind2 != length(s)
+            error("Does not support text after closing brace!")
+        end
+        pref = s[1:brace_ind-1]
+        content = s[brace_ind+1:brace_ind2-1]
+        # split by comma 
+        elements = strip.(split(content, ","))
+        return pref, elements 
+    else 
+        return s, String[]
     end
 end
 
+# Processes strings of the forms:
+#   --> "pref_{i,j,k}" and returns ("pref", ["i","j","k"]) 
+#   --> "pref_i" and returns ("pref", ["i"]) 
+#   --> "pref" and returns ("pref", [])
+function underscore_separate(s::String)
+    s = strip(s) 
+    if occursin("_", s)
+        pref::String = ""
+        str_split = split(s, "_")
+        if length(str_split) != 2
+            error("Only supports a single underscore!")
+        end
+        pref = String(str_split[1])
+        sub = String(str_split[2])
+        # has {braces}? 
+        if occursin("{", str_split[2])
+            should_be_empty, indexes = brace_separate(sub, braces=("{","}")) 
+            if length(should_be_empty) != 0
+                error("If braces {} are used for multi indexing, they must follow the underscore immediately, found $(should_be_empty)!")
+            end
+            return pref, String.(indexes)
+        else
+            return pref, [sub]
+        end
+    else
+        return s, String[]
+    end
+end
 end

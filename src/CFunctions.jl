@@ -53,8 +53,8 @@ struct CAtom <: CFunction
     end
 end
 copy(x::CAtom) =  CAtom(x.coeff, x.var_exponents)
-coeff(a::CAtom) = [a.coeff]
-var_exponents(a::CAtom) = [a.var_exponents]
+coeff(a::CAtom)::Vector{ComplexRational} = [a.coeff]
+var_exponents(a::CAtom)::Vector{Vector{Int}} = [a.var_exponents]
 dims(q::CAtom) = length(q.var_exponents)
 length(a::CAtom) = 1
 reorder(f::CAtom, var_index_order::Vector{Int})::CAtom = CAtom(f.coeff, f.var_exponents[var_index_order])

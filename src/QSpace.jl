@@ -51,6 +51,14 @@ struct OperatorSet
         end
         return new(name, particle_type, len, neutral_element, base_ops, non_base_ops, ops, op_product, op_dag, op2str, op2latex, commutes)
     end
+    function OperatorSet() # Dummy Operator Set 
+        dummy_fun(args...; kwargs...) = error("OperatorSet not initialized")
+        return OperatorSet("Unspecified", "none", 1, Int[0],
+                        Vector{Vector{Int}}(),
+                        Dict{String, Vector{Tuple{ComplexRational, Vector{Int}}}}(),
+                        String[],
+                        dummy_fun, dummy_fun, dummy_fun, dummy_fun, dummy_fun)
+    end
 end
 #function OperatorSet
 function Base.show(io::IO, os::OperatorSet)
@@ -79,6 +87,27 @@ include("QSpaceOps/QSpace_subspaces.jl")
 include("QSpaceOps/QSpace_abstract.jl")
 include("QSpaceOps/QSpace_parameters.jl")
 
+
+struct VarDefinitions
+    args::Vector{String}
+    args_symbols::Vector{Symbol} = []  
+    ts::Vector{Int} # time dependent variables
+    function VarDefinitions(args...; ts::Vector{Int} = Int[]) 
+        new_args = String[]
+        args_symbols::Vector{Symbol} = []  
+        for arg in args 
+            if arg isa Symbol 
+                push!(new_args, string(arg))
+                push!(args_symbols, arg)  # Store symbols
+            else
+                push!(new_args, string(arg)) 
+                push!(args_symbols, Symbol(arg))  # Convert
+            end
+        end
+        return new(new_args, args_symbols, ts)  
+    end 
+end
+
 """
     StateSpace(args...; kwargs...)
 
@@ -94,15 +123,12 @@ Constructs a combined Hilbert and Parameter space. The Hilbert space consists of
 """
 struct StateSpace
     # Subspace definitions:
-    subspaces::Vector{SubSpace}   # Vector of the outer subspaces 
-    subspaceinfo::SubSpaceInfo    # Info object containing references to all the indexing of outer and inner subspaces
-    I_op::Vector{Vector{Int}}     
-    I_ensemble_op::Vector{Vector{Is}}
+    subspaces::Vector{SubSpace}
+    subspace_info::SubSpaceInfo    # Info object containing references to all the indexing of outer and inner subspaces
 
     # Abstract operators
     operatortypes::Vector{OperatorType}
-    operator_names::Vector{String}
-    operatortypes_commutator_mat::Matrix{Bool}
+    operatortype_info::OperatorTypeInfo
 
     # Parameter fields:
     vars::Vector{Parameter}
@@ -115,39 +141,15 @@ struct StateSpace
     subspace_by_ind::Vector{Int}
     c_one::CAtom
 
-    function StateSpace(args...; operators::Union{String, Vector{String}}="A", kwargs...)
-        # ==========> 1st SubSpaces <==========
-        subspaces = Vector{SubSpace}()
-        used_symbols = Set{Symbol}()
-        key_counter = 0
-        for (i, (key, val)) in enumerate(kwargs) 
-            if isa(val, Tuple) 
-                ensemble_size, op_set = val  # unpacking
-            else
-                ensemble_size, op_set = 1, val
-            end
-            curr_subspace, keys_symbols = SubSpace(key, i, key_counter, ensemble_size, op_set) 
-            key_counter += ensemble_size
-            push!(subspaces, curr_subspace)
-            if !isempty(intersect(keys_symbols, used_symbols))
-                error("Duplicate string(s) $(intersect(keys_symbols, used_symbols)) found in subspace definitions")
-            end
-            append!(used_symbols, keys_symbols)
-        end
-        I_op::Vector{Is} = [s.op_set.neutral_element for s in subspaces for _ in 1:ensemble_size]
-        I_ensemble_op::Vector{Vector{Is}} = [I_op[is] for is in subspaceinfo.ensemble_indexes]
+    function StateSpace(subspace_def::SubSpaceDefinitions, op_def::OpDefinitions) 
+        # ==========> 1st Subspaces <==========
+        subspaces = subspace_def.subspaces
+        subspace_info = SubSpaceInfo(subspaces)
+        used_symbols = subspace_def.used_symbols
 
         # ==========> 2nd Abstract Operators <==========
-        if !isa(operators, Vector) 
-            operators = [operators]
-        end
-        operatortypes::Vector{OperatorType} = []
-        subspace_keys::Vector{String} = [s.key for s in subspaces]
-        for s in operators 
-            push!(operatortypes, string2operator_type(s, subspace_keys, length(I_op), subspaces))
-        end
-        operator_names::Vector{String} = [ot.name for ot in operatortypes]
-        operatortypes_commutator_mat = operatertypes2commutator_matrix(operatortypes)
+        operatortypes = OpDefinitions2OperatorType(op_def, subspace_def)
+        operatortype_info = OperatorTypeInfo(operatortypes, op_def.commute_fun, op_def.check_n) 
 
         # ==========> 3rd Variables <==========
         vars::Vector{Parameter} = []
@@ -248,8 +250,8 @@ struct StateSpace
             inds = sub.ss_inner_ind
             subspace_by_ind[inds] .= i
         end
-        qss = new( subspaces, subspaceinfo, I_op, I_ensemble_op,                                            # Subspace Structure 
-                operatortypes, operator_names, operatortypes_commutator_mat,                                # Abstract Operators 
+        qss = new( subspaces, subspace_info,                                      # Subspaces
+                operatortypes, operatortype_info,                                 # Abstract Operators 
                 vars, how_many_by_ensemble, where_by_ensemble, where_by_ensemble_var, where_by_time, where_const, subspace_by_ind, c_one)   # Variables 
         return qss
     end

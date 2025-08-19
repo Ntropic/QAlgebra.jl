@@ -1,3 +1,36 @@
+struct OpDefinitions
+    operators::Vector{Tuple{String, Vector{String}}}
+    commute_fun::Function 
+    check_n::Int
+    function OpDefinitions(operators...; commute_fun::Union{Nothing,Function}=nothing, check_n=5) 
+        new_operators::Vector{Tuple{String, Vector{String}}} = []
+        for op in operators
+            if isa(op, String)
+                push!(new_operators, brace_separate(s))
+            elseif isa(op, Symbol)
+                push!(new_operators, (string(op), String[]))
+            elseif isa(op, Tuple)
+                push!(new_operators, op) 
+            else 
+                error("Invalid operator type: $op, must be String, Tuple{String, Vector{String}} or Symbol!")
+            end
+        end
+        return new(new_operators, commute_fun, check_n)  
+    end
+end
+
+struct OperatorTypeInfo
+    operator_names::Vector{String} # names of the operators (e
+    operator_types::Vector{OperatorType}
+    commutation_matrix::Matrix{Bool} # if true, then the operators commute. If false, they probably don't 
+    commute_fun::Function 
+    function OperatorTypeInfo(operator_types::Vector{OperatorType}; commute_fun::Union{Nothing,Function}=nothing, check_n=5) 
+        operator_names::Vector{String} = [ot.name for ot in operator_types]
+        commutation_matrix, fun = generate_commutation_matrix(operator_types, commute_fun, check_n)
+        return new(operator_names, operator_types, commutation_matrix, fun)
+    end
+end
+
 """ 
     OperatorType(name::String, hermitian::Bool=false, unitary::Bool=false, acting_ss::Union{Nothing, Vector{Bool}}=nothing)
 
@@ -6,73 +39,74 @@ Define an operator Type, by declaring its name and properties such as hermitian 
 """
 struct OperatorType
     name::String 
+    name_sym::Symbol
     operator_index::Int
     hermitian::Bool 
     unitary::Bool 
     of_time::Bool
     acting_ss::Vector{Bool}   # formerly acting_ss
     expanded_ss_acting::Vector{Bool} # indices of non-trivial components in the op_indices picture for bath subsystems
-    function OperatorType(name::String; operator_index::Int, hermitian::Bool=false, unitary::Bool=false, of_time::Bool, acting_ss::Vector{Bool}, expanded_ss_acting::Vector{Bool})
-        if length(name) == 0
-            error("OperatorType name cannot be empty.")
-        end
-        new(name, operator_index, hermitian, unitary, of_time, subsystems,acting_ss, expanded_ss_acting)
-    end
 end
-function string2operator_type(operator_index::Int, s::String, subspace_keys::Vector{String}, dim::Int, subspaces::Vector{SubSpace})
-    # use name(U,H) notation, separate the name from the brace. and parse the , separated elements within the brace to determine which properties are true (by default all are false) 
-    hermitian = false 
-    unitary = false 
-    of_time = false
-    acting_ss::Vector{Bool} = [true for _ in subspace_keys]
-    name::String = ""
-    modified_subspace_keys::Vector{String} = ["!"*key for key in subspace_keys]
-    if occursin("(", s)  # Check if there is a brace in the string
-        name, brace = split(s, "(")  # Output: ["As", "U,H"]
-        if length(brace) > 0
-            brace = split(brace, ")")[1]  # Output: "U,H"
-            tokens = split(brace, ",")  # Output: ["U", "H"]
-            tokens = [strip(t) for t in tokens]
-            of_time = "t" in tokens
-            hermitian = "H" in tokens
-            unitary = "U" in tokens 
-            token_list = vcat(["t", "H", "U"], subspace_keys, modified_subspace_keys)
-            # if any token not in token_list, return error
-            for token in tokens
-                if !(token in token_list)
-                    throw(ArgumentError("Invalid token: $token"))
-                end
-            end
-            any_subspace_keys = false
-            for s in subspace_keys
-                if s in tokens
-                    any_subspace_keys = true
-                    break 
-                end
-            end
-            if any_subspace_keys
-                # check if any modified_subspace_keys in tokens
-                for s in modified_subspace_keys
-                    if s in tokens
-                        throw(ArgumentError("Cannot have negatved subspace and subspace keys at the same time"))
-                    end
-                end
-                for (i, s) in enumerate(subspace_keys)
-                    acting_ss[i] = s in tokens
-                end
+
+function OpDefinitions2OperatorType(opdefs::OpDefinitions, subspace_definitions::SubSpaceDefinitions)::Vector{OperatorType}  
+     return [SingleOpDefinition2OperatorType(op_def, i, cond, subspace_definitions) for (i, (op_def, cond) in enumerate(opdefs.operators))]
+end
+function SingleOpDefinition2OperatorType(op_str::String, operator_index::Int, conditions::Vector{String}, subspace_definitions::SubSpaceDefinitions)::OperatorType
+    used_symbols::Vector{Symbol} = subspace_definitions.used_symbols
+    op_sym::Symbol = Symbol(op_str)
+    conditions_sym::Vector{Symbol} = Symbol.(conditions)
+    if (op_sym in used_symbols)
+        error("Operator $op_str already defined for either an Subspace definition or another Abstract Operator!") 
+    end
+
+    key_symbols::Vector{Symbol} = Symbol[]  # Add all
+    for subspace in subspace_definitions.subspaces
+        push!(key_symbols, subspace.key_symbol)
+    end
+    if length(conditions_sym) != length(unique(conditions_sym))
+        throw(ArgumentError("Duplicate conditions in operator definition $(conditions_sym)")
+    end
+
+    of_time, unitary, hermitian = false, false, false 
+    conditions_str::Vector{String} = []
+    contains_negation::Vector{Bool} = []
+    reduced_conditions_sym::Vector{Symbol} = []
+    for condition_sym in conditions_sym
+        if condition_sym == :t
+            of_time = true
+        elseif condition_sym == :U || condition_sym == :unitary
+            unitary = true
+        elseif condition_sym == :H || condition_sym == :hermitian
+            hermitian = true
+        else 
+            condition_str = string(condition_sym)
+            if startswith(condition_str, "!") 
+                push!(contains_negation, true)
+                push!(conditions_str, condition_str[2:end])
+                push!(reduced_conditions_sym, Symbol(condition_str[2:end]))
             else
-                acting_ss = fill(true, length(subspace_keys))
-                for (i, s) in enumerate(modified_subspace_keys)
-                    if s in tokens
-                        acting_ss[i] = false
-                    end
-                end
+                push!(contains_negation, false)
+                push!(conditions_str, condition_str)
+                push!(reduced_conditions_sym, condition_sym)
             end
-        else
-            throw(ArgumentError("Invalid Operator string: $s"))
         end
-    else
-        name = s
+    end
+    for reduced_conditions_sym in conditions_sym
+        if !(condition_sym in key_symbols)
+            throw(ArgumentError("Invalid condition: $condition_sym, must be one of: $(accepted_conditions)")) 
+        end 
+    end
+    # check if all negations are the same 
+    if !(all(contains_negation)  || all(.!contains_negation))
+        error("Mixed negations in conditions are not allowed, got for $op_str the negation pattern $contains_negation.")
+    end
+    negation::Bool = contains_negation[1]
+    acting_ss::Vector{Bool} = [negation for _ in subspace_keys]
+
+    for (i, key_symbol) in enumerate(key_symbols)  
+        if key_symbol in redduced_conditions_sym 
+            acting_ss[i] = !acting_ss[i]
+        end
     end
     expanded_ss_acting::Vector{Bool} = fill(false, dim)
     for (s_bool, subspace) in zip(acting_ss, subspaces)
@@ -82,8 +116,9 @@ function string2operator_type(operator_index::Int, s::String, subspace_keys::Vec
             end
         end
     end
-    return OperatorType(name, operator_index, hermitian=hermitian, unitary=unitary, of_time=of_time, acting_ss=acting_ss, expanded_ss_acting=expanded_ss_acting)
+    return OperatorType(op_str, op_sym, operator_index, hermitian, unitary, of_time, acting_ss, expanded_ss_acting)
 end
+
 function operator_type2string(p::OperatorType, time_index::Int=0)
     curr_str = p.name 
     if any([p.hermitian, p.unitary])
@@ -178,3 +213,14 @@ function gen_commutes_function(optypes::Vector{OperatorType}, fun::Union{Functio
     end
 end
 
+struct OperatorTypeInfo
+    operator_names::Vector{String} # names of the operators (e
+    operator_types::Vector{OperatorType}
+    commutation_matrix::Matrix{Bool} # if true, then the operators commute. If false, they probably don't 
+    commute_fun::Function 
+    function OperatorTypeInfo(operator_types::Vector{OperatorType}; commute_fun::Union{Nothing,Function}=nothing, check_n=5) 
+        operator_names::Vector{String} = [ot.name for ot in operator_types]
+        commutation_matrix, fun = generate_commutation_matrix(operator_types, commute_fun, check_n)
+        return new(operator_names, operator_types, commutation_matrix, fun)
+    end
+end
