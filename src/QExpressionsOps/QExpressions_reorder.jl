@@ -1,6 +1,7 @@
 import ..CFunctions: reorder
 export reorder
 
+# Fix this function vor variables 
 function where_defined_to_index_order(statespace::StateSpace, where_defined::Vector{Vector{Bool}})::Tuple{Vector{Int}, Vector{Int}}
     # takes where_defined and the ensemble indexes to determine the new order for both operators and variables 
     # for each element of where_defined, we shift all the true elements to the left, and all false elements to the right, we want to get the indexes of the permutation that achieves that 
@@ -12,11 +13,11 @@ function where_defined_to_index_order(statespace::StateSpace, where_defined::Vec
     variable_indexes = statespace.where_by_ensemble_var
     for (w, c, vs)  in zip(where_defined, ensemble_indexes, variable_indexes)
         w_order = sortperm(w, rev=true)
+        op_inds[c] = op_inds[c][w_order]
+    end
         for v in vs
             var_inds[v] = var_inds[v][w_order]
         end
-        op_inds[c] = op_inds[c][w_order]
-    end
     return op_inds, var_inds
 end
 

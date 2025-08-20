@@ -15,12 +15,14 @@ struct SubSpaceDefinitions
         key_counter = 0
         core_keys::Vector{Symbol} = keys(kwargs)
         for (i, (key, val)) in enumerate(kwargs) 
+            is_ensemble_ss = false
             if isa(val, Tuple) 
+                is_ensemble_ss = true
                 ensemble_size, op_set = val  # unpacking
             else
-                ensemble_size, op_set = 1, val
+                ensemble_size, op_set = 1, val 
             end
-            curr_subspace, keys_symbols = SubSpace(key, i, key_counter, ensemble_size, op_set, core_keys) 
+            curr_subspace, keys_symbols = SubSpace(key, i, key_counter, is_ensemble_ss, ensemble_size, op_set, core_keys) 
             key_counter += ensemble_size
             push!(subspaces, curr_subspace)
             append!(used_symbols, keys_symbols)
@@ -45,15 +47,16 @@ struct SubSpace
     keys::Vector{String}            # Allowed keys for this subspace 
     ss_outer_ind::Int        # Which Vector to use for ss_inner_ind  (this is for accessing the string elements)
     ss_inner_ind::Vector{Int}    # Indices to access operator values in the corresponding statespace main ind  (this is for accessing the string elements)
+    is_ensemble_ss::Bool
     ensemble_size::Int
     particle_type::String
     op_set::OperatorSet             # The operator set for this subspace.
 end
-function SubSpace(key_symbol::Symbol, ss_outer_ind::Int, index_counter::Int, ensemble_size::Int, op_set::OperatorSet)::Tuple{SubSpace, Vector{Symbol}}
+function SubSpace(key_symbol::Symbol, ss_outer_ind::Int, index_counter::Int, is_ensemble_ss::Bool, ensemble_size::Int, op_set::OperatorSet)::Tuple{SubSpace, Vector{Symbol}}
     key::String = String(key_symbol)
-    return SubSpace(key, ss_outer_ind, index_counter, ensemble_size, op_set) 
+    return SubSpace(key, ss_outer_ind, index_counter, is_ensemble_ss, ensemble_size, op_set) 
 end
-function SubSpace(key::String, ss_outer_ind::Int, index_counter::Int, ensemble_size::Int, op_set::OperatorSet, core_keys::Vector{Symbol})::Tuple{SubSpace, Vector{Symbol}}
+function SubSpace(key::String, ss_outer_ind::Int, index_counter::Int, is_ensemble_ss::Bool, ensemble_size::Int, op_set::OperatorSet, core_keys::Vector{Symbol})::Tuple{SubSpace, Vector{Symbol}}
     if length(key) > 1 && ensemble_size > 1
         error("Currently only supports single characters for spin baths!")
     end
@@ -75,7 +78,7 @@ function SubSpace(key::String, ss_outer_ind::Int, index_counter::Int, ensemble_s
     key_symbol::Symbol = keys_symbol[1]
     ss_inner_ind::Vector{Int} = [index_counter+i for i in 1:ensemble_size]
     particle_type::String = OperatorSet.particle_type 
-    return SubSpace(key_symbol, keys_symbol, key, keys, ss_outer_ind, ss_inner_ind, ensemble_size, particle_type, op_set), keys_symbols 
+    return SubSpace(key_symbol, keys_symbol, key, keys, ss_outer_ind, ss_inner_ind, is_ensemble_ss, ensemble_size, particle_type, op_set), keys_symbols 
 end
 # Define the custom show for SubSpace.
 function Base.show(io::IO, statespace::SubSpace)
@@ -100,9 +103,7 @@ struct SubSpaceInfo
 
     expanded_index_by_outer::Vector{Vector{Int}} # Which indexes belong to an outer index 
     where_ensembles::Vector{Int}               # which subspaces are ensembles? 
-    ensemble_indexes::Vector{Vector{Int}}      # The indexes of the ensembles 
-    n_outer::Int                               # How many outer subsystems
-    n_expanded::Int                            # How many inner subsystems
+    ensemble_indexes::Vector{Vector{Int}}      # The expanded indexes of the ensembles 
 end
 function Base.show(io::IO, info::SubSpaceInfo)
     print(io, "SubSpaceInfo:\n")
@@ -112,12 +113,10 @@ function Base.show(io::IO, info::SubSpaceInfo)
     print(io, "  outer_ss_of_expanded:    ", info.outer_ss_of_expanded, "\n")
     print(io, "  inner_ss_of_expanded:    ", info.inner_ss_of_expanded, "\n")
     print(io, "  expanded_index_by_outer: ", info.expanded_index_by_outer, "\n")
-    print(io, "  n_outer:                 ", info.n_outer, "\n")
-    print(io, "  n_expanded:              ", info.n_expanded)
 end
 
 # Primary constructor from labels
-function SubSpaceInfo(outer_labels_symbols::Vector{Symbol}, inner_labels_symbols::Vector{Vector{Symbol}})
+function SubSpaceInfo(outer_labels_symbols::Vector{Symbol}, inner_labels_symbols::Vector{Vector{Symbol}}, are_ensemble_ss::Vector{Bool})
     inner_labels_symbols_flat = vcat(inner_labels_symbols...)
     outer_labels = map(string, outer_labels_symbols)
     inner_labels = map(string, inner_labels_symbols)
@@ -147,7 +146,7 @@ function SubSpaceInfo(outer_labels_symbols::Vector{Symbol}, inner_labels_symbols
     where_ensembles::Vector{Int} = []
     ensemble_indexes::Vector{Vector{Int}} = []
     for o in eachindex(subsystem_sizes)
-        if subsystem_sizes[o] > 1 
+        if are_ensemble_ss[o] 
             push!(where_ensembles, o)
             push!(ensemble_indexes, expanded_index_by_outer[o])
         end
@@ -155,14 +154,15 @@ function SubSpaceInfo(outer_labels_symbols::Vector{Symbol}, inner_labels_symbols
     return SubSpaceInfo( outer_labels_symbols, inner_labels_symbols, inner_labels_symbols_flat, 
                          outer_labels, inner_labels, inner_labels_flat, 
                          subsystem_sizes, outer_ss_of_expanded, inner_ss_of_expanded, expanded_index_by_outer,
-                         where_ensembles, ensemble_indexes, length(subsystem_sizes), n_exp )
+                         where_ensembles, ensemble_indexes )
 end
 
 # Convenience: build from your existing `SubSpace` vector
 function SubSpaceInfo(subspaces::Vector{SubSpace})
     outers  = [s.key        for s in subspaces]
     inners  = [copy(s.keys) for s in subspaces]   # for non-ensemble subspaces this is length 1
-    return SubSpaceInfo(outers, inners)
+    are_ensemble_ss = [s.is_ensemble_ss for s in subspaces] 
+    return SubSpaceInfo(outers, inners, are_ensemble_ss)
 end
 
 @inline function outer_inner_2_expanded(info::SubSpaceInfo, outer::Int, inner::Int=1)

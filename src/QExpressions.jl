@@ -143,7 +143,7 @@ struct QExpr <: QObj
     function QExpr(statespace::StateSpace, terms::AbstractVector{<:QComposite})
         if isempty(terms) 
             # add neotral zero term
-            zero_term = QAtomProduct(statespace, statespace.c_one*0, QAtom[])
+            zero_term = QAtomProduct(statespace, statespace.c_zero, QAtom[])
             terms = [zero_term]
         end
         return new(statespace, terms)
@@ -151,7 +151,7 @@ struct QExpr <: QObj
     function QExpr(statespace::StateSpace, terms::AbstractVector{<:QComposite}, ::Val{:simp})
         if isempty(terms) 
             # add neotral zero term
-            zero_term = QAtomProduct(statespace, statespace.c_one*0, QAtom[])
+            zero_term = QAtomProduct(statespace, statespace.c_zero, QAtom[])
             terms = [zero_term]
         end
         return new(statespace, simplify_QExpr(Vector{QComposite}(terms)))

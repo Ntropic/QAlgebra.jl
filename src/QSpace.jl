@@ -132,127 +132,34 @@ struct StateSpace
 
     # Parameter fields:
     vars::Vector{Parameter}
-    how_many_by_ensemble::Dict{Int,Int}   # for ensemble subspaces, how many variables do we have 
-    where_by_ensemble::Dict{Int,Vector{Vector{Int}}}   # for ensemble subspaces, where are our variables  
-    where_by_ensemble_var::Vector{Vector{Vector{Int}}}
-    where_by_time::Vector{Int}
-    where_const::Vector{Int}
-    
-    subspace_by_ind::Vector{Int}
-    c_one::CAtom
+    param_info::ParameterInfo
 
-    function StateSpace(subspace_def::SubSpaceDefinitions, op_def::OpDefinitions) 
+    I_op::Vector{Vector{Int}}               # Neutral Vector of all expanded subspaces
+    I_ensemble_op::Vector{Vector{Int}}      # Neutral Vector of all expanded ensemble subspaces
+    c_one::CAtom                            # onelike function in CFunctions 
+    c_zero::CAtom                           # zerolike function in CFunctions 
+
+    function StateSpace(subspace_def::SubSpaceDefinitions, op_def::OpDefinitions, param_def::ParameterDefinitions)
         # ==========> 1st Subspaces <==========
         subspaces = subspace_def.subspaces
         subspace_info = SubSpaceInfo(subspaces)
         used_symbols = subspace_def.used_symbols
+        I_op, I_ensemble_op = subspace_def.I_op, subspace_def.I_ensemble_op  # These are
 
         # ==========> 2nd Abstract Operators <==========
         operatortypes = OpDefinitions2OperatorType(op_def, subspace_def)
         operatortype_info = OperatorTypeInfo(operatortypes, op_def.commute_fun, op_def.check_n) 
 
-        # ==========> 3rd Variables <==========
-        vars::Vector{Parameter} = []
-        vars_cont::Vector{Tuple{Vector{Int},Tuple}} = []
-        where_by_ensemble::Dict{Int,Vector{Vector{Int}}} = Dict()
-        how_many_by_ensemble::Dict{Int,Int} = Dict()
-        where_by_time::Vector{Int} = []
-        where_const::Vector{Int} = []
-        for i in 1:length(subspaces)
-            if subspaces[i].ensemble
-                where_by_ensemble[i] = Vector[]
-                how_many_by_ensemble[i] = 0
-            end
-        end
-        # Convert state variables (positional arguments) into strings.
-        # Convert state variables (positional arguments) into Parameters.
-        #args = sort(collect(args), by=length, rev=true)  # first sort args by length -> this helps avoid conflicts in potential string parsing, so that alpha' and alpha are both deteccted properly for example, since we search first for alpha'...
-        for arg in args
-            if !isa(arg, String)
-                error("Parameters must be declared via Strings, problem with $arg.")
-            end
-
-            var_of_t = occursin("(t)", arg)
-            raw_arg = replace(arg, "(t)" => "")
-            var_of_ensemble = occursin("_", raw_arg)
-
-            pre, sub = "", ""
-            var_ensemble_index = 0
-
-            if var_of_ensemble
-                parts = split(raw_arg, "_")
-                if length(parts) != 2
-                    error("Malformed ensemble variable: $arg")
-                end
-                pre, sub = parts
-                if length(sub) > 1
-                    error("ensemble index ($sub) in ($arg) must be a single character.")
-                end
-
-                if pre in used_symbols
-                    error("Duplicate variable name ($pre) found.")
-                end
-                push!(used_symbols, pre)
-
-                curr_subs::Vector{String} = []
-                for (index, (key, val)) in enumerate(kwargs)
-                    key_str = String(key)
-                    if sub[1] == key_str[1]
-                        var_of_ensemble = true
-                        var_ensemble_index = index
-                        curr_subs = copy(subspaces[var_ensemble_index].keys)
-                        break
-                    end
-                end
-                if var_ensemble_index == 0
-                    error("Couldn't find a ensemble with key ($sub) for variable ($arg)")
-                end
-
-                how_many_by_ensemble[var_ensemble_index] += 1
-                i_vec::Vector{Int} = []
-                curr_where = Int[]
-                for sublabel in curr_subs
-                    p = Parameter(string(pre), var_of_t, true, var_ensemble_index; var_suffix=sublabel)
-                    push!(vars, p)
-                    push!(i_vec, length(vars))
-                    push!(curr_where, length(vars))
-                    if var_of_t
-                        push!(where_by_time, length(vars))
-                    else
-                        push!(where_const, length(vars))
-                    end
-                end
-                push!(where_by_ensemble[var_ensemble_index], curr_where)
-                push!(vars_cont, (i_vec, ()))
-
-            else
-                pre = raw_arg
-                if pre in used_symbols
-                    error("Duplicate variable name ($pre) found.")
-                end
-                push!(used_symbols, pre)
-                p = Parameter(pre, var_of_t, false, 0)
-                push!(vars, p)
-                if var_of_t
-                    push!(where_by_time, length(vars))
-                else
-                    push!(where_const, length(vars))
-                end
-            end
-        end
-
+        # ==========> 3rd Parameters <==========
+        vars, param_info = ParameterDefinitions2Parameters(param_def, subspace_info, used_symbols)
+    
         # Generate the string representations
         c_one = CAtom(ComplexRational(1,0,1), zeros(Int, length(vars)))
-        
-        where_by_ensemble_var::Vector{Vector{Vector{Int}}} = [where_by_ensemble[i] for i in where_ensemble]
-        subspace_by_ind::Vector{Int} = zeros(Int, length(I_op))
-        for (i, sub) in enumerate(subspaces)
-            inds = sub.ss_inner_ind
-            subspace_by_ind[inds] .= i
-        end
+        c_zero = CAtom(ComplexRational(0,0,1), zeros(Int, length(vars)))
         qss = new( subspaces, subspace_info,                                      # Subspaces
                 operatortypes, operatortype_info,                                 # Abstract Operators 
-                vars, how_many_by_ensemble, where_by_ensemble, where_by_ensemble_var, where_by_time, where_const, subspace_by_ind, c_one)   # Variables 
+                vars, param_info, how_many_by_ensemble,
+                I_op, I_ensemble_op, c_one, c_zero)   # Variables 
         return qss
     end
 end

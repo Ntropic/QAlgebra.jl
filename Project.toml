@@ -4,12 +4,14 @@ authors = ["Michael Schilling"]
 version = "0.2.0"
 
 [deps]
+Combinatorics = "861a8166-3701-5b0c-9a16-15d98fcdc6aa"
 ComplexRationals = "fec49eec-9feb-41dd-a20b-fe4c3aae4e50"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 
 [compat]
+Combinatorics = "1.0.3"
 ComplexRationals = "0.2"
 LaTeXStrings = "1.4"
 Preferences = "1.4"
