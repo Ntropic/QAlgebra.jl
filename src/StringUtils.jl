@@ -154,22 +154,22 @@ end
 #   --> "pref_i" and returns ("pref", ["i"]) 
 #   --> "pref" and returns ("pref", [])
 function underscore_separate(s::String)
-    s = strip(s) 
+    s = string(strip(s)) 
     if occursin("_", s)
         pref::String = ""
         str_split = split(s, "_")
         if length(str_split) != 2
             error("Only supports a single underscore!")
         end
-        pref = String(str_split[1])
-        sub = String(str_split[2])
+        pref = string(str_split[1])
+        sub = string(str_split[2])
         # has {braces}? 
         if occursin("{", str_split[2])
             should_be_empty, indexes = brace_separate(sub, braces=("{","}")) 
             if length(should_be_empty) != 0
                 error("If braces {} are used for multi indexing, they must follow the underscore immediately, found $(should_be_empty)!")
             end
-            return pref, String.(indexes)
+            return pref, string.(indexes)
         else
             return pref, [sub]
         end

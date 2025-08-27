@@ -6,7 +6,7 @@ using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, ^, product, iszero, copy
 using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
 using ..CFunctions: isnumeric
-export QEq, QObj, QAtom, QAbstract, QComposite, QCompositeN, QCompositeProduct, QMultiComposite, QTerm, QAtomProduct, QExpr, QSum, Sum, ∑, diff_QEq, base_operators, simplify, simplify_QAtomProduct, flatten, neq, d_dt
+export QEq, QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, diff_QEq, base_operators, simplify, d_dt
 
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
@@ -69,7 +69,11 @@ struct QTerm <: QAtom
     function QTerm(op_indices::Vector{Vector{Int}}, ::Val{:nocopy})
         return new(op_indices)
     end
+end 
+@inline function Base.getindex(qterm::QTerm, i::Int)
+    return qterm.op_indices[i]
 end
+
 
 """
     QAbstract(indices::Vector{Int})
@@ -96,39 +100,7 @@ struct QAbstract <: QAtom
 end
 dag_copy(q::QAbstract)::QAbstract = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, !q.dag, index_map=q.index_map)
 add_to_index_map(q::QAbstract, added_index_pair::Tuple{Int,Int}) = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, q.dag, vcat(q.index_map, added_index_pair))
-
-""" 
-    QAtomProduct
-
-A product of QAtom expressions, i.e. qTerms or QAbstract.
-It contains:
-    - `statespace`: The state space in which the product is defined.
-    - `coeff_fun`: The function of parameters for the Operator product
-    - `expr`: A vector of qAtoms (qTerms or QAbstract) that are multiplied together.
-"""
-struct QAtomProduct <: QComposite
-    statespace::StateSpace         # State space of the product.
-    coeff_fun::CFunction            # function of scalar parameters => has +,-,*,/,^ defined 
-    expr::Vector{QAtom}             # Vector of qAtoms (qTerms or QAbstract).
-    separate_expectation_values::Bool 
-    function QAtomProduct(statespace::StateSpace, coeff::T, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false) where T <: CFunction
-        new(statespace, coeff, expr, separate_expectation_values)
-    end
-    function QAtomProduct(statespace::StateSpace, coeff::T, expr::S, separate_expectation_values::Bool=false) where {T <: CFunction, S <: QAtom}
-        new(statespace, coeff, [expr], separate_expectation_values)
-    end
-    function QAtomProduct(statespace::StateSpace, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false) 
-        new(statespace, statespace.c_one, expr, separate_expectation_values)
-    end
-    function QAtomProduct(statespace::StateSpace, expr::S, separate_expectation_values::Bool=false) where {S <: QAtom}
-        new(statespace, statespace.c_one, [expr], separate_expectation_values)
-    end
-end
-modify_expr(q::QAtomProduct, expr::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, q.coeff, expr, q.separate_expectation_values, Val(:dont_check_time))
-modify_coeff_expr(q::QAtomProduct, coeff::CFunction, expr::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, coeff, expr, q.separate_expectation_values)
-modify_coeff(q::QAtomProduct, coeff::CFunction)::QAtomProduct = QAtomProduct(q.statespace, coeff, q.expr, q.separate_expectation_values)
-each_term(q::QAtomProduct) = q.expr
-each_coeff(q::QAtomProduct)::Vector{CFunction} = [q.coeff]
+change_exp_dag(q::QAbstract, new_exp::Int, new_dag::Bool) = QAbstract(q.key_index, q.sub_index, new_exp, new_dag, q.operator_type, q.index_map)
 
 
 """
@@ -174,37 +146,9 @@ length(q::QExpr) = length(q.terms)
 each_term(q::QExpr) = q.terms
 each_coeff(q::QExpr)::Vector{CFunction} = flatmap_to(each_coeff, each_term(q), CFunction)
 
-"""
-    QSum
+include("QExpressionsOps/QExpressions_composites.jl")
+include("QExpressionsOps/QExpressions_helper.jl") 
 
-A `QSum` represents the summation of a quantum Equation over indexes in a quantum expression.
-It contains:
-    - `expr`: The expression being summed over, which is a `QExpr` object.
-    - `indexes`: A vector of strings representing the summation indexes (e.g., "i").
-    - `subsystem_index`: The index of the subspace in which the indexes live. 
-    - `element_indexes`: A vector of integers representing the position of the indexes in that subspace.
-    - `neq`: A boolean indicating whether different indexes in the sum can refer to the same element in the subspace. 
-            For example, the indexes i,j,k can refer to different elements in a much larger bath of elements. 
-"""
-struct QSum <: QComposite
-    statespace::StateSpace
-    expr::QExpr       # The expression being summed over.    # use expr in other QComposites except for QAtomProduct
-    indexes::Vector{String}   # The summation index (e.g. "i").
-    subsystem_index::Int  # The subspace index where the summation index was found.
-    element_indexes::Vector{Int}    # The position in that subspace.
-    neq::Bool
-    function QSum(statespace::StateSpace, expr::QExpr, indexes::Vector{String}, subsystem_index::Int, element_indexes::Vector{Int}, neq::Bool)
-        return new(statespace,  expr, copy(indexes), subsystem_index, copy(element_indexes), neq)
-    end
-    function QSum(statespace::StateSpace, expr::QExpr, indexes::Vector{String}, subsystem_index::Int, element_indexes::Vector{Int}, neq::Bool, ::Val{:simp})
-        return new(statespace,  expr, copy(indexes), subsystem_index, copy(element_indexes), neq)
-    end
-end
-copy(q::QSum)::QSum = QSum(q.statespace,q.expr, q.indexes, q.subsystem_index, q.element_indexes, q.neq)
-modify_expr(q::QSum, expr::QExpr) = QSum(q.statespace, expr, q.indexes, q.subsystem_index, q.element_indexes, q.neq)
-modify_expr_indexes(q::QSum, expr::QExpr, indexes::Vector{String}, subsystem_index::Int, element_indexes::Vector{Int}) = QSum(q.statespace, expr, indexes, subsystem_index, element_indexes, q.neq)
-each_term(q::QSum) = q.expr
-each_coeff(q::QExpr)::Vector{CFunction} = flatmap_to(each_coeff, each_term(q), CFunction)
 
 """
     diff_QEq
@@ -241,62 +185,7 @@ function diff_QEq(statespace::StateSpace, left_hand_side::QAtomProduct, expr::QE
     return diff_QEq(statespace, left_hand_side, new_rhs, braket)
 end
 
-"""
-    Sum(index::Union{String,Symbol,Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=false) -> QSum
 
-Constructor of a `QSum` struct. Defines the indexes to sum over, the expressions for which to apply the sum and optionally whether the sum is only over non equal indexes. 
-"""
-function Sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=false)::QExpr
-    index_strs = [string(index) for index in indexes]
-    ss = expr.statespace
-    the_s_ind::Int = -1
-    e_inds::Vector{Int} = []
-    for index_str in index_strs
-        found = false
-        for (s_ind, sub) in enumerate(ss.subspaces)
-            for (e_ind, key) in enumerate(sub.keys)
-                if key == index_str
-                    if the_s_ind == -1
-                        the_s_ind = s_ind
-                    else
-                        if s_ind != the_s_ind
-                            error("Index $index_str found in multiple subspaces. Please specify a single subspace.")
-                        end
-                    end
-                    push!(e_inds, e_ind)
-                    found = true
-                    break
-                end
-            end
-            if found
-                break
-            end
-        end
-        if !found
-            error("Index $index_str not found in any subspace keys in the state space.")
-        end
-    end
-    if length(index_strs) > 0
-        if length(e_inds) != length(unique(e_inds))
-            error("Duplicate indexes found in the input.")
-        end
-        sort!(e_inds)
-        return QExpr(ss, [QSum(ss, expr, index_strs, the_s_ind, e_inds, neq, Val(:simp))])
-    else
-        return expr
-    end
-end
-function Sum(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false)::QExpr
-    return Sum([index], expr, neq=neq)
-end
-""" 
-    ∑(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false) -> QSum
-
-Alternative way to call the `Sum` constructor. Sum(index, expr; neq) = ∑(index, expr; neq).
-"""
-∑(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false) = Sum(index, expr, neq=neq)
-∑(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=false) = Sum(indexes, expr, neq=neq)
- 
 #### Helper Functions #######################################################################################
 # Define iteration for QExpr so that iterating over it yields its QTerm's.
 function iterate(q::QExpr, state::Int=1)
@@ -321,16 +210,12 @@ iszero(q::QSum) = iszero(q.expr)
 iszero(q::T) where T<:QComposite = iszero(q.coeff_fun) || iszero(q.expr)
 iszero(q::T) where T<:QMultiComposite = iszero(q.coeff_fun) || any(iszero, q.expr) 
 
-include("QExpressionsOps/QExpressions_functions.jl")
-include("QExpressionsOps/QExpressions_helper.jl") # Helper functions for QAtomProduct simplify
-
 include("QExpressionsOps/QExpressions_base_operators.jl")
 include("QExpressionsOps/QExpressions_sort.jl")
 include("QExpressionsOps/QExpressions_simplify.jl")
 
-include("QExpressionsOps/QExpressions_string2term.jl")
 include("QExpressionsOps/QExpressions_algebra.jl")
-include("QExpressionsOps/QExpressionsPrint.jl")
+include("QExpressionsOps/QExpressions_print.jl")
 
 include("QExpressionsOps/QSum_modify.jl")
 

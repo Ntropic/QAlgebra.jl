@@ -77,35 +77,27 @@ function variable_str_vec(statespace::StateSpace; do_latex::Bool=true)::Vector{S
 end
 
 function sum_symbol_str(s::QSum; do_latex::Bool=false)
-    if do_latex
-        s_index_str = join(s.indexes, ",")
-    else
-        s_index_str = join(s.indexes, "")
-    end
+    info = s.statespace.subspace_info
+    s_index_str = join(Index2String.(s.indexes, Ref(info)), do_latex ? "," : "")
     n = length(s.indexes)
-    equal_sign = "="
+
     if !s.neq
-        if do_latex
-            return "\\sum_{$s_index_str}^{=}"
-        else
-            return "∑" * str2sub(s_index_str) * "⁼"
-        end
-    else
-        if n == 1
-            if do_latex
-                return "\\sum_{$s_index_str}^{\\neq}"
-            else
-                return "∑" * str2sub(s_index_str)
-            end
-        else
-            if do_latex
-                return "\\sum_{($s_index_str)}^{\\neq}"  # \\in \\mathcal{C}_N^{$n}
-            else
-                return "∑" * str2sub("(" * s_index_str * ")")
-            end
-        end
+        return do_latex ?
+            "\\sum_{$s_index_str}^{=}" :
+            "∑" * str2sub(s_index_str) * "⁼"
     end
+
+    if n == 1
+        return do_latex ?
+            "\\sum_{$s_index_str}^{\\neq}" :
+            "∑" * str2sub(s_index_str)
+    end
+
+    return do_latex ?
+        "\\sum_{($s_index_str)}^{\\neq}" :
+        "∑" * str2sub("(" * s_index_str * ")")
 end
+
 
 # braced not used here as an argument use, it in other QComposites that contain QExpr to determine groupings!
 function QComposite2string(q::QAtomProduct; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
@@ -148,7 +140,7 @@ function QComposite2string(q::QCompositeProduct; do_latex::Bool=true, braced::Bo
     total_sign = false
     all_strings::Vector{String} = []
     for term in q.expr
-        new_sign, new_str, is_grouped = QExpr2string(term, do_latex=do_latex, braced=braced, do_frac=do_frac, return_grouping=true)
+        new_sign, new_str, is_grouped = QComposite2string(term, do_latex=do_latex, braced=braced, do_frac=do_frac, return_if_braced=true)
         total_sign = xor(total_sign, new_sign)
         if !is_grouped
             new_str = brace(new_str, do_latex=do_latex)
@@ -165,9 +157,9 @@ function QComposite2string(q::QCompositeProduct; do_latex::Bool=true, braced::Bo
     end 
 end
 
-function do_return_braced_false(return_argument1::Bool, return_argument2::String, return_if_braced::Bool)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+function do_return_braced_true(return_argument1::Bool, return_argument2::String, return_if_braced::Bool)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     if return_if_braced 
-        return return_argument1, return_argument2, false
+        return return_argument1, return_argument2, true
     else 
         return return_argument1, return_argument2
     end 
@@ -178,23 +170,23 @@ function QComposite2string(q::QExp; do_latex::Bool=true, braced::Bool=true, do_f
     total_str = first_sign ? "-"*total_str : total_str 
     prefix = do_latex ? raw"\exp" : "exp"
     total_str = prefix * brace(total_str, do_latex=do_latex)
-    return do_return_braced_false(false, total_str, return_if_braced) 
+    return do_return_braced_true(false, total_str, return_if_braced) 
 end
 function QComposite2string(q::QLog; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     first_sign, total_str = QExpr2string(q.expr, do_latex=do_latex, braced=braced, do_frac=do_frac) 
     total_str = first_sign ? "-"*total_str : total_str 
     prefix = do_latex ? raw"\log" : "log"
     total_str = prefix * brace(total_str, do_latex=do_latex)
-    return do_return_braced_false(false, total_str, return_if_braced) 
+    return do_return_braced_true(false, total_str, return_if_braced) 
 end
 function QComposite2string(q::QPower; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     first_sign, total_str = QExpr2string(q.expr, do_latex=do_latex, braced=braced, do_frac=do_frac) 
     total_str = first_sign ? "-"*total_str : total_str 
     total_str = brace(total_str, do_latex=do_latex)
     if do_latex 
-        return do_return_braced_false(false, total_str * "^{"*string(q.n)*"}", return_if_braced)
+        return do_return_bdo_return_braced_trueraced_false(false, total_str * "^{"*string(q.n)*"}", return_if_braced)
     else
-        return do_return_braced_false(false, total_str * str2sup(string(q.n)), return_if_braced)
+        return do_return_braced_true(false, total_str * str2sup(string(q.n)), return_if_braced)
     end
 end
 function QComposite2string(q::QRoot; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
@@ -209,7 +201,7 @@ function QComposite2string(q::QRoot; do_latex::Bool=true, braced::Bool=true, do_
         end
     else
         total_str = brace(total_str, do_latex=do_latex)
-        return do_return_braced_false(false, total_str * str2sup("1="*string(q.n)), return_if_braced)
+        return do_return_braced_true(false, total_str * str2sup("1="*string(q.n)), return_if_braced)
     end
 end
 function QComposite2string(q::QCommutator; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
@@ -220,9 +212,9 @@ function QComposite2string(q::QCommutator; do_latex::Bool=true, braced::Bool=tru
         push!(my_strings, total_str)
     end
     if do_latex 
-        return do_return_braced_false(false, raw"\left["*join(my_strings, raw",\,") * raw"\right]", return_if_braced)
+        return do_return_braced_true(false, raw"\left["*join(my_strings, raw",\,") * raw"\right]", return_if_braced)
     else
-        return do_return_braced_false(false, "["*join(my_strings, ", ") * "]", return_if_braced)
+        return do_return_braced_true(false, "["*join(my_strings, ", ") * "]", return_if_braced)
     end
 end
 

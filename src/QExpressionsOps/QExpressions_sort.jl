@@ -55,20 +55,20 @@ isless(a::QTerm, b::QTerm) = less_vec_int(a.op_indices, b.op_indices)
 
 # QAbstract: compare (key_index, sub_index, exponent, dag)
 function isless(a::QAbstract, b::QAbstract)
-    a.key_index != b.key_index && return a.key_index < b.key_index
-    a.sub_index != b.sub_index && return a.sub_index < b.sub_index
-    a.exponent  != b.exponent  && return a.exponent  < b.exponent
-    dag_a = Int(a.dag); dag_b = Int(b.dag)
-    dag_a != dag_b && return dag_a < dag_b
+    if a.key_index != b.key_index 
+        return a.key_index < b.key_index
+    elseif a.sub_index != b.sub_index 
+        return a.sub_index < b.sub_index
+    elseif a.dag != b.dag 
+        return a.dag < b.dag
+    end
     return false
 end
 
+
 # Cross-type atoms
 function isless(a::Union{QTerm,QAbstract}, b::Union{QTerm,QAbstract})
-    ta = qatom_tag(a); tb = qatom_tag(b)
-    ta != tb && return ta < tb
-    return a isa QTerm ? isless(a::QTerm, b::QTerm) :
-                         isless(a::QAbstract, b::QAbstract)
+    return qatom_tag(a) < qatom_tag(b)
 end
 
 # -------------------------------

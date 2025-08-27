@@ -1,7 +1,6 @@
 
 """
-    base_operators(ss:StateSpace; do_fun::Bool=false, formatted::Bool=false) -> Tuple{Dict{String,QExpr},Dict{String,QExpr},Dict{String,Union{Function, QExpr}}}
-    base_operators(statespace::StateSpace, name::String; do_fun::Bool=false, formatted::Bool=false, do_dict::Bool=true) -> Union{Dict{String,QExpr}, Dict{String, Function}, QExpr, Vector{QExpr}}
+    base_operators(statespace::StateSpace, name::String; do_fun::Bool=false) -> Tuples of QExpr, Function, QExprLookup
 
 Returns variables and/or operators in the state space `ss`.
 Specifc variables/operators can be selected by passing a string `letter`.
@@ -11,193 +10,82 @@ If no `letter` is passed, the function returns a tuple of 3 dictionaries:
 - The third dictionary contains the abstract operators in the state space either as a callable function to specify the subtype or as a standard QExpr.
 If you pass "vars", "ops" or "abstract", it will return a Dictionary with elements for each variable, operator or abstruct operator
     - do_fun specifies if abstract operators are returned as functions, that can be called with no arguments or with an integer to specify the subindex of the abstract operator. 
-    - formatted specifies if the dictionary keys are formatted for example true would give: γᵢ, wheras false gives: gamma_i. 
-    - do_dict specifies if for non basic (not vars, ops and abstract) elements, we return a dictionary of a Vector of the operators. Requires that the user knows the order of operators for the specific subspace
+    - by_ensemble specifies if theoperator subspaces are checked by ensemble key or by sub key.
 """
-function base_operators(statespace::StateSpace; do_fun::Bool=false, formatted::Bool=false)::Tuple{Dict{String,QExpr},Dict{String,QExpr}, Dict{String, Union{Function, QExpr}}}
+function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false, by_ensemble::Bool=false)#::Union{QExpr, Vector{QExpr}, Function, QExprLookup}
     # return 2 dicctionaries, one with the vars and one with the operators 
-    var_dict::Dict{String,QExpr} = Dict()
-    op_dict::Dict{String,QExpr} = Dict()
-    CRone = one(ComplexRational)
     var_exponents = zeros(Int, length(statespace.vars))
-    #abstract_dict::Dict{String,QExpr} = Dict()
     I_operator = statespace.I_op
-    for (i, var) in enumerate(statespace.vars)
-        var_exponents[i] += 1
-        if formatted
-            vars_str = var.var_str_fun()
-        else
-            vars_str = var.var_name
-        end
-        var_dict[vars_str] = QExpr(statespace, QAtomProduct(statespace, CAtom(var_exponents), QTerm[]))
-        var_exponents[i] -= 1
-    end
-    index = 1
-    for sub in statespace.subspaces
-        op_set = sub.op_set
-        base_ops = op_set.base_ops
-        for key in sub.keys
-            for base_op in base_ops
-                curr_operator = copy(I_operator)
-                curr_operator[index] = base_op
-                term = QTerm(curr_operator)
-                curr_name = op_set.op2str(base_op, key, formatted=formatted)
-                op_dict[curr_name] = QExpr(statespace, term)
-            end
-
-            # non base ops # in a Dict 
-            non_base_ops = op_set.non_base_ops
-            for (inner_key, ops) in non_base_ops
-                curr_terms::Vector{QAtomProduct} = QAtomProduct[]
-                for op in ops
-                    curr_operator = copy(I_operator)
-                    curr_operator[index] = op[2]
-                    coeff = op[1]
-                    curr_prod = QAtomProduct(statespace, CAtom(coeff, var_exponents), [QTerm(curr_operator)])
-                    push!(curr_terms, curr_prod)
-                end
-                if formatted
-                    op_str = inner_key * str2sub(key)
-                else
-                    op_str = inner_key * "_" * key 
-                end 
-                op_dict[op_str] = QExpr(statespace, curr_terms)
-            end
-            index += 1
-        end
-    end
-    op_dict["I"] = QExpr(statespace, QAtomProduct(statespace, CAtom(var_exponents), QTerm[]))
-    # now abstract operators 
-    abstract_dict::Dict{String, Union{Function, QExpr}} = Dict()
-    for (key_index, (name, operatortype)) in enumerate(zip(statespace.operator_names, statespace.operatortypes))
-        if do_fun
-            abstract_dict[name] = (subindex=-1) -> QExpr(statespace, QAbstract(operatortype, key_index, subindex))
-        else
-            abstract_dict[name] = QExpr(statespace, QAbstract(operatortype, key_index))
-        end
-    end
-    return var_dict, op_dict, abstract_dict
-end
-
-function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false, formatted::Bool=false, do_dict::Bool=true)::Union{Dict{String,QExpr}, Dict{String, Function}, QExpr, Vector{QExpr}, Function}
-    # return 2 dicctionaries, one with the vars and one with the operators 
-    CRone = one(ComplexRational)
-    var_exponents = zeros(Int, length(statespace.vars))
-    #abstract_dict::Dict{String,QExpr} = Dict()
-    I_operator = statespace.I_op
-    if name == "vars"
-        var_dict::Dict{String,QExpr} = Dict()
-        for (i, var) in enumerate(statespace.vars)
-            var_exponents[i] += 1
-            if formatted
-                vars_str = var.var_str
-            else
-                vars_str = var.var_name
-            end
-            var_dict[vars_str] = QExpr(statespace, QAtomProduct(statespace, CAtom(var_exponents), QTerm[]))
-            var_exponents[i] -= 1
-        end
-        return var_dict
-    elseif name == "ops"
-        op_dict::Dict{String,QExpr} = Dict()
-        index = 1
-        for sub in statespace.subspaces
-            op_set = sub.op_set
-            base_ops = op_set.base_ops
-            for key in sub.keys
-                for base_op in base_ops
-                    curr_operator = copy(I_operator)
-                    curr_operator[index] = base_op
-                    term = QTerm(curr_operator)
-                    curr_name = op_set.op2str(base_op, key, formatted=formatted)
-                    op_dict[curr_name] = QExpr(statespace, term)
-                end
-
-                # non base ops # in a Dict 
-                non_base_ops = op_set.non_base_ops
-                for (inner_key, ops) in non_base_ops
-                    curr_terms::Vector{QAtomProduct} = QAtomProduct[]
-                    for op in ops
-                        curr_operator = copy(I_operator)
-                        curr_operator[index] = op[2]
-                        coeff = op[1]
-                        curr_prod = QAtomProduct(statespace, CAtom(coeff, var_exponents), [QTerm(curr_operator)])
-                        push!(curr_terms, curr_prod)
-                    end
-                    if formatted
-                        op_str = inner_key * str2sub(key)
-                    else
-                        op_str = inner_key * "_" * key 
-                    end 
-                    op_dict[op_str] = QExpr(statespace, curr_terms)
-                end
-                index += 1
-            end
-        end
-        op_dict["I"] = QExpr(statespace, QAtomProduct(statespace, CAtom(var_exponents), QTerm[]))
-        return op_dict
-    elseif name == "abstract"
-        # now abstract operators 
-        if do_fun 
-            abstract_dict::Dict{String, Function} = Dict()  
-            for (key_index, (name, operatortype)) in enumerate(zip(statespace.operator_names, statespace.operatortypes))
-                abstract_dict[name] = (subindex=-1) -> QExpr(statespace, QAbstract(operatortype, key_index, subindex))
-            end
-            return abstract_dict
-        else
-            abstract_dict2::Dict{String, QExpr} = Dict()
-            for (key_index, (name, operatortype)) in enumerate(zip(statespace.operator_names, statespace.operatortypes))
-                abstract_dict2[name] = QExpr(statespace, QAbstract(operatortype, key_index))
-            end
-            return abstract_dict2
-        end
-    elseif name == "I"
+    if name == "I"
         return QExpr(statespace, QAtomProduct(statespace, CAtom(var_exponents), QTerm[]))
     end
 
-    # vars
-    for (i, var) in enumerate(statespace.vars)
-        if name == var.var_name || name == var.var_str
-            var_exponents[i] += 1
-            return QExpr(statespace, QAtomProduct(statespace, CAtom(var_exponents), QTerm[]))
+    # ========>  Variables / Parameters  <========================================================================
+    # Direct hit 
+    if !do_fun # do first 
+        for (i, var) in enumerate(statespace.vars)
+            if name == var.var_name || name == var.var_str || name == var.var_name_no_t || name == var.var_str_no_t
+                var_exponents[i] += 1
+                return QExpr(statespace, QAtomProduct(statespace, CAtom(var_exponents), QTerm[]))
+            end
         end
     end
-    # Option 2 for vars: gather all the ones for which it occurs in the name, colelct those return if vector is not empty
-    curr_ops::Dict{String,QExpr} = Dict()
+    # Option 2 for vars: gather all the ones for which it occurs in the name, collect those return if vector is not empty
     ops_vec::Vector{QExpr} = []
+    ops_comb::Vector{Vector{Symbol}} = []
     for (i, var) in enumerate(statespace.vars)
-        pref = string(split(var.var_name, "_")[1])
-        pref_subs = pref
-        if haskey(var_substitution, pref)
-            pref_subs = var_substitution[pref]
-        end
-        if name == pref || name == pref_subs
-            if formatted
-                vars_str = var.var_str
-            else
-                vars_str = var.var_name
-            end
+        pref = string(var.var_symbol)
+        pref_formatted = symbol2formatted(pref)
+        if name == pref || name == pref_formatted
+            #vars_str = var.var_name   # no longer needed -> but can be added to extended do_fun
             var_exponents[i] += 1
-            if do_dict
-                curr_ops[vars_str] = QExpr(statespace, QAtomProduct(statespace, CAtom(var_exponents), QTerm[]))
-            else 
-                push!(ops_vec, QExpr(statespace, QAtomProduct(statespace, CAtom(var_exponents), QTerm[])))
-            end
+            push!(ops_comb, copy(var.index_comb_symbol))
+            push!(ops_vec, QExpr(statespace, QAtomProduct(statespace, CAtom(var_exponents), QTerm[])))
             var_exponents[i] -= 1
         end
     end
-    if length(curr_ops) > 0 
-        return curr_ops
-    end
     if length(ops_vec) > 0
-        return ops_vec
+        if length(ops_vec) == 1
+            return ops_vec[1]
+        end
+        if !do_fun
+            
+            return (ops_vec...,)
+        else # make a function that allows indexing variables with Symbols or Strings
+            return QExprLookup(ops_comb, ops_vec)
+        end
+    end
+    if !do_fun # do last 
+        for (i, var) in enumerate(statespace.vars)
+            if name == var.var_name || name == var.var_str || name == var.var_name_no_t || name == var.var_str_no_t
+                var_exponents[i] += 1
+                return QExpr(statespace, QAtomProduct(statespace, CAtom(var_exponents), QTerm[]))
+            end
+        end
     end
 
     # check Operators (subspaces)
     index = 1
+    has_underscore = occursin("_", name)
+    if has_underscore
+        name_inner_key, name = string.(split(name, "_", limit=2))
+    end
     for sub in statespace.subspaces
-        for key in sub.keys
-            if key == name
+        ensemble_key = false
+        if by_ensemble && sub.key == name
+            ensemble_key = true
+        end
+        continue_ = false 
+        for key in sub.keys   # key for outer subspace
+            do_it = false 
+            if ensemble_key 
+                do_it = true 
+                continue_ = true
+            elseif key == name 
+                do_it = true 
+                continue_ = false 
+            end
+            if do_it 
                 keys = sub.keys
                 op_set = sub.op_set
                 base_ops = op_set.base_ops
@@ -205,66 +93,62 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                 for (inner_key, base_op) in zip(base_strs, base_ops)
                     curr_operator = copy(I_operator)
                     curr_operator[index] = base_op
-                    if formatted
-                        op_str = inner_key * str2sub(key)
-                    else
-                        op_str = inner_key * "_" * key 
-                    end 
-                    if do_dict
-                        curr_ops[op_str] = QExpr(statespace, QTerm(curr_operator))
-                    else
-                        push!(ops_vec, QExpr(statespace, QTerm(curr_operator)))
+                    if has_underscore && inner_key == name_inner_key    #### Specific key not general key return directly
+                        return QExpr(statespace, QTerm(curr_operator))
                     end
+                    if by_ensemble
+                        push!(ops_comb, [Symbol(inner_key), Symbol(key)])
+                    else
+                        push!(ops_comb, [Symbol(inner_key)])
+                    end
+                    push!(ops_vec, QExpr(statespace, QTerm(curr_operator)))
                 end
-
-                # non base ops # in a Dict 
-                non_base_ops = op_set.non_base_ops
-                for (inner_key, ops) in non_base_ops
-                    curr_terms::Vector{QAtomProduct} = QAtomProduct[]
-                    for op in ops
-                        curr_operator = copy(I_operator)
-                        curr_operator[index] = op[2]
-                        coeff = op[1]
-                        curr_prod = QAtomProduct(statespace, CAtom(coeff, var_exponents), [QTerm(curr_operator)])
-                        push!(curr_terms, curr_prod)
+                if !continue_
+                    if length(ops_vec) == 1
+                        return ops_vec[1]
                     end
-                    if formatted
-                        op_str = inner_key * str2sub(key)
+                    if !do_fun
+                        return (ops_vec...,)
                     else
-                        op_str = inner_key * "_" * key 
-                    end 
-                    if do_dict
-                        curr_ops[op_str] = QExpr(statespace, curr_terms)
-                    else
-                        push!(ops_vec, QExpr(statespace, curr_terms))
+                        return QExprLookup(ops_comb, ops_vec)
                     end
-                end
-                if do_dict 
-                    return curr_ops
-                else 
-                    return ops_vec
                 end
             end
             index += 1
         end
     end
+    if length(ops_vec) > 0 
+        if length(ops_vec) == 1
+            return ops_vec[1]
+        end
+        if !do_fun
+            return (ops_vec...,)
+        else
+            return QExprLookup(ops_comb, ops_vec)
+        end
+    end
+
     # check for abstract operators
-    for (key_index, (curr_name, operatortype)) in enumerate(zip(statespace.operator_names, statespace.operatortypes))
-        if name == curr_name
+    for (key_index, operatortype) in enumerate(statespace.operatortypes)
+        if name == operatortype.name
             if do_fun 
                 return (subindex=-1) -> QExpr(statespace, QAbstract(operatortype, key_index, subindex))
             else
                 return QExpr(statespace, QAbstract(operatortype, key_index))
             end
         else
-            if contains(name, "_")
-                reduced_name = string(split(name, "_")[1])
-                if reduced_name == curr_name
-                    return QExpr(statespace, string2qabstract(statespace, replace(name, "_" => "")))
+            if contains(name, "_")   # specific index 
+                reduced_name_s, subindex_s = split(name, "_") 
+                reduced_name = string(reduced_name_s)
+                subindex = parse(Int, subindex_s) 
+                if reduced_name == operatortype.name
+                    return QExpr(statespace, QAbstract(operatortype, key_index, subindex)) 
                 end
             end
         end
     end
-    return term(statespace, name)
-    # error("No variable, subspace component or abstract operator with key starting with '$letter' found in the state space.")
+    error("No variable, subspace component or abstract operator found for key='$name'.")
 end
+function base_operators(statespace::StateSpace, names::Vector{String}; do_fun::Bool=false, by_ensemble::Bool=false)
+    return [base_operators(statespace, name; do_fun=do_fun, by_ensemble=by_ensemble) for name in names]
+end 

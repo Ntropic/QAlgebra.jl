@@ -20,8 +20,7 @@ Creates the OperatorSet for a qubit using Pauli operators (``\sigma_x``, ``\sigm
 function QubitPauli(symbol::String="")::OperatorSet
     ops = ["x", "y", "z", "I"]
     base_pauli = [[1], [2], [3]]
-    non_base_ops::Dict{String, Vector{Tuple{ComplexRational, Vector{Int}}}} = Dict("p"=> [(ComplexRational(1,0,1), [1]),(ComplexRational(0,1,1), [2])], "m" => [(ComplexRational(1,0,1), [1]), (ComplexRational(0,-1,1), [2])])
-    
+
     symbol_str, symbol_latex = symbol2formatted(symbol, do_hat=true)
     do_symbol::Bool = length(symbol) > 0
     # Define the transformation function using the PAULI_* tables.
@@ -85,7 +84,7 @@ function QubitPauli(symbol::String="")::OperatorSet
         # everything commutes with 4, otherwise must be the same
         return (op1[1] == 4 || op2[1] == 4 || op1[1] == op2[1])
     end
-    return OperatorSet("Pauli Qubit", "Fermion", 1, [4], base_pauli, non_base_ops, ops, pauli_product, pauli_dag, pauli2str, pauli2latex, paulicommutes)
+    return OperatorSet("Pauli Qubit", "Fermion", 1, [4], base_pauli, ops, pauli_product, pauli_dag, pauli2str, pauli2latex, paulicommutes)
 end
 ## Test 
 #q = QubitPauli()

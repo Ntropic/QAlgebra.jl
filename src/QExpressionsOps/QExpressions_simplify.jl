@@ -83,49 +83,12 @@ function simplify_QExpr(q::QExpr)::QExpr
     return QExpr(q.statespace, simplify_QExpr(q.terms))
 end
 
-function simplify_QAtomProduct(p::QAtomProduct)::Vector{QComposite}
-    # — pre‑allocate two empty buffers of the correct element‑type —
-    buf1 = Vector{Tuple{ComplexRational,Vector{QAtom}}}()
-    buf2 = Vector{Tuple{ComplexRational,Vector{QAtom}}}()
-    current, nextbuf = buf1, buf2
+#####################################################################################################################
 
-    # seed the first buffer
-    empty!(current)
-    push!(current, (one(ComplexRational), copy(p.expr)))
+include("QExpressions_Symplify/QExpressions_simplify_atoms.jl")
+include("QExpressions_Symplify/QExpressions_simplify_composites.jl")
 
-    if !p.separate_expectation_values 
-        while true
-            empty!(nextbuf)
-            did_any = false
-
-            for (coeff, terms) in current
-                outs, changed = simplify_pairs(terms, p.statespace)
-                
-                did_any |= changed
-                for (dc, t) in outs
-                    if !iszero(dc)
-                        push!(nextbuf, (coeff * dc, t))
-                    end
-                end
-            end
-
-            # if nothing changed, we're done
-            if !did_any
-                break
-            end
-
-            # swap buffers for the next iteration
-            current, nextbuf = nextbuf, current
-        end
-    end
-    # wrap the final products
-    return [ modify_coeff_expr(p, c * p.coeff_fun, t, Val(:dont_check_time)) for (c,t) in current ] # dont  check time because we are only adding coefficient multiplication
-end
-
-#function simplify_QCompositeProduct(p::QCompositeProduct)::Vector{QComposite}
-    # combine simple terms (i.e. of length 1) if possible 
-    # Continue here 
-
+#####################################################################################################################
 function simplify_QExp(q::QExp)::Vector{QComposite}
     if length(q.expr) == 1 && isa(q.expr[1], QLog)
         return q.expr[1].expr
@@ -198,7 +161,7 @@ function simplify(q::QExp)::Vector{QComposite}
 end 
 
 function simplify(q::QExpr)::QExpr
-    return QExpr(q.statespace, simplify_QExpr(mapreduce(simplify, vcat, q.terms)))
+    return QExpr(q.statespace, simplify) #simplify_QExpr(mapreduce(simplify, vcat, q.terms))) # don't also simplify its elements. they should already be simplified! 
 end
 function simplify(q::diff_QEq)::diff_QEq
     simp_rhs = simplify(q.expr)

@@ -1,40 +1,4 @@
 """ 
-    SubSpaceDefinitions(; kwargs...)
-
-SubSpaceDefinitions is a struct that processes the definition of the quantum subspaces, 
-"""
-struct SubSpaceDefinitions 
-    subspaces::Vector{SubSpace}  # Vector of all sub
-    used_symbols::Vector{Symbol}
-    I_op::Vector{Is}  # Vector of all neutral elements
-    I_ensemble_op::Vector{Vector{Is}}  # Vector of all neutral elements within ensembe subsystems 
-
-    function SubSpaceDefinitions(;kwargs...)
-        subspaces = Vector{SubSpace}()
-        used_symbols = Set{Symbol}()
-        key_counter = 0
-        core_keys::Vector{Symbol} = keys(kwargs)
-        for (i, (key, val)) in enumerate(kwargs) 
-            is_ensemble_ss = false
-            if isa(val, Tuple) 
-                is_ensemble_ss = true
-                ensemble_size, op_set = val  # unpacking
-            else
-                ensemble_size, op_set = 1, val 
-            end
-            curr_subspace, keys_symbols = SubSpace(key, i, key_counter, is_ensemble_ss, ensemble_size, op_set, core_keys) 
-            key_counter += ensemble_size
-            push!(subspaces, curr_subspace)
-            append!(used_symbols, keys_symbols)
-        end
-        I_op::Vector{Is} = [s.op_set.neutral_element for s in subspaces for _ in 1:ensemble_size]
-        I_ensemble_op::Vector{Vector{Is}} = [I_op[is] for is in subspaceinfo.ensemble_indexes]
-        return new(subspaces, used_symbols, I_op, I_ensemble_op)
-    end
-end
-
-
-""" 
     SubSpace(key::String, keys::Vector{String}, ss_outer_ind::Int, ss_inner_ind::Vector{Int}, op_set::OperatorSet, ensemble::Bool, fermion::Bool)
 
 SubSpace defines a Subspace of a Hilbert space. It contains an operator set, aswell as additional information to reference and work with a subspace. 
@@ -45,7 +9,7 @@ struct SubSpace
     keys_symbols::Vector{Symbol}
     key::String                     # Original input key
     keys::Vector{String}            # Allowed keys for this subspace 
-    ss_outer_ind::Int        # Which Vector to use for ss_inner_ind  (this is for accessing the string elements)
+    ss_outer_ind::Int            # Which Vector to use for ss_inner_ind  (this is for accessing the string elements)
     ss_inner_ind::Vector{Int}    # Indices to access operator values in the corresponding statespace main ind  (this is for accessing the string elements)
     is_ensemble_ss::Bool
     ensemble_size::Int
@@ -72,8 +36,8 @@ function SubSpace(key::String, ss_outer_ind::Int, index_counter::Int, is_ensembl
     keys_symbols::Vector{Symbol} = [Symbol(key) for key in keys]
     # check if any of the keys_symbols are in core_keys   =========> Alternative to i,j,k,... indexing i0, i1, i2 and so on.
     if any(keys_symbol -> keys_symbol in core_keys, keys_symbols) 
-        keys::String = [string(start_char)*"_"*string(i)  for i in 0:(ensemble_size-1)]
-        keys_symbols::Vector{Symbol} = [Symbol(key) for key in keys]
+        keys = [string(start_char)*"_"*string(i)  for i in 0:(ensemble_size-1)]
+        keys_symbols = [Symbol(key) for key in keys]
     end
     key_symbol::Symbol = keys_symbol[1]
     ss_inner_ind::Vector{Int} = [index_counter+i for i in 1:ensemble_size]
@@ -86,6 +50,65 @@ function Base.show(io::IO, statespace::SubSpace)
     print(io, "SubSpace ", statespace.keys, ": ")
     # Use the OperatorSet's show for the op_set field.
     show(io, statespace.op_set)
+end
+
+""" 
+    SubSpaceDefinitions(; kwargs...)
+
+SubSpaceDefinitions is a struct that processes the definition of the quantum subspaces, 
+"""
+struct SubSpaceDefinitions 
+    subspaces::Vector{SubSpace}  # Vector of all sub
+    used_symbols::Set{Symbol}
+    I_op::Vector{Is}  # Vector of all neutral elements
+    I_ensemble_op::Vector{Vector{Is}}  # Vector of all neutral elements within ensembe subsystems 
+
+    function SubSpaceDefinitions(;kwargs...)
+        subspaces = Vector{SubSpace}()
+        used_symbols = Set{Symbol}()
+        key_counter = 0
+        core_keys::Vector{Symbol} = collect(keys(kwargs))
+        for (outer_ind, (key_symbol, val)) in enumerate(kwargs) 
+            is_ensemble_ss = false
+            if isa(val, Tuple) 
+                is_ensemble_ss = true
+                ensemble_size, op_set = val  # unpacking
+            else
+                ensemble_size, op_set = 1, val 
+            end
+            key = String(key_symbol) 
+            if length(key) == 1
+                key_char = key[1]
+                keys = String[string(key_char+i) for i in 0:ensemble_size-1]
+                keys_symbols = Symbol.(keys) 
+                if any(x->x in used_symbols, keys_symbols) 
+                    keys = String[key*string(i) for i in 1:ensemble_size]
+                    keys_symbols = Symbol.(keys)
+                end
+            else 
+                keys = String[key*string(i) for i in 1:ensemble_size]
+                keys_symbols = Symbol.(keys)
+            end
+            if any(x->x in used_symbols, keys_symbols) 
+                error("Symbol $key already used")
+            end 
+            curr_inds = key_counter .+ collect(1:ensemble_size)
+            curr_subspace = SubSpace(key_symbol, keys_symbols, key, keys, outer_ind, curr_inds, is_ensemble_ss, ensemble_size, op_set.particle_type, op_set) 
+            key_counter += ensemble_size
+            push!(subspaces, curr_subspace)
+            union!(used_symbols, keys_symbols)
+        end
+        I_op::Vector{Is} = [s.op_set.neutral_element for s in subspaces for _ in 1:s.ensemble_size]
+        I_ensemble_op::Vector{Vector{Is}} = [I_op[s.ss_inner_ind] for s in subspaces]
+        return new(subspaces, used_symbols, I_op, I_ensemble_op)
+    end
+end
+function Base.show(io::IO, subspace_def::SubSpaceDefinitions)
+    println(io, "SubSpaceDefinitions: ")
+    # Then print each subspace on its own line.
+    for ss in subspace_def.subspaces
+        println(io, "   - ", string(ss))
+    end
 end
 
 struct SubSpaceInfo
@@ -119,7 +142,7 @@ end
 function SubSpaceInfo(outer_labels_symbols::Vector{Symbol}, inner_labels_symbols::Vector{Vector{Symbol}}, are_ensemble_ss::Vector{Bool})
     inner_labels_symbols_flat = vcat(inner_labels_symbols...)
     outer_labels = map(string, outer_labels_symbols)
-    inner_labels = map(string, inner_labels_symbols)
+    inner_labels = [string.(v) for v in inner_labels_symbols]
     inner_labels_flat = map(string, inner_labels_symbols_flat)
     @assert length(outer_labels) == length(inner_labels)
     subsystem_sizes = Int[length(v) for v in inner_labels]
@@ -159,8 +182,8 @@ end
 
 # Convenience: build from your existing `SubSpace` vector
 function SubSpaceInfo(subspaces::Vector{SubSpace})
-    outers  = [s.key        for s in subspaces]
-    inners  = [copy(s.keys) for s in subspaces]   # for non-ensemble subspaces this is length 1
+    outers  = [s.key_symbol        for s in subspaces]
+    inners  = [copy(s.keys_symbols) for s in subspaces]   # for non-ensemble subspaces this is length 1
     are_ensemble_ss = [s.is_ensemble_ss for s in subspaces] 
     return SubSpaceInfo(outers, inners, are_ensemble_ss)
 end
@@ -169,29 +192,26 @@ end
     return info.expanded_index_by_outer[outer][inner] 
 end
 @inline function expanded_2_outer_inner(info::SubSpaceInfo, expanded::Int)
-    return (info.outer_of_expanded[expanded], info.inner_of_expanded[expanded])
+    return (info.outer_ss_of_expanded[expanded], info.inner_ss_of_expanded[expanded])
 end
 @inline function label_2_outer_inner_expanded(info::SubSpaceInfo, label_symbol::Symbol)
-    expanded_index = findfirst(x -> x == label_symbol, info.inner_labels_symbols) 
+    expanded_index = findfirst(x -> x == label_symbol, info.inner_labels_symbols_flat) 
     if expanded_index === nothing 
-        error("Label $label not found in SubSpaceInfo.inner_labels_symbols")
+        error("Label $label_symbol not found in SubSpaceInfo.inner_labels_symbols")
         return nothing 
     else 
-        return (info.outer_of_expanded[expanded_index], info.inner_of_expanded[expanded_index], expanded_index)
+        return (info.outer_ss_of_expanded[expanded_index], info.inner_ss_of_expanded[expanded_index], expanded_index)
     end
     return nothing 
 end
-@inline function label_2_outer_inner_expanded(info::SubSpaceInfo, label::String) 
-    label_symbol = Symbol(label)
-    return label_2_outer_inner_expanded(info, label_symbol)
-end
+label_2_outer_inner_expanded(info::SubSpaceInfo, label::String) = label_2_outer_inner_expanded(info, Symbol(label))
 
 
 # Specifies a subsystem location
 struct SubSpaceIndex
-    outer::Int
-    inner::Int
-    expanded::Int
+    outer::Int      # subspace index
+    inner::Int      # index in ensemble
+    expanded::Int  
     function SubSpaceIndex(expanded::Int, info::SubSpaceInfo)
         outer,inner = expanded_2_outer_inner(info, expanded)
         return new(outer, inner, expanded)
@@ -201,7 +221,7 @@ struct SubSpaceIndex
         return new(outer, inner, expanded)
     end
     function SubSpaceIndex(label::Union{String,Symbol}, info::SubSpaceInfo)      
-        outer,inner,expanded = label_2_outer_inner_exp(info, label)
+        outer, inner, expanded = label_2_outer_inner_expanded(info, label)
         return new(outer, inner, expanded) 
     end
 end
@@ -211,3 +231,5 @@ end
 @inline outer(is::Vector{SubSpaceIndex}) = [outer(i) for i in is]
 @inline inner(is::Vector{SubSpaceIndex}) = [inner(i) for i in is]
 @inline expanded(is::Vector{SubSpaceIndex}) = [expanded(i) for i in is]
+@inline Index2Symbol(i::SubSpaceIndex, info::SubSpaceInfo) =  info.inner_labels_symbols_flat[i.expanded]
+@inline Index2String(i::SubSpaceIndex, info::SubSpaceInfo) =  info.inner_labels_flat[i.expanded]

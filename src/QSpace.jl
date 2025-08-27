@@ -4,7 +4,11 @@ using ComplexRationals
 using ..CFunctions
 using ..StringUtils
 
-export OperatorSet, SubSpace, Parameter, OperatorType, StateSpace, string2operator_type
+export OperatorSet
+export SubSpace, SubSpaceDefinitions, SubSpaceInfo, SubSpaceIndex, outer, inner, expanded, Index2Symbol, Index2String
+export OperatorType, OperatorTypeInfo, OperatorDefinitions
+export Parameter, ParameterInfo, ParameterDefinitions
+export StateSpace
 
 Is = Vector{Int}
 """
@@ -19,17 +23,16 @@ struct OperatorSet
     len::Int                # length of indexes describing operator
     neutral_element::Vector{Int}   # neutral element of the operator set
     base_ops::Vector{Vector{Int}}
-    non_base_ops::Dict{String, Vector{Tuple{ComplexRational, Is}}}
     ops::Vector{String}     # operator symbols
     op_product::Function    # takes operator indexes of two operators of this set and outputs a vector of tuples of coefficients and associated indexes for the resulting operators in this set
     op_dag::Function        # Create Complex Transpoose Conjugate
     op2str::Function        # transforms an operator index into a string for console printing
     op2latex::Function      # transforms an operator index into a LaTeX string for formatted LaTeXStrings
     commutes::Function
-    function OperatorSet(name::String, particle_type::String, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, non_base_ops::Dict{String, Vector{Tuple{ComplexRational, Is}}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function, commutes::Function)
-        return new(name, particle_type, len, neutral_element, base_ops, non_base_ops, ops, op_product, op_dag, op2str, op2latex, commutes)
+    function OperatorSet(name::String, particle_type::String, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function, commutes::Function)
+        return new(name, particle_type, len, neutral_element, base_ops, ops, op_product, op_dag, op2str, op2latex, commutes)
     end
-    function OperatorSet(name::String, particle_type::String, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, non_base_ops::Dict{String, Vector{Tuple{ComplexRational, Is}}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function)
+    function OperatorSet(name::String, particle_type::String, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function)
         function commutes(op1::Vector{Int}, op2::Vector{Int}) # multiply to test commute => probably much slower than a custom implementation
             if op1 == op2 || op1 == neutral_element || op2 == neutral_element
                 return true
@@ -49,7 +52,7 @@ struct OperatorSet
             end
             return true
         end
-        return new(name, particle_type, len, neutral_element, base_ops, non_base_ops, ops, op_product, op_dag, op2str, op2latex, commutes)
+        return new(name, particle_type, len, neutral_element, base_ops, ops, op_product, op_dag, op2str, op2latex, commutes)
     end
     function OperatorSet() # Dummy Operator Set 
         dummy_fun(args...; kwargs...) = error("OperatorSet not initialized")
@@ -77,7 +80,7 @@ function Base.show(io::IO, os::OperatorSet)
             op_str *= ", "
         end
     end
-    print(io, os.name, " ($os.particle_type):  " * op_str)
+    print(io, os.name, " (", os.particle_type, "):  " * op_str)
 end
 include("OperatorSets/Qubit_Pauli.jl")
 include("OperatorSets/Qubit_PM.jl")
@@ -87,39 +90,12 @@ include("QSpaceOps/QSpace_subspaces.jl")
 include("QSpaceOps/QSpace_abstract.jl")
 include("QSpaceOps/QSpace_parameters.jl")
 
-
-struct VarDefinitions
-    args::Vector{String}
-    args_symbols::Vector{Symbol} = []  
-    ts::Vector{Int} # time dependent variables
-    function VarDefinitions(args...; ts::Vector{Int} = Int[]) 
-        new_args = String[]
-        args_symbols::Vector{Symbol} = []  
-        for arg in args 
-            if arg isa Symbol 
-                push!(new_args, string(arg))
-                push!(args_symbols, arg)  # Store symbols
-            else
-                push!(new_args, string(arg)) 
-                push!(args_symbols, Symbol(arg))  # Convert
-            end
-        end
-        return new(new_args, args_symbols, ts)  
-    end 
-end
-
 """
-    StateSpace(args...; kwargs...)
+    StateSpace(subspace_def::SubSpaceDefinitions, op_def::OperatorDefinitions, param_def::ParameterDefinitions; max_t_ind::Int=0) -> StateSpace
 
-Constructs a combined Hilbert and Parameter space. The Hilbert space consists of different subspaces, themselves composed of different operator sets. The Parameter space defines the variables, that are needed to describe equations on the Hilbert space.
-    - **args**: A variable number of symbols or strings representing the state variables. Can refer to indexes of subsystems via for underscore notation, i.e., "alpha_i" or declare time dependence via for example "alpha(t)".
-    - **kwargs**: Each keyword is interpreted as a subspace label. The values are either Operator Sets or Tuples with an integer and an OperatorSet. The integer is the number of indexes generated for the subspace.
-    - **operators**: Specifies the types of abstract Operators from Strings such as "A(U,H)", which would result in an operator with name "A" and properties Hermitian (H) and Unitary (U).
-                    You can specify the subspaces on which the operator acts non trivially via the subspace keys (kwarg keys). Alternatively, you can specify the subspaces on which it doesn#t act non trivially via the negatved subspace keys (!kwarg keys).
-                    If no subspace is specified, it defaults to all subspaces.
-                    Example: "A(U,H,i)" constructs an abstract operator "A" that is both hermitian and unitary and acts non trivially on the subspace "i".
-                    Example: "B(H,!i)" constructs an abstract operator "B" that is hermitian and acts trivially on the subspace "i".
-                    Example: "C(U)" constructs an abstract operator "C" that is unitary and acts non-trivially on all subspaces.
+Constructs a combined Hilbert and Parameter space. The Hilbert space consists of different subspaces, themselves composed of different operator sets.
+The Parameter space also defines the variables, that are needed to describe equations on the Hilbert space and abstract operators, that are not yet specified. 
+Optionally you can also allow for multiple time dimensions, which can be useful for solving nested integrals over different time parameters.
 """
 struct StateSpace
     # Subspace definitions:
@@ -134,12 +110,12 @@ struct StateSpace
     vars::Vector{Parameter}
     param_info::ParameterInfo
 
-    I_op::Vector{Vector{Int}}               # Neutral Vector of all expanded subspaces
-    I_ensemble_op::Vector{Vector{Int}}      # Neutral Vector of all expanded ensemble subspaces
+    I_op::Vector{Is}               # Neutral Vector of all expanded subspaces
+    I_ensemble_op::Vector{Vector{Is}}      # Neutral Vector of all expanded ensemble subspaces
     c_one::CAtom                            # onelike function in CFunctions 
     c_zero::CAtom                           # zerolike function in CFunctions 
 
-    function StateSpace(subspace_def::SubSpaceDefinitions, op_def::OpDefinitions, param_def::ParameterDefinitions)
+    function StateSpace(subspace_def::SubSpaceDefinitions, op_def::OperatorDefinitions, param_def::ParameterDefinitions; max_t_ind::Int=0)
         # ==========> 1st Subspaces <==========
         subspaces = subspace_def.subspaces
         subspace_info = SubSpaceInfo(subspaces)
@@ -147,26 +123,26 @@ struct StateSpace
         I_op, I_ensemble_op = subspace_def.I_op, subspace_def.I_ensemble_op  # These are
 
         # ==========> 2nd Abstract Operators <==========
-        operatortypes = OpDefinitions2OperatorType(op_def, subspace_def)
-        operatortype_info = OperatorTypeInfo(operatortypes, op_def.commute_fun, op_def.check_n) 
+        operatortypes = OperatorDefinitions2OperatorType(op_def, subspace_def)
+        operatortype_info = OperatorTypeInfo(operatortypes, commute_fun=op_def.commute_fun, check_n=op_def.check_n) 
 
         # ==========> 3rd Parameters <==========
-        vars, param_info = ParameterDefinitions2Parameters(param_def, subspace_info, used_symbols)
+        vars, param_info = ParameterDefinitions2Parameters(param_def, subspace_info, used_symbols, max_t_ind)
     
         # Generate the string representations
         c_one = CAtom(ComplexRational(1,0,1), zeros(Int, length(vars)))
         c_zero = CAtom(ComplexRational(0,0,1), zeros(Int, length(vars)))
         qss = new( subspaces, subspace_info,                                      # Subspaces
                 operatortypes, operatortype_info,                                 # Abstract Operators 
-                vars, param_info, how_many_by_ensemble,
-                I_op, I_ensemble_op, c_one, c_zero)   # Variables 
+                vars, param_info,                                                 # Variables / Parameters
+                I_op, I_ensemble_op, c_one, c_zero)                         # Pecomputed operator blueprints 
         return qss
     end
 end
 # Define the custom show for StateSpace.
 function Base.show(io::IO, statespace::StateSpace)
     # First line: StateSpace and its variables.
-    var_str = join([p.var_str_fun() for p in statespace.vars], ", ")
+    var_str = join([p.var_str for p in statespace.vars], ", ")
     println(io, "StateSpace: [" * var_str * "]")
     # Then print each subspace on its own line.
     for ss in statespace.subspaces

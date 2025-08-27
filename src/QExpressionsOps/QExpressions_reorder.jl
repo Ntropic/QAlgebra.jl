@@ -48,7 +48,7 @@ function reorder(q::QSum, add_at_sum::Bool, where_defined::Vector{Vector{Bool}},
         # check where subsystem is among qspace.where_ensemble
         outer_ind = findfirst(x -> x == subsystem, q.statespace.where_ensemble)
         if isnothing(outer_ind)
-            error("Subsystem $subsystem not found in qspace.subspace_by_ind!")
+            error("Subsystem $subsystem not found in qspace.subspace_info.outer_ss_of_expanded!")
         end
         if !all(where_defined[outer_ind][element_indexes] .== false)
             error("Summation indexes already defined, cannot sum over defined indexes!")

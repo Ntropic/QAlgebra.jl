@@ -19,14 +19,19 @@ function is_numeric(t::QAbstract, statespace::StateSpace)::Bool
     return false
 end
 function is_numeric(e::QAtomProduct)
-    return all([is_numeric(x, e.statespace) for x in e.expr]) || iszero(e.coeff_fun)
+    if length(e.expr) > 1
+        return false 
+    elseif length(e.expr) == 0 
+        return true
+    else 
+        return iszero(e.coeff_fun) || all([is_numeric(e.expr[1], e.statespace) for x in e.expr]) 
+    end
 end
 function is_numeric(e::T) where T<:QComposite
-    return is_numeric(e.expr) || iszero(e.coeff_fun)
-    #error("is_numeric (without given statespace) not implemented for QComposite subtype $(typeof(e))")
+    return iszero(e.coeff_fun)
 end
 function is_numeric(e::T) where T<:QMultiComposite
-    return iszero(e.coeff_fun) || all([is_numeric(e1, statespace) for e1 in e.expr])
+    return iszero(e.coeff_fun) 
 end
 
 function is_numeric(s::QSum)::Bool
@@ -70,13 +75,13 @@ function where_neutral(q::QTerm, statespace::StateSpace)::Vector{Bool}
     return [op == neut for (op, neut) in zip(q.op_indices, statespace.I_op)]
 end
 function where_neutral(q::QAbstract, statespace::StateSpace)::Vector{Bool}
-    return q.operator_type.subspaces   # should never be modified! copy would be safer, but slower
+    return q.operator_type.expanded_ss_acting   # should never be modified! copy would be safer, but slower
 end
 function where_acting(q::QTerm, statespace::StateSpace)::Vector{Bool}
     return [op != neut for (op, neut) in zip(q.op_indices, statespace.I_op)]
 end
 function where_acting(q::QAbstract, statespace::StateSpace)::Vector{Bool}
-    return .!q.operator_type.subspaces  # should never be modified! copy would be safer, but slower
+    return .!q.operator_type.expanded_ss_acting  # should never be modified! copy would be safer, but slower
 end
 function where_acting(q::QAtomProduct)
     # combine the action of all of its constituents via OR 
@@ -87,26 +92,37 @@ function where_acting(q::QAtomProduct)
     end
 end
 
-function commutes_QAbstract(q1::QAbstract, q2::QAbstract, statespace::StateSpace)::Bool   # for QAtom can check 
+function commutes_QAtom(q1::QAbstract, q2::QAbstract, statespace::StateSpace)::Bool   # for QAtom can check 
     # check if all elements of where neutral are NAND
-    return !any(.&(where_acting(q1, statespace), where_acting(q2, statespace)))
+    return statespace.operatortype_info.commute_fun(q1.key_index, q1.sub_index, q1.dag, q2.key_index, q2.sub_index, q2.dag)
 end
-function commutes_QTerm(q1::QTerm, q2::QTerm, statespace::StateSpace)::Bool
+@inline commutes_QAtom_inds(inds::Vector{Int}, q1::QAbstract, q2::QAbstract, statespace) = commutes_QAtom(q1, q2, statespace) 
+
+function commutes_QAtom(q1::QTerm, q2::QTerm, statespace::StateSpace)::Bool
     a_q1 = where_acting(q1, statespace)
     a_q2 = where_acting(q2, statespace)
-    overlap = .&(a_q1, a_q2)
-    inds = findall(a .& b)
-    if length(inds) == 0 # commutes! 
-        return true
-    else # find overlap 
-        for ind in inds
-            if statespace.subspace[statespace.subspace_by_ind[ind]].commutes(q1[ind], q2[ind])
-                return false
-            end
-        end
-        return true
-    end
+    inds = findall(a_q1 .& a_q2)
+    isempty(inds) && return true
+    return commutes_QAtom_inds(inds, q1, q2, statespace)
 end
+@inline function commutes_QAtom_inds(inds::Vector{Int}, q1::QTerm, q2::QTerm, statespace::StateSpace)::Bool
+    @inbounds for ind in inds
+        if !statespace.subspaces[statespace.subspace_info.outer_ss_of_expanded[ind]].op_set.commutes(q1[ind], q2[ind])
+            return false
+        end
+    end
+    return true
+end
+
+# Add the mixed method once:
+function commutes_QAtom(qt::QTerm, qa::QAbstract, statespace::StateSpace)::Bool
+    a_t = where_acting(qt, statespace)
+    a_a = where_acting(qa, statespace)
+    return !any(a_t .& a_a) 
+end
+@inline commutes_QAtom(qa::QAbstract, qt::QTerm, statespace::StateSpace) = commutes_QAtom(qt, qa, statespace::StateSpace)
+@inline commutes_QAtom_inds(inds::Vector{Int}, q1::QTerm, q2::QAbstract, statespace::StateSpace) = length(inds) == 0
+@inline commutes_QAtom_inds(inds::Vector{Int}, q1::QAbstract, q2::QTerm, statespace::StateSpace) = length(inds) == 0
 
 function any_overlaps(multi_where_acting::Vector{Vector{Bool}})
     n = length(multi_where_acting)
@@ -123,82 +139,48 @@ function any_overlaps(multi_where_acting::Vector{Vector{Bool}})
     end
     return false, added
 end
-function commutes(q1::QAtomProduct, q2::QAtomProduct)::Bool
-    a_q1 = where_acting(q1, statespace)
-    a_q2 = where_acting(q2, statespace)
-    overlap = .&(a_q1, a_q2)
-    inds = findall(a .& b)
-    if length(inds) == 0 # commutes! 
-        return true
-    else
-        term_q1 = isa.(q1.expr, Ref(QTerm))
-        term_q2 = isa.(q2.expr, Ref(QTerm))
-        # check if the QAtomProduct contains only QTerm objects or if not that the qAbstract terms overlap with none of the other terms in either q1 or q2 
-        if all(term_q1) && all(term_q2)
-            for ind in inds
-                if statespace.subspace[statespace.subspace_by_ind[ind]].commutes(q1[ind], q2[ind])
-                    return false
-                end
-            end
-            return true
-        else
-            # Mixed QTerms and qAbstract → ensure no qAbstract in one overlaps with any term in the other
-            # --- Final case: mixed QTerms and QAbstracts ---
-            # Compare each QAtom in q1 with all in q2
-            if sum(.!term_q1) > 1 || sum(.!term_q2) > 1
+@inline function commutes(q1::QAtomProduct, q2::QAtomProduct)::Bool
+    statespace = q1.statespace
+    acts1 = where_acting.(q1.expr, Ref(statespace))  # cache acting masks for q1 atoms
+    acts2 = where_acting.(q2.expr, Ref(statespace))  # cache acting masks for q2 atoms
+    @inbounds for (ai, where_a1) in zip(q1.expr, acts1)
+        for (aj, where_a2) in zip(q2.expr, acts2)
+            inds = findall(where_a1 .& where_a2)          # overlap indices for (ai, bj)
+            if !commutes_QAtom_inds(inds, ai, aj, statespace)
                 return false
-            end
-            a_q1s = where_acting.(q1.expr[term_q1], Ref(statespace))
-            a_q2s = where_acting.(q2.expr[term_q2], Ref(statespace))
-            has_overlaps, added = any_overlaps(vcat(a_q1s, a_q2s))
-            if has_overlaps
-                return false
-            else
-                # check overlaps with qAtoms 
-                t_acting = reduce(.&, vcat(q1.expr[.!term_q1], q2.expr[.!term_q2]))
-                if any(.&(t_acting, added))
-                    return false
-                else
-                    # check the qTerms amongst themselves. there should only be one qTerm in a QAtomProduct 
-                    return commutes_QTerm(q1.expr[.!term_q1][1], q2.expr[.!term_q2][1])
-                end
             end
         end
     end
+    return true
 end
 function commutes(Q1::QExpr, Q2::QExpr)::Bool
-    # check each term in Q1 with each term in Q2
-    # for terms that don't commute with another, we multiply them with one another and check if they cancel out after all. 
-    # element-wise test 
-    elements_commute::Matrix{Bool} = zeros(Bool, length(Q1.expr), length(Q2.expr))
-    for (i, t1) in enumerate(Q1.expr)
-        for (j, t2) in enumerate(Q2.expr)
-            elements_commute[i, j] = commutes(t1, t2)
+    statespace = Q1.statespace
+    # collect non-commuting pairs
+    noncomm_pairs = Tuple{Int,Int}[]
+    for (i, x1) in enumerate(Q1.terms)
+        for (j, x2) in enumerate(Q2.terms)
+            if !commutes(x1, x2)#, statespace)
+                push!(noncomm_pairs, (i, j))
+            end
         end
     end
-    # find non commuters in matrix 
-    non_commuter_inds = findall(.!elements_commute) # indices of non-commuting terms. 
-    if length(non_commuter_inds) == 0
-        return true # all commute, so the whole expression comm
-    elseif length(non_commuter_inds) == 1
-        return false # only one non-commuter, so the whole expression doesn't commute. 
-    else
-        # check if the non-commuting terms cancel out 
-        qprods = QComposite[]
-        for (i, j) in non_commuter_inds
-            append!(qprods, Commutator(Q1.expr[i], Q2.expr[j]))
-        end
-        qprods_simplified = simplify_QExpr(qprods)
-        if length(qprods_simplified) == 0
-            return true # they cancel out, so the whole expression
-        elseif length(qprods_simplified)
-            return all(iszero(t) for t in qprods_simplified) # all zero
-        end
+
+    isempty(noncomm_pairs) && return true      # all commute
+    length(noncomm_pairs) == 1 && return false # exactly one conflict → cannot cancel
+
+    # build commutator sum for all non-commuting pairs
+    comms = QExpr([])
+    for (i, j) in noncomm_pairs
+        push!(comms.terms, Commutator(Q1.terms[i], Q2.terms[j]))
     end
+
+    simplified = simplify_QExpr(comms)
+    return isempty(simplified.terms) || all(iszero, simplified.terms)
 end
 function commutes(Q1::S, Q2::T) where {S<:QComposite,T<:QComposite}
     return commutes(Q1.expr, Q2.expr)
 end
+
 # define internal commutes function for QMultiComposite 
 # do the internal degrees of freedom commute? 
 function QCommutator_commutes(Q::QCommutator)::Bool
@@ -279,7 +261,8 @@ end
 
 #### Binary + ####################################################################
 function +(Q1::QExpr, Q2::QExpr)::QExpr
-    return QExpr(Q1.statespace, vcat(Q1.terms, Q2.terms))
+        new_terms = simplify_QExpr(vcat(Q1.terms, Q2.terms))
+    return QExpr(Q1.statespace, new_terms)
 end
 function +(Q1::QExpr, Q2::T)::QExpr where {T<:QComposite}
     return QExpr(Q1.statespace, vcat(Q1.terms, Q2))
@@ -308,23 +291,10 @@ end
 -(N::Number, Q1::QExpr)::QExpr = -Q1 + N
 
 #### Multiply ####################################################################
-function trivial_multiply(Q1::QAtomProduct, Q2::QAtomProduct)::QAtomProduct   
-    e1, e2 = Q1.expr, Q2.expr
-    n1, n2 = length(e1), length(e2)
-
-    newexpr = Vector{QAtom}(undef, n1 + n2)
-    if n1 > 0
-        newexpr[1:n1] = e1
-    end
-
-    if n2 > 0
-        newexpr[n1+1:end] = e2
-    end
-    return modify_coeff_expr(Q1, Q1.coeff_fun * Q2.coeff_fun, newexpr)
-end
 # Multiplies two QTerm’s from the same statespace. Returns a vector of QTerm’s that are the result of this multiplication and corresponding ComplexRational coefficients. 
 function multiply_qterm(t1::Vector{Vector{Int}}, t2::Vector{Vector{Int}}, ss::StateSpace)::Tuple{Vector{Vector{Is}},Vector{ComplexRational}} 
     i = 0
+    results::Vector{Vector{Tuple{ComplexRational,Is}}} = Vector{Tuple{ComplexRational,Is}}[]
     for s in ss.subspaces, _ in eachindex(s.ss_inner_ind)
         i += 1
         push!(results, s.op_set.op_product(t1[i], t2[i]))
@@ -349,8 +319,7 @@ end
 
 #### Main Multiplication Functions ################################################
 function *(p1::QAtomProduct, p2::QAtomProduct)::Vector{QComposite}
-    p = trivial_multiply(p1, p2)  # append the terms of p1 and p2.
-    return simplify_QAtomProduct(p)    # simplify the product. 
+    return multiply_QAtomProducts(p1, p2)   # multiply the terms of p1
 end
 
 function *(num::Number, p1::QAtomProduct)::Vector{QComposite}
@@ -365,7 +334,15 @@ function *(p1::QAtomProduct, num::Number)::Vector{QComposite}
 end
 
 function *(p1::T1, p2::T2)::Vector{QComposite} where {T1<:QComposite,T2<:QComposite}
-    return [QCompositeProduct(QComposite[p1, p2])]
+    ss = p1.statespace  # assume same statespace
+    if is_numeric(p1) 
+        return [modify_coeff(p2, get_coeff(p1) * get_coeff(p2))] 
+    end
+    p1_coeff, p1_new = separate_coeff_qcomposite(p1)
+    p2_coeff, p2_new = separate_coeff_qcomposite(p2) 
+    coeff = p1_coeff * p2_coeff  # product of both
+    c, t = add_QComposite_to_QCompositeProduct([p1_new], p2_new, ss)
+    return [ QCompositeProductCleanup(ss, c * coeff , t, Val(:nosimp)) ]
 end
 function *(p1::QSum, p2::T2)::Vector{QSum} where T2<:QComposite
     new_expr::Vector{QComposite} = []
@@ -375,30 +352,17 @@ function *(p1::QSum, p2::T2)::Vector{QSum} where T2<:QComposite
     return [QSum(p1.statespace, QExpr(new_expr, p1.indexes, p1.subsystem_index, p1.element_indexes, p1.neq), Val(:simp))]
 end
 function *(p1::QCompositeProduct, p2::T2)::Vector{QComposite} where T2<:QComposite
-    curr_comp = p1.expr
-    last_prod = p1.expr[end] * p2
-    return_vec::Vector{QCompositeProduct} = []
-    for last in last_prod
-        if isa(last, QCompositeProduct)
-            push!(return_vec, QCompositeProduct(vcat(curr_comp, QExpr([p2])), Val(:simp)))
-        else
-            push!(return_vec, QCompositeProduct(vcat(curr_comp[1:end-1], QExpr([last])), Val(:simp)))
-        end
-    end
-    return return_vec
+    p2_coeff, p2_new = separate_coeff_qcomposite(p2) 
+    coeff = p1.coeff_fun * p2_coeff  # product
+    return multiply_QCompositeProducts(coeff, p1.expr, [p2_new], Val(:nosimp))
 end
 function *(p2::T2, p1::QCompositeProduct)::Vector{QComposite} where T2<:QComposite
-    curr_comp = p1.expr
-    first_prod = p2 * p1.expr[1]
-    return_vec::Vector{QCompositeProduct} = []
-    for first in first_prod
-        if isa(first, QCompositeProduct)
-            push!(return_vec, QCompositeProduct(vcat(p2, curr_comp)))
-        else
-            push!(return_vec, QCompositeProduct(vcat(first_prod, curr_comp[2:end])))
-        end
-    end
-    return return_vec
+    p2_coeff, p2_new = separate_coeff_qcomposite(p2) 
+    coeff = p1.coeff_fun * p2_coeff  # product
+    return multiply_QCompositeProducts(coeff, [p2_new], p1.expr, Val(:nosimp))
+end
+function *(p1::QCompositeProduct, p2::QCompositeProduct)::Vector{QComposite}
+    return multiply_QCompositeProducts(p1.coeff_fun * p2.coeff_fun, p1.expr, p2.expr, Val(:nosimp))
 end
 
 function *(Q1::QExpr, Q2::QExpr)::QExpr
@@ -528,8 +492,17 @@ end
 
 
 
-function Identity(qspace::StateSpace)
+function Identity(qspace::StateSpace)::QExpr
     return QExpr(qspace, QAtomProduct(qspace, qspace.c_one, QAtom[QTerm(qspace.I_op)]))
+end
+function Identity(qspace::StateSpace, coeff_fun::CFunction)::QExpr
+    return QExpr(qspace, QAtomProduct(qspace, coeff_fun, QAtom[QTerm(qspace.I_op)]))
+end
+function IdentityQAtomProduct(qspace::StateSpace)::QAtomProduct
+    return QAtomProduct(qspace, qspace.c_one, QAtom[QTerm(qspace.I_op)])
+end
+function IdentityQAtomProduct(qspace::StateSpace, coeff_fun::CFunction)::QAtomProduct
+    return QAtomProduct(qspace, coeff_fun, QAtom[QTerm(qspace.I_op)])
 end
 
 """

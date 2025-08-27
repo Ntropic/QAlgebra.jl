@@ -32,7 +32,6 @@ Creates the OperatorSet for a qubit using Raising and Lowering operators (``\sig
 function QubitPM(symbol::String="")::OperatorSet
     ops = ["p", "m", "z", "I"]
     ops_str = ["+", "-", "z", "I"]
-    non_base_ops::Dict{String, Vector{Tuple{ComplexRational, Vector{Int}}}} = Dict("x"=> [(ComplexRational(1,0,1), [1]),(ComplexRational(1,0,1), [2])], "y" => [(ComplexRational(0,-1,1), [1]), (ComplexRational(0,1,1), [2])])
     base_pm = [[1], [2], [3]]
     pm_dag_inds = [[2], [1], [3], [4]]
 
@@ -95,7 +94,7 @@ function QubitPM(symbol::String="")::OperatorSet
         # everything commutes with 4, otherwise must be the same
         return (op1[1] == 4 || op2[1] == 4 || op1[1] == op2[1])
     end
-    return OperatorSet("PM Qubit", "Fermion", 1, [4], base_pm, non_base_ops, ops, pm_product, pm_dag, pm2str, pm2latex, pmcommutes)
+    return OperatorSet("PM Qubit", "Fermion", 1, [4], base_pm, ops, pm_product, pm_dag, pm2str, pm2latex, pmcommutes)
 end
 # Test 
 #q = QubitPM()

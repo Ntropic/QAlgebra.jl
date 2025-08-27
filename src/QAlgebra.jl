@@ -63,15 +63,20 @@ export isnumeric, coeff, var_exponents, expand
 
 include("QSpace.jl")
 using .QSpace
-export OperatorSet, SubSpace, Parameter, OperatorType, StateSpace, string2operator_type
+export OperatorSet
+export SubSpace, SubSpaceDefinitions 
+export OperatorType, OperatorTypeInfo, OperatorDefinitions
+export Parameter, ParameterInfo, ParameterDefinitions
+export StateSpace
 export QubitPauli, QubitPM, Ladder
 
 include("QExpressions.jl")
 using .QExpressions
-export QEq, QObj, QAtom, QAbstract, QComposite, QCompositeN, QCompositeProduct, QMultiComposite, QTerm, QAtomProduct, QExpr, QSum, Sum, ∑, diff_QEq, base_operators, neq, d_dt
-export QCommutator, QExp, QLog, QPower, power, QRoot, root, simplify, simplify_QAtomProduct
+export QEq, QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QAtomProduct, QSum, Sum, ∑, QCompositeProduct, diff_QEq, d_dt
+export QCommutator, QExp, QLog, QPower, power, QRoot, root, simplify
 export Dag, Commutator, is_numeric, same_statespace
-export reorder
+export base_operators, QExprLookup 
+export reorder, neq
 export string, latex_string
 export term
 

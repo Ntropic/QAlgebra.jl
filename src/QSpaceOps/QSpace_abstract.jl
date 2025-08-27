@@ -1,36 +1,3 @@
-struct OpDefinitions
-    operators::Vector{Tuple{String, Vector{String}}}
-    commute_fun::Function 
-    check_n::Int
-    function OpDefinitions(operators...; commute_fun::Union{Nothing,Function}=nothing, check_n=5) 
-        new_operators::Vector{Tuple{String, Vector{String}}} = []
-        for op in operators
-            if isa(op, String)
-                push!(new_operators, brace_separate(s))
-            elseif isa(op, Symbol)
-                push!(new_operators, (string(op), String[]))
-            elseif isa(op, Tuple)
-                push!(new_operators, op) 
-            else 
-                error("Invalid operator type: $op, must be String, Tuple{String, Vector{String}} or Symbol!")
-            end
-        end
-        return new(new_operators, commute_fun, check_n)  
-    end
-end
-
-struct OperatorTypeInfo
-    operator_names::Vector{String} # names of the operators (e
-    operator_types::Vector{OperatorType}
-    commutation_matrix::Matrix{Bool} # if true, then the operators commute. If false, they probably don't 
-    commute_fun::Function 
-    function OperatorTypeInfo(operator_types::Vector{OperatorType}; commute_fun::Union{Nothing,Function}=nothing, check_n=5) 
-        operator_names::Vector{String} = [ot.name for ot in operator_types]
-        commutation_matrix, fun = generate_commutation_matrix(operator_types, commute_fun, check_n)
-        return new(operator_names, operator_types, commutation_matrix, fun)
-    end
-end
-
 """ 
     OperatorType(name::String, hermitian::Bool=false, unitary::Bool=false, acting_ss::Union{Nothing, Vector{Bool}}=nothing)
 
@@ -48,14 +15,73 @@ struct OperatorType
     expanded_ss_acting::Vector{Bool} # indices of non-trivial components in the op_indices picture for bath subsystems
 end
 
-function OpDefinitions2OperatorType(opdefs::OpDefinitions, subspace_definitions::SubSpaceDefinitions)::Vector{OperatorType}  
-     return [SingleOpDefinition2OperatorType(op_def, i, cond, subspace_definitions) for (i, (op_def, cond) in enumerate(opdefs.operators))]
+struct OperatorDefinitions
+    operators::Vector{Tuple{String, Vector{String}}}
+    commute_fun::Union{Nothing,Function} 
+    check_n::Int
+    function OperatorDefinitions(operators...; commute_fun::Union{Nothing,Function}=nothing, check_n=5) 
+        new_operators::Vector{Tuple{String, Vector{String}}} = []
+        for op in operators
+            if isa(op, String)
+                push!(new_operators, brace_separate(op))
+            elseif isa(op, Symbol)
+                push!(new_operators, (string(op), String[]))
+            elseif isa(op, Tuple)
+                push!(new_operators, op) 
+            else 
+                error("Invalid operator type: $op, must be String, Tuple{String, Vector{String}} or Symbol!")
+            end
+        end
+        return new(new_operators, commute_fun, check_n)  
+    end
+end
+function Base.show(io::IO, op_def::OperatorDefinitions)
+    println(io, "OperatorDefinitions: ")
+    # Then print each subspace on its own line.
+    for op in op_def.operators
+        op_name, op_conditions = op
+        println(io, "   - ", op_name*brace(join(op_conditions, ","), do_latex=false))
+    end
+    if isnothing(op_def.commute_fun)
+        println(io, "   Commute function: Not defined (will be inferred from subspace definitions)")
+    else
+        how_many_args_bool = [accepts_n_args(op_def.commute_fun, i) for i in 1:6]
+        how_many_args_int = findlast(how_many_args_bool)
+        signature_str = ""
+        if how_many_args_int == 6 
+            signature_str = "(outer index 1, inner index 1, dagger 1, outer index 2, inner index 2, dagger 2)"
+        elseif how_many_args_int == 4
+            signature_str = "(outer index 1, inner index 1, outer index 2, inner index 2)"
+        elseif how_many_args_int == 2
+            signature_str = "(outer index 1, outer index 2)"
+        else 
+            signature_str = "(unknown signature => will result in error)"        
+        end
+        println(io, "   Commute function: Defined (with n=$how_many_args_int arguments)")
+        println(io, "       Expected signature $signature_str.")
+        println(io, "       Will check inner consistency for $op_def.check_n samples each.")
+    end
+end
+
+struct OperatorTypeInfo
+    operator_names::Vector{String} # names of the operators (e
+    operator_types::Vector{OperatorType}
+    commutation_matrix::Matrix{Bool} # if true, then the operators commute. If false, they probably don't 
+    commute_fun::Function 
+    function OperatorTypeInfo(operator_types::Vector{OperatorType}; commute_fun::Union{Nothing,Function}=nothing, check_n=5) 
+        operator_names::Vector{String} = [ot.name for ot in operator_types]
+        commutation_matrix, fun = gen_commutes_function(operator_types, commute_fun, check_n)
+        return new(operator_names, operator_types, commutation_matrix, fun)
+    end
+end
+
+function OperatorDefinitions2OperatorType(opdefs::OperatorDefinitions, subspace_definitions::SubSpaceDefinitions)::Vector{OperatorType}  
+     return [SingleOpDefinition2OperatorType(op_def, i, cond, subspace_definitions) for (i, (op_def, cond)) in enumerate(opdefs.operators)]
 end
 function SingleOpDefinition2OperatorType(op_str::String, operator_index::Int, conditions::Vector{String}, subspace_definitions::SubSpaceDefinitions)::OperatorType
-    used_symbols::Vector{Symbol} = subspace_definitions.used_symbols
     op_sym::Symbol = Symbol(op_str)
     conditions_sym::Vector{Symbol} = Symbol.(conditions)
-    if (op_sym in used_symbols)
+    if (op_sym in subspace_definitions.used_symbols)
         error("Operator $op_str already defined for either an Subspace definition or another Abstract Operator!") 
     end
 
@@ -64,7 +90,7 @@ function SingleOpDefinition2OperatorType(op_str::String, operator_index::Int, co
         push!(key_symbols, subspace.key_symbol)
     end
     if length(conditions_sym) != length(unique(conditions_sym))
-        throw(ArgumentError("Duplicate conditions in operator definition $(conditions_sym)")
+        throw(ArgumentError("Duplicate conditions in operator definition $(conditions_sym)"))
     end
 
     of_time, unitary, hermitian = false, false, false 
@@ -91,31 +117,33 @@ function SingleOpDefinition2OperatorType(op_str::String, operator_index::Int, co
             end
         end
     end
-    for reduced_conditions_sym in conditions_sym
-        if !(condition_sym in key_symbols)
-            throw(ArgumentError("Invalid condition: $condition_sym, must be one of: $(accepted_conditions)")) 
+    for reduced_condition_sym in reduced_conditions_sym
+        if !(reduced_condition_sym in key_symbols)
+            accepted_conditions = vcat([:t, :U, :unitary, :H, :hermitian], key_symbols)
+            throw(ArgumentError("Invalid condition: $reduced_condition_sym, must be one of: $(accepted_conditions)")) 
         end 
     end
     # check if all negations are the same 
     if !(all(contains_negation)  || all(.!contains_negation))
         error("Mixed negations in conditions are not allowed, got for $op_str the negation pattern $contains_negation.")
     end
-    negation::Bool = contains_negation[1]
-    acting_ss::Vector{Bool} = [negation for _ in subspace_keys]
+    negation::Bool = isempty(contains_negation) ? false : contains_negation[1]
+    acting_ss::Vector{Bool} = [negation for _ in subspace_definitions.subspaces]
 
     for (i, key_symbol) in enumerate(key_symbols)  
-        if key_symbol in redduced_conditions_sym 
+        if key_symbol in reduced_conditions_sym 
             acting_ss[i] = !acting_ss[i]
         end
     end
-    expanded_ss_acting::Vector{Bool} = fill(false, dim)
-    for (s_bool, subspace) in zip(acting_ss, subspaces)
+    expanded_ss_acting::Vector{Bool} = fill(false, length(subspace_definitions.I_op))
+    for (s_bool, subspace) in zip(acting_ss, subspace_definitions.subspaces)
         if s_bool == true
-            for ind in subspace.op_index_inds
+            for ind in subspace.ss_inner_ind
                 expanded_ss_acting[ind] = true
             end
         end
     end
+    union!(subspace_definitions.used_symbols, [op_sym])
     return OperatorType(op_str, op_sym, operator_index, hermitian, unitary, of_time, acting_ss, expanded_ss_acting)
 end
 
@@ -144,7 +172,7 @@ function Base.show(io::IO, p::OperatorType)
     print(io, "Op: ", operator_type2string(p))
 end
 
-function operatertypes2commutator_matrix(optypes::Vector{OperatorType})::Matrix{Bool}
+function operatortypes2commutator_matrix(optypes::Vector{OperatorType})::Matrix{Bool}
     # matrix of operatortypes commutation, true ==> the two commutators commute
     mat = Matrix{Bool}(undef, length(optypes), length(optypes))
     for i in 1:length(optypes)
@@ -158,12 +186,19 @@ function operatertypes2commutator_matrix(optypes::Vector{OperatorType})::Matrix{
     return mat
 end
 
+"""
+    accepts_n_args(f, n::Int) -> Bool
+
+Return true if `f` has a method with exactly `n` `Int` arguments.
+"""
 function accepts_n_args(f, n::Int)
-    any(m -> length(m.sig.parameters) - 1 == n, methods(f))
+    sig = ntuple(_ -> Int, n)  # Tuple{Int,Int,...,Int} of length n
+    return hasmethod(f, sig)
 end
+
 # Generates function that takes Operator indexes and returns commutations
-function gen_commutes_function(optypes::Vector{OperatorType}, fun::Union{Function, Nothing} = nothing; check_n::Int=1)::Tuple{Matrix{Bool}, Function}
-    commutation_matrix = operatertypes2commutator_matrix(optypes) # if sth commutes for commutation matrix it must also commute for fun
+function gen_commutes_function(optypes::Vector{OperatorType}, fun::Union{Function, Nothing} = nothing, check_n::Int=1)::Tuple{Matrix{Bool}, Function}
+    commutation_matrix = operatortypes2commutator_matrix(optypes) # if sth commutes for commutation matrix it must also commute for fun
     # but if sth doesn't commute in commutation matrix it might still commute for fun!
     if isnothing(fun)
         # assume this function structure 
@@ -191,7 +226,7 @@ function gen_commutes_function(optypes::Vector{OperatorType}, fun::Union{Functio
                     end
                 end
             end
-            return commutation_matrix, fun
+            return commutation_matrix, (a,_,_,b,_,_) -> fun(a,b)
         elseif accepts_n_args(fun, 4)
             for i in 1:n, j in 1:i-1
                 if commutation_matrix[i,j]
@@ -199,28 +234,17 @@ function gen_commutes_function(optypes::Vector{OperatorType}, fun::Union{Functio
                     sub_inds_i = rand(0:4*check_n, check_n)
                     sub_inds_j = rand(0:4*check_n, check_n)
                     for (sub_i, sub_j) in zip(sub_inds_i, sub_inds_j)
-                    if !fun(i, sub_i, j, sub_j) # must output bool
-                        op_A_str = operator_type2string(optypes[i])
-                        op_B_str = operator_type2string(optypes[j])  
-                        error("For [$op_A_str, $op_B_str] the provided commutation function (fun) must return true for arguments ($i, sub index 1, $j, sub index 2) with arbitrary sub indexes, because the operators are acting on non overlapping subspaces! Returned false for sub indexes ($sub_i, $sub_j). ")
+                        if !fun(i, sub_i, j, sub_j) # must output bool
+                            op_A_str = operator_type2string(optypes[i])
+                            op_B_str = operator_type2string(optypes[j])  
+                            error("For [$op_A_str, $op_B_str] the provided commutation function (fun) must return true for arguments ($i, sub index 1, $j, sub index 2) with arbitrary sub indexes, because the operators are acting on non overlapping subspaces! Returned false for sub indexes ($sub_i, $sub_j). ")
+                        end
                     end
                 end
             end
-            return commutation_matrix, fun 
+            return commutation_matrix, (a1,a2,_,b1,b2,_) -> fun(a1, a2,b1,b2) 
         else 
             error("The commutation function (fun) must accept 2, 4 or 6 arguments!")
         end
-    end
-end
-
-struct OperatorTypeInfo
-    operator_names::Vector{String} # names of the operators (e
-    operator_types::Vector{OperatorType}
-    commutation_matrix::Matrix{Bool} # if true, then the operators commute. If false, they probably don't 
-    commute_fun::Function 
-    function OperatorTypeInfo(operator_types::Vector{OperatorType}; commute_fun::Union{Nothing,Function}=nothing, check_n=5) 
-        operator_names::Vector{String} = [ot.name for ot in operator_types]
-        commutation_matrix, fun = generate_commutation_matrix(operator_types, commute_fun, check_n)
-        return new(operator_names, operator_types, commutation_matrix, fun)
     end
 end

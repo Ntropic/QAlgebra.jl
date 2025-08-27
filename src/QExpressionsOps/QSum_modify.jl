@@ -1,5 +1,7 @@
 #### Flatten 
 import Base.Iterators: flatten
+export neq
+
 """
 flatten(qeq::QExpr) -> QExpr
 
@@ -28,7 +30,7 @@ function flatten(s::QSum, in_sum::Bool = false, in_sum_comp::Bool = false)
 
     # if there were any base qTerms directly under `s`, keep a sum
     if !isempty(base_terms)
-        push!(out_terms, QSum(inner.statespace, QExpr(base_terms), s.indexes, s.subsystem_index, s.element_indexes, s.neq, Val(:simp)))
+        push!(out_terms, QSum(inner.statespace, QExpr(base_terms), s.indexes, s.neq))
     end
 
     # for each nested sum, merge its indexes onto `s`'s
@@ -37,12 +39,8 @@ function flatten(s::QSum, in_sum::Bool = false, in_sum_comp::Bool = false)
         if !isempty(dup)
             error("Unsupported: duplicate summation indexes detected: $(dup)")
         end
-        merged_idxs = vcat(s.indexes, n.indexes)
-        if n.subsystem_index != s.subsystem_index
-            error("Unsupported: nested sum with different subsystem index: $(n.subsystem_index)")
-        end
-        merged_einds = vcat(s.element_indexes, n.element_indexes)
-        push!(out_terms, QSum(s.statespace, n.expr, merged_idxs, s.subsystem_index, merged_einds, s.neq, Val(:simp)))
+        merged_inds = vcat(s.indexes, n.indexes)
+        push!(out_terms, QSum(s.statespace, n.expr, merged_inds, s.neq))
     end
 
     return QExpr(inner.statespace, out_terms)
@@ -186,6 +184,76 @@ function neq(q::T)::T where {T<:QMultiComposite}
     return modify_expr(q, neq.(q.expr))
 end
 
+# -------------------------------------------------------------------
+# handle one QSum
+function neq_qsum(s::QSum, index::Int=1)::QExpr
+    if s.neq
+        return QExpr(s.expr.statespace, [s])   # skip
+    end
+    n = length(s.indexes) # is at least 1
+    if n < index
+        error("neq: index $index is out of range for this QSum (with n=$n)")
+    end
+
+    statespace = s.expr.statespace
+    curr_index::SubSpaceIndex = s.indexes[index]
+    curr_subspace = statespace.subspaces[curr_index.outer] # subspace 
+    # 2) we consider for each sum index combination all possible 
+
+    # consider only one possible equality, then recursively process untill all possibilities have been checked
+    if index < n # recursively execute neq_qsum for higher possible indexes
+        post_expr = neq_qsum(s, index + 1)
+    else
+        post_expr = QExpr(statespace, QComposite[s])
+    end
+    pieces = copy(post_expr)
+
+    # 3) now we assume index is equal to each of the parameters in subspace, with smaller index than the curr index of the sum 
+    curr_statespace_ind::Int = curr_subspace.ss_inner_ind[curr_index.inner]
+
+    coeffs_of_subspace = curr_subspace.where_by_ensemble[s.subsystem_index]
+    curr_coeff_inds = [coeffs_of_subspace[i][curr_index.inner] for i in 1:length(coeffs_of_subspace)]
+    #println("\nnew run: ($index) : ", pieces) 
+    for (new_ind_sum, new_statespace_sum) in zip(1:curr_index.inner-1, curr_subspace.ss_inner_ind[1:curr_index.inner-1])
+        new_coeff_inds = [coeffs_of_subspace[i][new_ind_sum] for i in 1:length(coeffs_of_subspace)]
+        new_statespace_ind = curr_subspace.ss_inner_ind[new_ind_sum]
+        # check for each term in the subspace if curr_statespace_ind and new_statespace_ind are the neutral_element  
+        for expr in post_expr.terms
+           if isa(expr, QSum)
+                #println("    ($index) - expr: ", expr)
+                for t in expr.expr.terms
+                    not_neutral, new_terms = term_equal_indexes(t, curr_statespace_ind, new_statespace_ind, curr_subspace, curr_coeff_inds, new_coeff_inds)
+                    # add new terms as QSum(s) with corrected indexing 
+                    if not_neutral
+                        # remove expr.indexes[index] and similarly expr.element_indexes[index]
+                        new_indexes = vcat(expr.indexes[1:index-1], expr.indexes[index+1:end])
+                        new_element_indexes = vcat(expr.element_indexes[1:index-1], expr.element_indexes[index+1:end])
+                        if length(new_indexes) == 0
+                            for new_term in new_terms
+                                pieces += new_term
+                            end
+                        else
+                            pieces += QSum(s.statespace, QExpr(statespace, new_terms, Val(:simp)), new_indexes, expr.subsystem_index, new_element_indexes, true)
+                        end
+                    else # no change to sum structure
+                        pieces += QSum(s.statespace, QExpr(statespace, new_terms, Val(:simp)), expr.indexes, expr.subsystem_index, expr.element_indexes, true)
+                    end
+                end
+            else ## Old - no longer sufficient: if isa(expr, QTerm)
+                not_neutral, new_terms = term_equal_indexes(expr, curr_statespace_ind, new_statespace_ind, curr_subspace, curr_coeff_inds, new_coeff_inds)
+                if not_neutral
+                    error("Unsupported: Element that isn't part of a Sum should no longer contain sum indexes")
+                end
+                for new_term in new_terms
+                    pieces += new_term
+                end
+            end
+        end
+        #println("  Result for ($index => $curr_ind_sum, $new_ind_sum | $curr_statespace_ind, $new_statespace_ind):  " , pieces)
+    end
+    return pieces
+end
+
 function neq(qeq::QExpr)::QExpr
     # flatten first 
     qeq = flatten(qeq)
@@ -206,76 +274,4 @@ function neq(qeq::QExpr)::QExpr
         end
     end
     return out
-end
-
-# -------------------------------------------------------------------
-# handle one QSum
-function neq_qsum(s::QSum, index::Int=1)::QExpr
-    if s.neq
-        return QExpr(s.expr.statespace, [s])   # skip
-    end
-    n = length(s.element_indexes) # is at least 1
-    if n < index
-        error("neq: index $index is out of range for this QSum (with n=$n)")
-    end
-    # 1) the “all distinct” piece # add to the lower part and remove it here 
-
-    # 2) we consider for each sum index combination all possible 
-    ss = s.expr.statespace
-    sub = ss.subspaces[s.subsystem_index]
-    n_sub = length(sub.ss_inner_ind)
-    # consider only one possible equality, then recursively process untill all possibilities have been checked
-    curr_element = s.element_indexes[index]
-    if index < n # recursively execute neq_qsum for higher possible indexes
-        post_expr = neq_qsum(s, index + 1)
-    else
-        post_expr = QExpr(ss, QComposite[s])
-    end
-    pieces = copy(post_expr)
-
-    # 3) now we assume index is equal to each of the parameters in subspace, with smaller index than the curr index of the sum 
-    curr_ind_sum::Int = s.element_indexes[index]
-    curr_statespace_ind::Int = sub.ss_inner_ind[curr_ind_sum]
-
-    coeffs_of_subspace = ss.where_by_ensemble[s.subsystem_index]
-    curr_coeff_inds = [coeffs_of_subspace[i][curr_ind_sum] for i in 1:length(coeffs_of_subspace)]
-    #println("\nnew run: ($index) : ", pieces) 
-    for (new_ind_sum, new_statespace_sum) in zip(1:curr_ind_sum-1, sub.ss_inner_ind[1:curr_ind_sum-1])
-        new_coeff_inds = [coeffs_of_subspace[i][new_ind_sum] for i in 1:length(coeffs_of_subspace)]
-        new_statespace_ind = sub.ss_inner_ind[new_ind_sum]
-        # check for each term in the subspace if curr_statespace_ind and new_statespace_ind are the neutral_element  
-        for expr in post_expr.terms
-           if isa(expr, QSum)
-                #println("    ($index) - expr: ", expr)
-                for t in expr.expr.terms
-                    not_neutral, new_terms = term_equal_indexes(t, curr_statespace_ind, new_statespace_ind, sub, curr_coeff_inds, new_coeff_inds)
-                    # add new terms as QSum(s) with corrected indexing 
-                    if not_neutral
-                        # remove expr.indexes[index] and similarly expr.element_indexes[index]
-                        new_indexes = vcat(expr.indexes[1:index-1], expr.indexes[index+1:end])
-                        new_element_indexes = vcat(expr.element_indexes[1:index-1], expr.element_indexes[index+1:end])
-                        if length(new_indexes) == 0
-                            for new_term in new_terms
-                                pieces += new_term
-                            end
-                        else
-                            pieces += QSum(s.statespace, QExpr(ss, new_terms, Val(:simp)), new_indexes, expr.subsystem_index, new_element_indexes, true)
-                        end
-                    else # no change to sum structure
-                        pieces += QSum(s.statespace, QExpr(ss, new_terms, Val(:simp)), expr.indexes, expr.subsystem_index, expr.element_indexes, true)
-                    end
-                end
-            else ## Old - no longer sufficient: if isa(expr, QTerm)
-                not_neutral, new_terms = term_equal_indexes(expr, curr_statespace_ind, new_statespace_ind, sub, curr_coeff_inds, new_coeff_inds)
-                if not_neutral
-                    error("Unsupported: Element that isn't part of a Sum should no longer contain sum indexes")
-                end
-                for new_term in new_terms
-                    pieces += new_term
-                end
-            end
-        end
-        #println("  Result for ($index => $curr_ind_sum, $new_ind_sum | $curr_statespace_ind, $new_statespace_ind):  " , pieces)
-    end
-    return pieces
 end
