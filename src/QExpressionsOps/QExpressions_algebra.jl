@@ -261,7 +261,7 @@ end
 
 #### Binary + ####################################################################
 function +(Q1::QExpr, Q2::QExpr)::QExpr
-        new_terms = simplify_QExpr(vcat(Q1.terms, Q2.terms))
+    new_terms = simplify_QExpr(vcat(Q1.terms, Q2.terms))
     return QExpr(Q1.statespace, new_terms)
 end
 function +(Q1::QExpr, Q2::T)::QExpr where {T<:QComposite}
@@ -349,7 +349,7 @@ function *(p1::QSum, p2::T2)::Vector{QSum} where T2<:QComposite
     for t in p1.expr
         append!(new_expr, t * p2)
     end
-    return [QSum(p1.statespace, QExpr(new_expr, p1.indexes, p1.subsystem_index, p1.element_indexes, p1.neq), Val(:simp))]
+    return [ modify_expr(p1, new_expr) ]
 end
 function *(p1::QCompositeProduct, p2::T2)::Vector{QComposite} where T2<:QComposite
     p2_coeff, p2_new = separate_coeff_qcomposite(p2) 
@@ -411,7 +411,7 @@ end
 (*(num::Number, Q2::T)::Vector{QComposite}) where T<:QComposite = Q2 * num
 
 ##### Exponentiation ###################################################
-function ^(Q::Union{QExpr,T}, n::Integer) where T<:QComposite
+function ^(Q::QExpr, n::Integer)::QExpr
     if n < 0
         error("Negative exponent not defined for subtype of QComposite or QExpr.")
     elseif n == 0
@@ -424,6 +424,25 @@ function ^(Q::Union{QExpr,T}, n::Integer) where T<:QComposite
     while exp > 0
         if isodd(exp)
             result = result * base
+        end
+        base = base * base
+        exp = exp ÷ 2
+    end
+    return result
+end
+function ^(Q::T, n::Integer) where T<:QComposite
+    if n < 0
+        error("Negative exponent not defined for subtype of QComposite or QExpr.")
+    elseif n == 0
+        return [IdentityQAtomProduct(Q.statespace)]
+    end
+
+    result = [Identity(Q.statespace)]
+    base = Q
+    exp = n
+    while exp > 0
+        if isodd(exp)
+            result = result .* base
         end
         base = base * base
         exp = exp ÷ 2
@@ -569,11 +588,12 @@ function Dag(p::QAtomProduct)::Vector{QAtomProduct}
 end
 
 function Dag(Q::QExpr)::QExpr
-    q_comps::Vector{QComposite} = []
-    for q in Q.terms
-        append!(q_comps, Dag(q))
+    terms::Vector{QComposite} = QComposite[]
+    sizehint!(terms, length(Q.terms))
+    for term in Q.terms 
+        append!(terms, Dag(term))
     end
-    return QExpr(q_comps)
+    return QExpr(Q.statespace, terms)
 end
 function Dag(t::T)::Vector{QComposite} where T<:QComposite
     t_new = copy(t)

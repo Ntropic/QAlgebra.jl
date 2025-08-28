@@ -101,19 +101,12 @@ isless_same(a::QComposite, b::QComposite) = isless(a.expr, b.expr)
 
 # QSum: subsystem_index, |element_indexes|, element_indexes, expr, neq
 function isless_same(a::QSum, b::QSum)
-    a.subsystem_index != b.subsystem_index && return a.subsystem_index < b.subsystem_index
-    la = length(a.element_indexes); lb = length(b.element_indexes)
-    la != lb && return la < lb
-    if !(a.element_indexes == b.element_indexes)
-        return less_vec_int(a.element_indexes, b.element_indexes)
+    if a.indexes != b.indexes
+        return a.indexes < b.indexes 
+    elseif a.neq != b.neq 
+         return a.neq < b.neq 
     end
-    if !(a.expr == b.expr)
-        return isless(a.expr, b.expr)
-    end
-    if !(a.neq == b.neq)
-        return isless(a.neq, b.neq)   # assumes isless for its type
-    end
-    return false
+    return a.expr < b.expr
 end
 
 # QAtomProduct: coeff first, then atoms (length + pairwise)

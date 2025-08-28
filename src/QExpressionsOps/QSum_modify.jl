@@ -30,7 +30,7 @@ function flatten(s::QSum, in_sum::Bool = false, in_sum_comp::Bool = false)
 
     # if there were any base qTerms directly under `s`, keep a sum
     if !isempty(base_terms)
-        push!(out_terms, QSum(inner.statespace, QExpr(base_terms), s.indexes, s.neq))
+        push!(out_terms, QSum(QExpr(base_terms), s.indexes, s.neq))
     end
 
     # for each nested sum, merge its indexes onto `s`'s
@@ -40,7 +40,7 @@ function flatten(s::QSum, in_sum::Bool = false, in_sum_comp::Bool = false)
             error("Unsupported: duplicate summation indexes detected: $(dup)")
         end
         merged_inds = vcat(s.indexes, n.indexes)
-        push!(out_terms, QSum(s.statespace, n.expr, merged_inds, s.neq))
+        push!(out_terms, QSum(n.expr, merged_inds, s.neq))
     end
 
     return QExpr(inner.statespace, out_terms)
@@ -69,9 +69,10 @@ function term_equal_indexes(expr, args...) # Base method to error
     throw(MethodError(term_equal_indexes, (typeof(expr), args...)))
 end
 # multiplies from the left 
-function term_equal_indexes(term::QTerm, index1::Int, index2::Int, subspace::SubSpace)::Tuple{Bool, Vector{QTerm}, Vector{ComplexRational}}
-    op1 = term.op_indices[index1]
-    op2 = term.op_indices[index2]
+function term_equal_indexes(term::QTerm, index1::SubSpaceIndex, index2::SubSpaceIndex, subspace::SubSpace)::Tuple{Bool, Vector{QTerm}, Vector{ComplexRational}}
+    ind1, ind2 = index1.expanded, index2.expanded
+    op1 = term.op_indices[ind1]
+    op2 = term.op_indices[ind2]
     neutral = subspace.op_set.neutral_element
     if op1 === neutral && op2 === neutral
         return false, QTerm[term], ComplexRational[ComplexRational(1,0,1)]
@@ -81,25 +82,25 @@ function term_equal_indexes(term::QTerm, index1::Int, index2::Int, subspace::Sub
     new_coeffs = ComplexRational[]
     for (coeff, op) in results
         op_indices = copy(term.op_indices)
-        op_indices[index2] = op
-        op_indices[index1] = neutral
+        op_indices[ind2] = op
+        op_indices[ind1] = neutral
         push!(new_terms, QTerm(op_indices, Val(:nocopy)))
         push!(new_coeffs, coeff)
     end
     return true, new_terms, new_coeffs
 end 
 
-function term_equal_indexes(abstract::QAbstract, index1::Int, index2::Int, subspace::SubSpace)::Tuple{Bool, Vector{QAbstract}, Vector{ComplexRational}}
+function term_equal_indexes(abstract::QAbstract, index1::SubSpaceIndex, index2::SubSpaceIndex, subspace::SubSpace)::Tuple{Bool, Vector{QAbstract}, Vector{ComplexRational}}
     op_type = abstract.operator_type
     expanded_ss_acting = op_type.expanded_ss_acting
-    if expanded_ss_acting[index2]
+    if expanded_ss_acting[index2.expanded]
         return true, QAbstract[add_to_index_map(abstract, (index1, index2))], ComplexRational[ComplexRational(1,0,1)]
     end
     # append this rule to the index map 
     return false, QAbstract[abstract], ComplexRational[ComplexRational(1,0,1)]
 end
 
-function term_equal_indexes(q::QAtomProduct, index1::Int, index2::Int, subspace::SubSpace, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool, Vector{QAtomProduct}}
+function term_equal_indexes(q::QAtomProduct, index1::SubSpaceIndex, index2::SubSpaceIndex, subspace::SubSpace, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, Vector{QAtomProduct}}
     changed_any = false
     term_variants = Vector{Vector{QAtom}}()
     coeff_variants = Vector{Vector{ComplexRational}}()
@@ -109,7 +110,7 @@ function term_equal_indexes(q::QAtomProduct, index1::Int, index2::Int, subspace:
         push!(coeff_variants, coeffs)
         changed_any |= changed  # Check if any term was changed
     end
-    changed, new_coeff_fun = CFunctions.term_equal_indexes(q.coeff_fun, coeff_inds1, coeff_inds2)
+    changed, new_coeff_fun = CFunctions.term_equal_indexes(q.coeff_fun, coeff_ind_order)
     changed_any |= changed
     if !changed_any
         return false, [q]
@@ -127,11 +128,11 @@ function term_equal_indexes(q::QAtomProduct, index1::Int, index2::Int, subspace:
     return true, simplified_products
 end
 
-function term_equal_indexes(qexpr::QExpr, index1::Int, index2::Int, subspace::SubSpace, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool, Vector{QExpr}}
+function term_equal_indexes(qexpr::QExpr, index1::SubSpaceIndex, index2::SubSpaceIndex, subspace::SubSpace, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, Vector{QExpr}}
     changed_any = false
     elements = []
     for t in qexpr.terms
-        changed, variants = term_equal_indexes(t, index1, index2, subspace, coeff_inds1, coeff_inds2)
+        changed, variants = term_equal_indexes(t, index1, index2, subspace, coeff_ind_order)
         append!(elements, variants)
         changed_any |= changed  # Check if any term was changed
     end
@@ -141,8 +142,8 @@ function term_equal_indexes(qexpr::QExpr, index1::Int, index2::Int, subspace::Su
     return true, [QExpr(qexpr.statespace, elements)]
 end
 #T <: QComposite case
-function term_equal_indexes(q::T, index1::Int, index2::Int, subspace::SubSpace, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool, Vector{T}} where T<:QComposite
-    changed, variants = term_equal_indexes(q.expr, index1, index2, subspace, coeff_inds1, coeff_inds2)
+function term_equal_indexes(q::T, index1::SubSpaceIndex, index2::SubSpaceIndex, subspace::SubSpace, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, Vector{T}} where T<:QComposite
+    changed, variants = term_equal_indexes(q.expr, index1, index2, subspace, coeff_ind_order)
     if !changed
         return false, [q]
     end
@@ -153,8 +154,8 @@ function term_equal_indexes(q::T, index1::Int, index2::Int, subspace::SubSpace, 
     return true, results
 end
 #T <: QMultiComposite case
-function term_equal_indexes(q::T, index1::Int, index2::Int, subspace::SubSpace, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool, Vector{T}} where T<:QMultiComposite
-    changed, variants = term_equal_indexes(q.expr, index1, index2, subspace, coeff_inds1, coeff_inds2)
+function term_equal_indexes(q::T, index1::SubSpaceIndex, index2::SubSpaceIndex, subspace::SubSpace, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, Vector{T}} where T<:QMultiComposite
+    changed, variants = term_equal_indexes(q.expr, index1, index2, subspace, coeff_ind_order)
     if !changed
         return false, [q]
     end
@@ -163,6 +164,23 @@ function term_equal_indexes(q::T, index1::Int, index2::Int, subspace::SubSpace, 
         push!(results, modify_expr(q, v))
     end
     return true, results
+end
+
+"""
+    changed_indices(mapvec::Vector{Int}) -> Vector{Tuple{Int,Int}}
+
+Given a mapping vector `mapvec` where `mapvec[i]` is the new index for old index `i`,
+return a list of `(i, mapvec[i])` pairs for all `i` where the mapping changes
+(i.e. `mapvec[i] != i`).
+"""
+function changed_indices(mapvec::Vector{Int})::Vector{Tuple{Int, Int}}
+    changes = Tuple{Int,Int}[]
+    for i in eachindex(mapvec)
+        if mapvec[i] != i
+            push!(changes, (i, mapvec[i]))
+        end
+    end
+    return changes
 end
 
 """
@@ -198,7 +216,7 @@ function neq_qsum(s::QSum, index::Int=1)::QExpr
     statespace = s.expr.statespace
     curr_index::SubSpaceIndex = s.indexes[index]
     curr_subspace = statespace.subspaces[curr_index.outer] # subspace 
-    # 2) we consider for each sum index combination all possible 
+    curr_statespace_ind = curr_subspace.ss_inner_ind[curr_index.inner] # should be the same as curr_index.expanded 
 
     # consider only one possible equality, then recursively process untill all possibilities have been checked
     if index < n # recursively execute neq_qsum for higher possible indexes
@@ -206,41 +224,34 @@ function neq_qsum(s::QSum, index::Int=1)::QExpr
     else
         post_expr = QExpr(statespace, QComposite[s])
     end
-    pieces = copy(post_expr)
+    pieces = QExpr(statespace, [isa(t, QSum) ? QSum(t.expr, t.indexes, true) : t for t in post_expr.terms])
 
-    # 3) now we assume index is equal to each of the parameters in subspace, with smaller index than the curr index of the sum 
-    curr_statespace_ind::Int = curr_subspace.ss_inner_ind[curr_index.inner]
-
-    coeffs_of_subspace = curr_subspace.where_by_ensemble[s.subsystem_index]
-    curr_coeff_inds = [coeffs_of_subspace[i][curr_index.inner] for i in 1:length(coeffs_of_subspace)]
-    #println("\nnew run: ($index) : ", pieces) 
     for (new_ind_sum, new_statespace_sum) in zip(1:curr_index.inner-1, curr_subspace.ss_inner_ind[1:curr_index.inner-1])
-        new_coeff_inds = [coeffs_of_subspace[i][new_ind_sum] for i in 1:length(coeffs_of_subspace)]
+        new_index = SubSpaceIndex(curr_index.outer, new_ind_sum, new_statespace_sum)   # one way to do it that doesn't require accessing subspace_info
+        curr_coeff_inds = changed_indices(map_by_subspace(curr_index, new_index, statespace.param_info))
         new_statespace_ind = curr_subspace.ss_inner_ind[new_ind_sum]
+
         # check for each term in the subspace if curr_statespace_ind and new_statespace_ind are the neutral_element  
         for expr in post_expr.terms
            if isa(expr, QSum)
-                #println("    ($index) - expr: ", expr)
                 for t in expr.expr.terms
-                    not_neutral, new_terms = term_equal_indexes(t, curr_statespace_ind, new_statespace_ind, curr_subspace, curr_coeff_inds, new_coeff_inds)
+                    not_neutral, new_terms = term_equal_indexes(t, curr_index, new_index, curr_subspace, curr_coeff_inds)
                     # add new terms as QSum(s) with corrected indexing 
-                    if not_neutral
-                        # remove expr.indexes[index] and similarly expr.element_indexes[index]
+                    if not_neutral # something got changed?
                         new_indexes = vcat(expr.indexes[1:index-1], expr.indexes[index+1:end])
-                        new_element_indexes = vcat(expr.element_indexes[1:index-1], expr.element_indexes[index+1:end])
                         if length(new_indexes) == 0
                             for new_term in new_terms
                                 pieces += new_term
                             end
                         else
-                            pieces += QSum(s.statespace, QExpr(statespace, new_terms, Val(:simp)), new_indexes, expr.subsystem_index, new_element_indexes, true)
+                            pieces += QSum(QExpr(statespace, new_terms, Val(:simp)), new_indexes, true)
                         end
                     else # no change to sum structure
-                        pieces += QSum(s.statespace, QExpr(statespace, new_terms, Val(:simp)), expr.indexes, expr.subsystem_index, expr.element_indexes, true)
+                        pieces += QSum(QExpr(statespace, new_terms, Val(:simp)), expr.indexes, true)
                     end
                 end
             else ## Old - no longer sufficient: if isa(expr, QTerm)
-                not_neutral, new_terms = term_equal_indexes(expr, curr_statespace_ind, new_statespace_ind, curr_subspace, curr_coeff_inds, new_coeff_inds)
+                not_neutral, new_terms = term_equal_indexes(expr, curr_index, new_index, curr_subspace, curr_coeff_inds)
                 if not_neutral
                     error("Unsupported: Element that isn't part of a Sum should no longer contain sum indexes")
                 end

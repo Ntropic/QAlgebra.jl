@@ -38,14 +38,14 @@ end
 # input is abstract_op, replacement and target
 simpleQ = Union{QExpr, QAtomProduct}
 # Deals with index_map mapping one index to another ithin QAbstract
-function qAtom_index_flip(q::QAtom, index_map::Vector{Tuple{Int,Int}}, statespace::StateSpace)::Vector{QAtomProduct}
+function qAtom_index_flip(q::QAtom, index_map::Vector{Tuple{SubSpaceIndex,SubSpaceIndex}}, statespace::StateSpace)::Vector{QAtomProduct}
     qs::Vector{QAtom} = [q]
     cs::Vector{ComplexRational} = [ComplexRational(1,0,1)]
     for (index1, index2) in index_map
         new_qs::Vector{QAtom} = []    
         new_cs::Vector{ComplexRational} = []
         for (qi, ci) in zip(qs, cs)
-            _, new_terms, new_coeffs = term_equal_indexes(qi, index1, index2, statespace)
+            _, new_terms, new_coeffs = term_equal_indexes(qi, index1.expanded, index2.expanded, statespace.subspaces[index1.inner])
             append!(new_qs, new_terms)
             append!(new_cs, new_coeffs*ci)
         end
@@ -60,15 +60,15 @@ end
 function substitute_qAtom(abstract_op::QAbstract, replacement::QAtom, target::QAbstract, statespace::StateSpace)::Vector{QAtomProduct}
     # check if its the same QAbstract operator 
     if target.key_index == abstract_op.key_index && target.sub_index == abstract_op.sub_index 
-        qs = qAtom_index_flip(replacement, target.index_map, statespace)
+        qs = QExpr(statespace, qAtom_index_flip(replacement, target.index_map, statespace))
 
         if target.exponent != 1
-            qs = qs.^target.exponent
+            qs = qs^target.exponent
         end
         if target.dag
             qs = qs'
         end
-        return qs
+        return qs.terms
     else
         return [QAtomProduct(statespace, statespace.c_one, [target])]
     end
@@ -94,7 +94,7 @@ function substitute(abstract_op::QAbstract, replacement::QAtom, target::QAtomPro
         end
         new_expr = new_new_expr
     end
-    terms = simplify(new_expr).terms
+    terms = new_expr.terms
     return [QAtomProduct(statespace, coeff_fun*t.coeff_fun, t.expr) for t in terms]  
 end
 

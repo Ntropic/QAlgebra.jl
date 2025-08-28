@@ -24,16 +24,38 @@ struct QExprLookup
     use_dict::Bool
     dict::Union{Dict{Tuple{Vararg{Symbol}}, QExpr}, Nothing}
 end
-function QExprLookup(ops_comb::Vector{Vector{Symbol}}, ops_vec::Vector{QExpr}; use_dict::Bool=false)
+function QExprLookup(ops_comb::Vector{Vector{Symbol}}, ops_vec::Vector{QExpr};
+                     use_dict::Bool=false)
     @assert length(ops_comb) == length(ops_vec)
+
+    # if there’s only one operator, just return it directly
+    if length(ops_vec) == 1
+        return ops_vec[1]
+    end
+
+    out_keys = Vector{Vector{Symbol}}()
+    out_vals = QExpr[]
+
+    for (k, op) in zip(ops_comb, ops_vec)
+        push!(out_keys, k)
+        push!(out_vals, op)
+
+        # if key contains :t0, add alias with that element removed
+        if :t0 in k
+            k_alias = filter(!=(:t0), k)
+            push!(out_keys, k_alias)
+            push!(out_vals, op)
+        end
+    end
+
     if use_dict
         lookup = Dict{Tuple{Vararg{Symbol}}, QExpr}()
-        for (c, op) in zip(ops_comb, ops_vec)
+        for (c, op) in zip(out_keys, out_vals)
             lookup[Tuple(c)...] = op
         end
-        return QExprLookup(ops_comb, ops_vec, true, lookup)
+        return QExprLookup(out_keys, out_vals, true, lookup)
     else
-        return QExprLookup(ops_comb, ops_vec, false, nothing)
+        return QExprLookup(out_keys, out_vals, false, nothing)
     end
 end
 

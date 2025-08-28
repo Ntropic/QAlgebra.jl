@@ -212,6 +212,9 @@ struct SubSpaceIndex
     outer::Int      # subspace index
     inner::Int      # index in ensemble
     expanded::Int  
+    function SubSpaceIndex(outer::Int, inner::Int, expanded::Int)
+        return new(outer, inner, expanded)
+    end
     function SubSpaceIndex(expanded::Int, info::SubSpaceInfo)
         outer,inner = expanded_2_outer_inner(info, expanded)
         return new(outer, inner, expanded)
@@ -233,3 +236,10 @@ end
 @inline expanded(is::Vector{SubSpaceIndex}) = [expanded(i) for i in is]
 @inline Index2Symbol(i::SubSpaceIndex, info::SubSpaceInfo) =  info.inner_labels_symbols_flat[i.expanded]
 @inline Index2String(i::SubSpaceIndex, info::SubSpaceInfo) =  info.inner_labels_flat[i.expanded]
+
+function Base.isless(a::SubSpaceIndex, b::SubSpaceIndex)::Bool
+    return a.expanded < b.expanded
+end
+function Base.isequal(a::SubSpaceIndex, b::SubSpaceIndex)::Bool 
+    return a.expanded == b.expanded  # is sufficient
+end

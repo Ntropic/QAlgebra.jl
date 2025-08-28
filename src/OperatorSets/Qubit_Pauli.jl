@@ -34,7 +34,7 @@ function QubitPauli(symbol::String="")::OperatorSet
         return [(c, [new_index])]
     end
     function pauli_dag(op::Vector{Int})::Vector{Tuple{ComplexRational,Vector{Int}}}
-        return [(ComplexRational(1,0,1), op[1])]
+        return [(ComplexRational(1,0,1), op)]
     end
     function paulistr2ind(str::String)::Vector{Tuple{ComplexRational,Vector{Int}}}
         if length(str) == 0

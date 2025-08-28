@@ -21,7 +21,7 @@ function same_term_type(t1::QAtomProduct, t2::QAtomProduct)::Bool  # different c
 end
 
 function same_term_type(s1::QSum, s2::QSum)::Bool
-    return s1.subsystem_index == s2.subsystem_index && s1.element_indexes == s2.element_indexes
+    return s1.indexes == s2.indexes
 end
 function same_term_type(e1::QExpr, e2::QExpr)::Bool
     return all(same_term_type.(e1.expr, e2.expr))
@@ -43,7 +43,7 @@ function combine_term_sum(t1::QAtomProduct, t2::QAtomProduct)::QAtomProduct
     return QAtomProduct(t1.statespace, t1.coeff_fun + t2.coeff_fun, t1.expr)
 end
 function combine_term_sum(s1::QSum, s2::QSum)::QSum
-    return QSum(s1.statespace, simplify(s1.expr + s2.expr), s1.indexes, s1.subsystem_index, s1.element_indexes, s1.neq)
+    return modify_expr(s1, s1.expr + s2.expr)
 end
 function combine_term_sum(q1::S, q2::S)::QComposite where S<:QComposite 
     return modify_coeff(q1, q1.coeff_fun + q2.coeff_fun)
@@ -140,7 +140,7 @@ Simplifies `QExpr`-based symbolic quantum expressions by recursively reducing in
 - `diff_QEq`: Replaces its right-hand side with a simplified version.
 
 Returns either a single simplified object or a list of canonical components depending on input type.
-"""
+
 function simplify(q::QAtomProduct)::Vector{QComposite}
     return simplify_QAtomProduct(q)
 end
@@ -167,3 +167,4 @@ function simplify(q::diff_QEq)::diff_QEq
     simp_rhs = simplify(q.expr)
     return diff_QEq(q.statespace, q.left_hand_side, simp_rhs, q.braket)
 end
+"""

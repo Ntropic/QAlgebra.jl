@@ -251,30 +251,30 @@ end
 
 
 # Make 2 indexes equal => analogous to equally named function for qTerms in QExpressions.jl
-function term_equal_indexes(atom::CAtom, coeff_inds1::Vector{Int}, coeff_inds2::Vector{Int})::Tuple{Bool,CAtom}
-    changed_any::Bool = false
+function term_equal_indexes(atom::CAtom, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CAtom}
     new_exponents = copy(atom.var_exponents)
-    for (i, j) in zip(coeff_inds1, coeff_inds2)
-        if new_exponents[i] != 0
-            changed_any = true
-            new_exponents[j] += new_exponents[i]
-            new_exponents[i] = 0
-        end
+    changed_any = false
+    @inbounds for (i,j) in coeff_ind_order
+        ei = new_exponents[j]
+        changed_any |= (ei != 0)
+        new_exponents[i] += ei
+        new_exponents[j] = 0
     end
     return changed_any, CAtom(atom.coeff, new_exponents)
 end
-function term_equal_indexes(fsum::CSum, inds1::Vector{Int}, inds2::Vector{Int})::Tuple{Bool,CSum}
+
+function term_equal_indexes(fsum::CSum, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool,CSum}
     changed_any::Bool = false
     new_terms::Vector{CFunction} = []
     for t in fsum.terms
-        changed, new_term = term_equal_indexes(t, inds1, inds2)
+        changed, new_term = term_equal_indexes(t, coeff_ind_order)
         changed_any = changed_any || changed
         push!(new_terms, new_term)
     end
     return changed_any, CSum(fsum.index, new_terms)
 end
-function term_equal_indexes(frational::CRational, inds1::Vector{Int}, inds2::Vector{Int})::Tuple{Bool,CRational}
-    changed_num, new_num = term_equal_indexes(frational.num, inds1, inds2)
-    changed_den, new_den = term_equal_indexes(frational.den, inds1, inds2)
+function term_equal_indexes(frational::CRational, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool,CRational}
+    changed_num, new_num = term_equal_indexes(frational.num, coeff_ind_order)
+    changed_den, new_den = term_equal_indexes(frational.den, coeff_ind_order)
     return changed_num || changed_den, CRational(new_num, new_den)
 end

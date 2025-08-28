@@ -36,6 +36,7 @@ modify_coeff(q::QAtomProduct, coeff::CFunction)::QAtomProduct = QAtomProduct(q.s
 each_term(q::QAtomProduct) = q.expr
 each_coeff(q::QAtomProduct)::Vector{CFunction} = [q.coeff]
 get_coeff(q::QComposite) = q.coeff_fun
+multiply_coeff(q::QComposite, coeff::CFunction) = modify_coeff(q, get_coeff(q)*coeff)
 
 
 """
@@ -61,14 +62,16 @@ function QSum(expr::QExpr, indexes::Vector{SubSpaceIndex}, neq::Base.Bool)
     if length(indexes) == 0
         return expr
     end
-    return new(statespace,  expr, copy(indexes), subsystem_index, copy(element_indexes), neq)
+    indexes_sorted = sort(indexes)
+    return QSum(statespace,  expr, indexes_sorted, neq)
 end
-copy(q::QSum)::QSum = QSum(q.expr, q.indexes, q.neq)
-modify_expr(q::QSum, expr::QExpr) = QSum(expr, q.indexes, q.neq)
+copy(q::QSum)::QSum = QSum(q.statespace, q.expr, q.indexes, q.neq)
+modify_expr(q::QSum, expr::QExpr) = QSum(q.statespace, expr, q.indexes, q.neq) # direct construction -> to not resort indexes
 modify_expr_indexes(q::QSum, expr::QExpr, indexes::Vector{SubSpaceIndex}) = QSum(expr, indexes, q.neq)
+modify_expr_indexes(q::QSum, expr::QExpr, indexes::Vector{SubSpaceIndex}, ::Val{:nosort}) = QSum(q.statespace, expr, indexes, q.neq)
 each_term(q::QSum) = q.expr
 each_coeff(q::QSum)::Vector{CFunction} = flatmap_to(each_coeff, each_term(q), CFunction)
-modify_coeff(q::QSum, coeff::CFunction)::QSum = QSum(q.expr*coeff, q.indexes, q.neq)
+multiply_coeff(q::QSum, coeff::CFunction)::QSum = modify_expr(q, multiply_coeff(q.expr, coeff) )
 get_coeff(q::QSum) = q.statespace.c_one
 
 """
@@ -79,7 +82,7 @@ Constructor of a `QSum` struct. Defines the indexes to sum over, the expressions
 function Sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=false)::QExpr
     statespace = expr.statespace
     subspace_indexes = SubSpaceIndex.(indexes, Ref(statespace.subspace_info))
-    return QExpr(statespace, [QSum(statespace, expr, subspace_indexes, neq)])
+    return QExpr(statespace, [QSum(expr, subspace_indexes, neq)])
 end
 function Sum(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false)::QExpr
     return Sum([index], expr, neq=neq)
@@ -108,7 +111,7 @@ function QCompositeProductCleanup(ss::StateSpace, coeff_fun::CFunction, expr::Ve
     if length(expr) == 0
         return IdentityQAtomProduct(ss, coeff_fun)
     elseif length(expr) == 1
-        return modify_coeff(expr[1], coeff_fun*get_coeff(expr[1]))
+        return multiply_coeff(expr[1], coeff_fun)
     else
         coeff_fun_mod, expr_mod = separate_coeff_qcomposites(expr, statespace) 
         return QCompositeProduct(expr[1].statespace, coeff_fun * coeff_fun_mod, expr_mod)
@@ -118,7 +121,7 @@ function QCompositeProductCleanup(ss::StateSpace, coeff_fun::CFunction, expr::Ve
     if length(expr) == 0
         return IdentityQAtomProduct(ss, coeff_fun)
     elseif length(expr) == 1
-        return modify_coeff(expr[1], coeff_fun*get_coeff(expr[1]))
+        return multiply_coeff(expr[1], coeff_fun)
     else
         return QCompositeProduct(ss, coeff_fun, expr)
     end

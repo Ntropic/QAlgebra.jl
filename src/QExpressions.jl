@@ -6,7 +6,7 @@ using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, ^, product, iszero, copy
 using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
 using ..CFunctions: isnumeric
-export QEq, QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, diff_QEq, base_operators, simplify, d_dt
+export QEq, QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, diff_QEq, base_operators, d_dt #simplify
 
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
@@ -93,14 +93,14 @@ struct QAbstract <: QAtom
     exponent::Int
     dag::Bool
     operator_type::OperatorType
-    index_map::Vector{Tuple{Int,Int}}
-    function QAbstract(operator_type::OperatorType, key_index::Int, sub_index::Int=-1, exponent::Int=1, dag::Bool=false; index_map::Vector{Tuple{Int,Int}}=Tuple{Int,Int}[])
-        return new(key_index, sub_index, exponent, dag, operator_type, copy.(index_map))
+    index_map::Vector{Tuple{SubSpaceIndex,SubSpaceIndex}}
+    function QAbstract(operator_type::OperatorType, key_index::Int, sub_index::Int=-1, exponent::Int=1, dag::Bool=false, index_map::Vector{Tuple{SubSpaceIndex,SubSpaceIndex}}=Tuple{SubSpaceIndex,SubSpaceIndex}[])
+        return new(key_index, sub_index, exponent, dag, operator_type, index_map)
     end
 end
-dag_copy(q::QAbstract)::QAbstract = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, !q.dag, index_map=q.index_map)
-add_to_index_map(q::QAbstract, added_index_pair::Tuple{Int,Int}) = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, q.dag, vcat(q.index_map, added_index_pair))
-change_exp_dag(q::QAbstract, new_exp::Int, new_dag::Bool) = QAbstract(q.key_index, q.sub_index, new_exp, new_dag, q.operator_type, q.index_map)
+dag_copy(q::QAbstract)::QAbstract = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, !q.dag, q.index_map)
+add_to_index_map(q::QAbstract, added_index_pair::Tuple{SubSpaceIndex,SubSpaceIndex}) = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, q.dag, vcat(q.index_map, added_index_pair))
+change_exp_dag(q::QAbstract, new_exp::Int, new_dag::Bool) = QAbstract(q.operator_type, q.key_index, q.sub_index, new_exp, new_dag, q.index_map)
 
 
 """
@@ -145,6 +145,7 @@ copy(q::QExpr)::QExpr = QExpr(q.statespace, q.terms)
 length(q::QExpr) = length(q.terms)
 each_term(q::QExpr) = q.terms
 each_coeff(q::QExpr)::Vector{CFunction} = flatmap_to(each_coeff, each_term(q), CFunction)
+multiply_coeff(q::QExpr, coeff::CFunction) = QExpr(q.statespace, [multiply_coeff(s, coeff) for s in q.terms])
 
 include("QExpressionsOps/QExpressions_composites.jl")
 include("QExpressionsOps/QExpressions_helper.jl") 
