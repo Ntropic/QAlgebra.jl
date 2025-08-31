@@ -64,6 +64,7 @@ function flatten(qeq::QExpr, in_sum::Bool = false, in_sum_comp::Bool = false)::Q
     return QExpr(qeq.statespace, new_terms)
 end
 
+#### first output is (changed), then vectors of terms and then of coefficients 
 # change from index1 to index2
 function term_equal_indexes(expr, args...) # Base method to error
     throw(MethodError(term_equal_indexes, (typeof(expr), args...)))
@@ -74,7 +75,7 @@ function term_equal_indexes(term::QTerm, index1::SubSpaceIndex, index2::SubSpace
     op1 = term.op_indices[ind1]
     op2 = term.op_indices[ind2]
     neutral = subspace.op_set.neutral_element
-    if op1 === neutral && op2 === neutral
+    if op1 == neutral && op2 == neutral
         return false, QTerm[term], ComplexRational[ComplexRational(1,0,1)]
     end
     results = subspace.op_set.op_product(op1, op2)
@@ -87,12 +88,11 @@ function term_equal_indexes(term::QTerm, index1::SubSpaceIndex, index2::SubSpace
         push!(new_terms, QTerm(op_indices, Val(:nocopy)))
         push!(new_coeffs, coeff)
     end
-    return true, new_terms, new_coeffs
+    return true, new_terms, new_coeffs  
 end 
 
 function term_equal_indexes(abstract::QAbstract, index1::SubSpaceIndex, index2::SubSpaceIndex, subspace::SubSpace)::Tuple{Bool, Vector{QAbstract}, Vector{ComplexRational}}
-    op_type = abstract.operator_type
-    expanded_ss_acting = op_type.expanded_ss_acting
+    expanded_ss_acting = abstract.operator_type.expanded_ss_acting
     if expanded_ss_acting[index2.expanded]
         return true, QAbstract[add_to_index_map(abstract, (index1, index2))], ComplexRational[ComplexRational(1,0,1)]
     end
@@ -189,22 +189,32 @@ end
 Transform sums into neq sums, where all indexes are different from each other, and returns a flattened QExpr with neq sums. 
 Considers all cases of the sums, simplifying the cases in which indexes are the same, which then reduces the order of the sum (i.e. a sum_{j} x_i y_j => sum_{j} x_i y_j + im*z_i, where we used x_i*y_i=im*z_i).
 """
-function neq(q::QObj)::QObj
+function neq(q::QObj, do_abstract::Bool=false)::QObj
     return q
 end
-function neq(q::QAtomProduct)::QAtomProduct
+function neq(q::QAtomProduct, do_abstract::Bool=false)::QAtomProduct
     return q 
 end
-function neq(q::T)::T where {T<:QComposite}
-    return modify_expr(q, neq(q.expr))
+function neq(q::T, do_abstract::Bool=false)::T where {T<:QComposite}
+    return modify_expr(q, neq(q.expr, do_abstract))
 end
-function neq(q::T)::T where {T<:QMultiComposite}
-    return modify_expr(q, neq.(q.expr))
+function neq(q::T, do_abstract::Bool=false)::T where {T<:QMultiComposite}
+    return modify_expr(q, neq.(q.expr, do_abstract))
 end
 
 # -------------------------------------------------------------------
 # handle one QSum
-function neq_qsum(s::QSum, index::Int=1)::QExpr
+function neq_qsum(s::QSum, do_abstract::Bool=false)
+    # determine where defined 
+    where_defined = which_ensemble_acting(s, do_abstract) 
+    return neq_qsum(s, 1, where_defined )
+end
+function neq_qsum(s::QSum, where_defined::Vector{Vector{Bool}})
+    # determine where defined 
+    where_defined = vecvec_or(which_ensemble_acting(s, true) , where_defined )
+    return neq_qsum(s, 1, where_defined )
+end
+function neq_qsum(s::QSum, index::Int, where_defined::Vector{Vector{Bool}})::QExpr
     if s.neq
         return QExpr(s.expr.statespace, [s])   # skip
     end
@@ -214,20 +224,24 @@ function neq_qsum(s::QSum, index::Int=1)::QExpr
     end
 
     statespace = s.expr.statespace
+    info = statespace.subspace_info
     curr_index::SubSpaceIndex = s.indexes[index]
+    curr_ensemble_index = Index2Ensemble(curr_index, info)
+    check_subindexes = findall(where_defined[curr_ensemble_index][1:curr_index.inner-1])
     curr_subspace = statespace.subspaces[curr_index.outer] # subspace 
     curr_statespace_ind = curr_subspace.ss_inner_ind[curr_index.inner] # should be the same as curr_index.expanded 
 
     # consider only one possible equality, then recursively process untill all possibilities have been checked
     if index < n # recursively execute neq_qsum for higher possible indexes
-        post_expr = neq_qsum(s, index + 1)
+        post_expr = neq_qsum(s, index + 1, where_defined)
     else
         post_expr = QExpr(statespace, QComposite[s])
     end
     pieces = QExpr(statespace, [isa(t, QSum) ? QSum(t.expr, t.indexes, true) : t for t in post_expr.terms])
 
-    for (new_ind_sum, new_statespace_sum) in zip(1:curr_index.inner-1, curr_subspace.ss_inner_ind[1:curr_index.inner-1])
+    for (new_ind_sum, new_statespace_sum) in zip(check_subindexes, curr_subspace.ss_inner_ind[check_subindexes])
         new_index = SubSpaceIndex(curr_index.outer, new_ind_sum, new_statespace_sum)   # one way to do it that doesn't require accessing subspace_info
+        
         curr_coeff_inds = changed_indices(map_by_subspace(curr_index, new_index, statespace.param_info))
         new_statespace_ind = curr_subspace.ss_inner_ind[new_ind_sum]
 
@@ -260,29 +274,72 @@ function neq_qsum(s::QSum, index::Int=1)::QExpr
                 end
             end
         end
-        #println("  Result for ($index => $curr_ind_sum, $new_ind_sum | $curr_statespace_ind, $new_statespace_ind):  " , pieces)
     end
     return pieces
 end
-
-function neq(qeq::QExpr)::QExpr
+function neq(qeq::QExpr, do_abstract::Bool=false)::QExpr
     # flatten first 
     qeq = flatten(qeq)
     if length(qeq) == 0
         return qeq
     end
     if isa(qeq.terms[1], QSum) 
-        out = neq_qsum(qeq.terms[1])
+        out = neq_qsum(qeq.terms[1], do_abstract)
     else
-        out = QExpr(qeq.statespace, neq(qeq.terms[1]))
+        out = QExpr(qeq.statespace, neq(qeq.terms[1], do_abstract))
     end
     for t in qeq.terms[2:end]
         if isa(t, QSum)
             # expand this sum into distinct + diag parts
-            out += neq_qsum(t)
+            out += neq_qsum(t, do_abstract)
         else
-            out += neq(t)
+            out += neq(t, do_abstract)
         end
     end
     return out
+end
+
+#### where defined variants 
+function neq(qeq::QExpr, where_defined::Vector{Vector{Bool}})::QExpr
+    # flatten first 
+    qeq = flatten(qeq)
+    if length(qeq) == 0
+        return qeq
+    end
+    if isa(qeq.terms[1], QSum) 
+        out = neq_qsum(qeq.terms[1], 1, where_defined)
+    else
+        out = QExpr(qeq.statespace, neq(qeq.terms[1], where_defined))
+    end
+    for t in qeq.terms[2:end]
+        if isa(t, QSum)
+            # expand this sum into distinct + diag parts
+            out += neq_qsum(t, 1, where_defined)
+        else
+            out += neq(t, where_defined)
+        end
+    end
+    return out
+end
+function neq(q::QObj, where_defined::Vector{Vector{Bool}})::QObj
+    return q
+end
+function neq(q::QAtomProduct, where_defined::Vector{Vector{Bool}})::QAtomProduct
+    return q 
+end
+function neq(q::T, where_defined::Vector{Vector{Bool}})::T where {T<:QComposite}
+    return modify_expr(q, neq(q.expr, where_defined))
+end
+function neq(q::T, where_defined::Vector{Vector{Bool}})::T where {T<:QMultiComposite}
+    return modify_expr(q, neq.(q.expr, where_defined))
+end
+
+function neq(d_dt::diff_QEq)
+    if !contains_abstract(left_hand_side)
+        where_acting = which_ensemble_acting(left_hand_side)
+        new_rhs = neq(expr, where_acting)
+        return diff_QEq(statespace, left_hand_side, new_rhs, braket)
+    else
+        error("Cannot neq a differential Equation with a QAbstract on the left hand side.")
+    end
 end

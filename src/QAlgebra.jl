@@ -58,7 +58,7 @@ export symbol2formatted, str2sub, str2sup, brace
 include("CFunctions.jl")
 using .CFunctions
 export CFunction, CAtom, CSum, CRational, CProd, CExp, CLog
-export reorder, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
+export repartition, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
 export isnumeric, coeff, var_exponents, expand
 
 include("QSpace.jl")
@@ -76,12 +76,12 @@ export QEq, QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QT
 export QCommutator, QExp, QLog, QPower, power, QRoot, root #, simplify
 export Dag, Commutator, is_numeric, same_statespace
 export base_operators, QExprLookup 
-export reorder, neq
+export repartition, neq
 export string, latex_string
 export term
 
 export contains_abstract, which_ensemble_acting, are_indexes_defined
-export substitute
-export reorder!
+export substitute, Substitution, --> 
+export repartition!
 export QExpr2string   # remove later 
 end # module QAlgebra

@@ -70,7 +70,7 @@ flatten
 neq
 QAlgebra.QExpressions.simplify
 QAlgebra.QExpressions.substitute
-QAlgebra.QExpressions.reorder!
+QAlgebra.QExpressions.repartition!
 ```
 
 ## QObj Checks and Properties

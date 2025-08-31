@@ -107,7 +107,7 @@ power(Sum("i", alpha * ph * xi * yi) + zj, 2) + zh
 root(Sum("i", alpha * ph * xi * yi) + zj, 2) + zh
 ```
 
-### Simplify, substitute and reorder Expressions
+### Simplify, substitute and repartition Expressions
 You can simplify expressions with 
 ```@example qalgebra
 simplify(xi*yi+yi*xi)

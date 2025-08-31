@@ -182,8 +182,13 @@ Construct a [`diff_QEq`](@ref) that represents the time derivative of ⟨lhs⟩ 
 Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
 function diff_QEq(statespace::StateSpace, left_hand_side::QAtomProduct, expr::QExpr; braket::Bool=true)
-    new_rhs = neq(expr)
-    return diff_QEq(statespace, left_hand_side, new_rhs, braket)
+    if !contains_abstract(left_hand_side)
+        where_acting = which_ensemble_acting(left_hand_side)
+        new_rhs = neq(expr, where_acting)
+        return diff_QEq(statespace, left_hand_side, new_rhs, braket)
+    else
+        return diff_QEq(statespace, left_hand_side, expr, braket)
+    end
 end
 
 
@@ -222,7 +227,7 @@ include("QExpressionsOps/QSum_modify.jl")
 
 include("QExpressionsOps/QExpressions_welldefined.jl")
 include("QExpressionsOps/QExpressions_substitute.jl")
-include("QExpressionsOps/QExpressions_reorder.jl")
+include("QExpressionsOps/QExpressions_repartition.jl")
 
 include("QExpressionsOps/QExpressions_cumulants.jl")
 

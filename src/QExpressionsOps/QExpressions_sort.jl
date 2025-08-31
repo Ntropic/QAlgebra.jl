@@ -101,7 +101,9 @@ isless_same(a::QComposite, b::QComposite) = isless(a.expr, b.expr)
 
 # QSum: subsystem_index, |element_indexes|, element_indexes, expr, neq
 function isless_same(a::QSum, b::QSum)
-    if a.indexes != b.indexes
+    if length(a.indexes) != length(b.indexes)
+        return length(a.indexes) < length(b.indexes)
+    elseif a.indexes != b.indexes
         return a.indexes < b.indexes 
     elseif a.neq != b.neq 
          return a.neq < b.neq 

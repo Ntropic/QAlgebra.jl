@@ -1,4 +1,30 @@
-export substitute 
+export substitute, Substitution, -->
+
+
+# --- typed Substitution + ASCII operator ------------------------------------------
+struct Substitution
+    from::QAbstract
+    to::QAtom
+    statespace::StateSpace
+end
+
+# Primary constructor: take two QExprs, extract (QAbstract -> QAtom), check statespace
+function Substitution(from_expr::QExpr, to_expr::QExpr)
+    from_abs = extract_qabstract(from_expr)
+    to_atom  = extract_qatom(to_expr)
+    ss_from  = from_expr.statespace
+    ss_to    = to_expr.statespace
+    ss_from === ss_to || error("Statespace mismatch between 'from' and 'to'.")
+    return Substitution(from_abs, to_atom, ss_from)
+end
+
+# ASCII-friendly constructor:  q_from --> q_to
+const --> = Substitution
+
+# Handy alias for the concrete mapping used below
+const AtoP = Substitution
+
+
 
 function extract_qabstract(q::QExpr)::QAbstract
     if length(q) > 1 
@@ -34,10 +60,8 @@ function extract_qatom(term::QAtomProduct)::QAtom
     return term.expr[1]
 end
 
-# substitute abstract operator 
-# input is abstract_op, replacement and target
-simpleQ = Union{QExpr, QAtomProduct}
-# Deals with index_map mapping one index to another ithin QAbstract
+# --- helpers ------------------------------------------------------------------
+# Deals with index_map mapping one index to another within QAbstract
 function qAtom_index_flip(q::QAtom, index_map::Vector{Tuple{SubSpaceIndex,SubSpaceIndex}}, statespace::StateSpace)::Vector{QAtomProduct}
     qs::Vector{QAtom} = [q]
     cs::Vector{ComplexRational} = [ComplexRational(1,0,1)]
@@ -45,7 +69,7 @@ function qAtom_index_flip(q::QAtom, index_map::Vector{Tuple{SubSpaceIndex,SubSpa
         new_qs::Vector{QAtom} = []    
         new_cs::Vector{ComplexRational} = []
         for (qi, ci) in zip(qs, cs)
-            _, new_terms, new_coeffs = term_equal_indexes(qi, index1.expanded, index2.expanded, statespace.subspaces[index1.inner])
+            _, new_terms, new_coeffs = term_equal_indexes( qi, index1.expanded, index2.expanded, statespace.subspaces[index1.inner])
             append!(new_qs, new_terms)
             append!(new_cs, new_coeffs*ci)
         end
@@ -54,14 +78,21 @@ function qAtom_index_flip(q::QAtom, index_map::Vector{Tuple{SubSpaceIndex,SubSpa
     end
     return [QAtomProduct(statespace, statespace.c_one*c, [q]) for (q, c) in zip(qs, cs)]
 end
-function substitute_qAtom(abstract_op::QAbstract, replacement::QAtom, target::QTerm, statespace::StateSpace)::Vector{QAtomProduct}
-    return [QAtomProduct(statespace, statespace.c_one, [target])]
-end
-function substitute_qAtom(abstract_op::QAbstract, replacement::QAtom, target::QAbstract, statespace::StateSpace)::Vector{QAtomProduct}
-    # check if its the same QAbstract operator 
-    if target.key_index == abstract_op.key_index && target.sub_index == abstract_op.sub_index 
-        qs = QExpr(statespace, qAtom_index_flip(replacement, target.index_map, statespace))
 
+# --- substitution on single terms (new order: target first, then Substitution) -----
+# QTerm that is NOT the abstract operator: no change
+function substitute_qAtom(target::QTerm, sp::AtoP)::Vector{QAtomProduct}
+    ss = sp.statespace
+    return [QAtomProduct(ss, ss.c_one, [target])]
+end
+
+# QAbstract: do the replacement when it matches the 'from'
+function substitute_qAtom(target::QAbstract, sp::AtoP)::Vector{QAtomProduct}
+    a = sp.from
+    r = sp.to
+    ss = sp.statespace
+    if target.key_index == a.key_index && target.sub_index == a.sub_index
+        qs = QExpr(ss, qAtom_index_flip(r, target.index_map, ss))
         if target.exponent != 1
             qs = qs^target.exponent
         end
@@ -70,78 +101,61 @@ function substitute_qAtom(abstract_op::QAbstract, replacement::QAtom, target::QA
         end
         return qs.terms
     else
-        return [QAtomProduct(statespace, statespace.c_one, [target])]
+        return [QAtomProduct(ss, ss.c_one, [target])]
     end
 end
 
-""" 
-    substitute(abstract_op::Union{QExpr, QAtomProduct, QAbstract}, replacement::Union{QExpr, QAtomProduct, QAtom}, target::diff_QEq, statespace::StateSpace) -> diff_q
-    substitute(abstract_op::Union{QExpr, QAtomProduct, QAbstract}, replacement::Union{QExpr, QAtomProduct, QAtom}, target::QExpr) -> QExpr
-
-Substitutes `abstract_op` with `replacement` in `target`. Keeps track of index changes due to for example `neq`. 
-"""
-function substitute(abstract_op::QAbstract, replacement::QAtom, target::QAtomProduct)::Vector{QComposite}
-    # recursively navigate expression, and substitue
-    statespace = target.statespace
+# --- top-level substitute (new order everywhere) ------------------------------
+# QAtomProduct → Vector{QComposite}
+function substitute(target::QAtomProduct, sp::AtoP)::Vector{QComposite}
+    # sanity: statespace compatibility
+    target.statespace === sp.statespace || error("Statespace mismatch between target and Substitution.")
+    ss = target.statespace
     expr = target.expr
     coeff_fun = target.coeff_fun
-    new_expr::QExpr = QExpr(target.statespace, substitute_qAtom(abstract_op, replacement, expr[1], statespace))
+
+    new_expr::QExpr = QExpr(ss, substitute_qAtom(expr[1], sp))
     for t in expr[2:end]
-        new_terms = substitute_qAtom(abstract_op, replacement, t, statespace)
+        new_terms = substitute_qAtom(t, sp)
         new_new_expr = new_expr * new_terms[1]
-        for t in new_terms[2:end]
-            new_new_expr += new_expr + t
+        for tt in new_terms[2:end]
+            new_new_expr += new_expr + tt
         end
         new_expr = new_new_expr
     end
     terms = new_expr.terms
-    return [QAtomProduct(statespace, coeff_fun*t.coeff_fun, t.expr) for t in terms]  
+    return [QAtomProduct(ss, coeff_fun*t.coeff_fun, t.expr) for t in terms]
 end
 
-
-function substitute(abstract_op::Union{simpleQ, QAbstract}, replacement::Union{simpleQ, QAtom}, target::QExpr)::QExpr
-    if !isa(abstract_op, QAbstract)
-        abstract_op = extract_qabstract(abstract_op)
-    end
-    if !isa(replacement, QAtom)
-        replacement = extract_qatom(replacement)
-    end
-    return substitute(abstract_op, replacement, target)
-end
-function substitute(abstract_op::QAbstract, replacement::QAtom, target::QExpr)::QExpr
-    # recursively navigate expression, and substitue
+# QExpr → QExpr
+function substitute(target::QExpr, sp::AtoP)::QExpr
+    target.statespace === sp.statespace || error("Statespace mismatch between target and Substitution.")
     new_terms = QComposite[]
     for term in target.terms
-        append!(new_terms, substitute(abstract_op, replacement, term))
+        append!(new_terms, substitute(term, sp))
     end
     return QExpr(target.statespace, new_terms)
 end
-function substitute(a::QAbstract, r::QAtom, targ::T) where T<:QComposite
-    # T<:QMultiComposite is *also* <:QComposite, 
-    # so we need the QMultiComposite method to be more specific
-    return [modify_expr(targ, substitute(a, r, targ.expr))]
+
+# Any single composite holding one expr
+function substitute(targ::T, sp::AtoP) where {T<:QComposite}
+    # Note: QMultiComposite is <: QComposite; a more specific method follows below.
+    return [modify_expr(targ, substitute(targ.expr, sp))]
 end
 
-# For anything that holds *many* sub‑expressions
-function substitute(a::QAbstract, r::QAtom, targ::T) where T<:QMultiComposite
-    return [modify_expr(targ, map(x -> substitute(a, r, x), targ.expr))]
+# Any multi-composite holding many sub-expressions
+function substitute(targ::T, sp::AtoP) where {T<:QMultiComposite}
+    return [modify_expr(targ, map(x -> substitute(x, sp), targ.expr))]
 end
 
-function substitute(abstract_op::Union{simpleQ, QAbstract}, replacement::Union{simpleQ, QAtom}, target::diff_QEq)::diff_QEq 
-    if !isa(abstract_op, QAbstract)
-        abstract_op = extract_qabstract(abstract_op)
-    end
-    if !isa(replacement, QAtom)
-        replacement = extract_qatom(replacement)
-    end
-    return substitute(abstract_op, replacement, target)
-end
-function substitute(abstract_op::QAbstract, replacement::QAtom, target::diff_QEq)::diff_QEq
-    lhs = substitute(abstract_op, replacement, target.left_hand_side)
+# diff_QEq → diff_QEq
+function substitute(target::diff_QEq, sp::AtoP)::diff_QEq
+    target.statespace === sp.statespace || error("Statespace mismatch between target and Substitution.")
+    lhs = substitute(target.left_hand_side, sp)
     if length(lhs) != 1
-        error("Substitution of $abstract_op with $replacement in $target did not result in a single term.")
+        error("Substitution of $(sp.from) with $(sp.to) in $target did not result in a single term.")
     end
-    lhs = lhs[1]
-    rhs = substitute(abstract_op, replacement, target.expr)
-    return diff_QEq(target.statespace, lhs, rhs, target.braket)
+    rhs = substitute(target.expr, sp)
+    return diff_QEq(target.statespace, lhs[1], rhs, target.braket)
 end
+

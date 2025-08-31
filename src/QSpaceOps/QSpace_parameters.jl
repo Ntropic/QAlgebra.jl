@@ -71,7 +71,10 @@ struct ParameterInfo
     t_index_by_index::Vector{Int}       # -1 for parameters that aren't of t. 
     ss_ensemble_indexes_by_group::Vector{Vector{Int}}    # which ss ensembles are used for indexing in each group. 
     ss_ensemble_present_by_group::Vector{Vector{Bool}}   # which ss ensembles are present in each group.
- 
+
+    indexed_parameter_indexes::Vector{Int}                  # which parameters have indexes?
+    where_acting_by_parameter::Vector{Vector{Vector{Bool}}}  # for each variable, where are they acting. 
+
     # Maps indexes for index transformation, once for switching subsystem indexes and once for time indexes
     subspace_index_maps::Vector{Array{Vector{Int},2}}
     t_index_transform::Array{Vector{Int},2}
@@ -83,7 +86,8 @@ struct ParameterInfo
                            ss_ensemble_indexes_by_group::Vector{Vector{Int}},
                            ss_ensemble_present_by_group::Vector{Vector{Bool}},
                            subspace_index_maps::Vector{Array{Vector{Int},2}},
-                           t_index_transform::Array{Vector{Int},2})
+                           t_index_transform::Array{Vector{Int},2}, 
+                           subspace_info::SubSpaceInfo)
         inner_labels_symbols_flat::Vector{Symbol} = Symbol[param.var_symbol for param in parameters]
         inner_labels_flat::Vector{String} = String[param.var_name for param in parameters]
         outer_labels::Vector{String} = String.(outer_labels_symbols)
@@ -94,9 +98,28 @@ struct ParameterInfo
             t_index_by_index[i] = param.t_index - param.var_of_t
         end
         indexes_by_t_index::Vector{Vector{Int}} = [findall(==(t_ind), t_index_by_index) for t_ind in 0:maximum(t_index_by_index)]
+
+        indexed_parameter_indexes::Vector{Int} = []
+        where_acting_by_parameter::Vector{Vector{Vector{Bool}}} = []
+        ensemble_sizes = subspace_info.how_many_by_ensemble
+        for (i, param) in enumerate(parameters)
+            if param.indexed_var 
+                push!(indexed_parameter_indexes, i)
+                curr_bools::Vector{Vector{Bool}} = [zeros(Bool, n) for n in ensemble_sizes]
+                for curr_ind in param.var_indexes 
+                    outer = curr_ind.outer 
+                    inner = curr_ind.inner 
+                    outer_ind = subspace_info.ensemble_index_by_outer_index[outer]
+                    curr_bools[outer_ind][inner] = true  
+                end
+                push!(where_acting_by_parameter, curr_bools) # param.var_indexes)
+            end
+        end
+
         return new(outer_labels_symbols, inner_labels_symbols_flat, outer_labels, inner_labels_flat,
                    expanded_is_indexed, outer_group_by_index, t_index_by_index,
-                   ss_ensemble_indexes_by_group, ss_ensemble_present_by_group,
+                   ss_ensemble_indexes_by_group, ss_ensemble_present_by_group, 
+                   indexed_parameter_indexes, where_acting_by_parameter,
                    subspace_index_maps, t_index_transform, indexes_by_t_index)
     end
 end
@@ -339,7 +362,7 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
     # ---- finalize ParameterInfo ----
     var_info = ParameterInfo(parameters, outer_labels_symbols, expanded_is_indexed,
                              ss_ensemble_indexes_by_group, ss_ensemble_present_by_group,
-                             subspace_index_maps, t_index_transform)
+                             subspace_index_maps, t_index_transform, subspace_info)
 
     return parameters, var_info
 end

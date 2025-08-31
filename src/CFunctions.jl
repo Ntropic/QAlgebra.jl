@@ -57,8 +57,14 @@ coeff(a::CAtom)::Vector{ComplexRational} = [a.coeff]
 var_exponents(a::CAtom)::Vector{Vector{Int}} = [a.var_exponents]
 dims(q::CAtom) = length(q.var_exponents)
 length(a::CAtom) = 1
-reorder(f::CAtom, var_index_order::Vector{Int})::CAtom = CAtom(f.coeff, f.var_exponents[var_index_order])
-
+function repartition(f::CAtom, var_tuples::Vector{Tuple{Int, Int}})::CAtom 
+    curr_var_exponents = f.var_exponents
+    @inbounds for (i, tar) in var_tuples
+        curr_var_exponents[tar] += curr_var_exponents[i]
+        curr_var_exponents[i] = 0 
+    end 
+    CAtom(f.coeff, curr_var_exponents)
+end
 
 """
     CSum(terms::AbstractVector{<:CFunction})
@@ -89,7 +95,7 @@ coeff(x::CSum) = [ComplexRational(1,0,1)] #error("Sums don't have a coeff, you l
 var_exponents(x::CSum) = error("Sums don't have var_exponents, you likely have a sum in a sum, this shouldn't happen. Please inform the developers. ")
 dims(q::CSum) = dims(q.terms[1])
 length(q::CSum) = length(q.terms)
-reorder(f::CSum, var_index_order::Vector{Int}) = CSum(reorder.(f.terms, Ref(var_index_order)) )
+repartition(f::CSum, var_tuples::Vector{Tuple{Int, Int}}) = CSum(repartition.(f.terms, Ref(var_tuples)) )
 
 
 struct CProd <: CFunction
@@ -113,7 +119,7 @@ coeff(x::CProd) = [x.coeff]
 var_exponents(x::CProd) = vcat(var_exponents.(x.terms)...)
 dims(q::CProd) = dims(q.terms[1])
 length(q::CProd) = max(length.(q.terms)...)
-reorder(f::CProd, var_index_order::Vector{Int})= CProd(f.coeff, reorder.(f.terms, Ref(var_index_order)) )
+repartition(f::CProd, var_tuples::Vector{Tuple{Int, Int}})= CProd(f.coeff, repartition.(f.terms, Ref(var_tuples)) )
 
 
 """
@@ -136,7 +142,7 @@ coeff(x::CRational) = coeff(x.numer) #/coeff(x.denom)
 var_exponents(x::CRational) = var_exponents(x.numer)   #vcat(var_exponents.(x.numer), var_exponents.(var_exponents.(x.denom)))
 dims(q::CRational) = dims(q.numer) 
 length(q::CRational) = max(length(q.numer), length(q.denom))
-reorder(q::CRational, var_index_order::Vector{Int}) = CRational(reorder(q.numer, var_index_order), reorder(q.denom, var_index_order))
+repartition(q::CRational, var_tuples::Vector{Tuple{Int, Int}}) = CRational(repartition(q.numer, var_tuples), repartition(q.denom, var_tuples))
 
 
 struct CExp <: CFunction
@@ -160,7 +166,7 @@ coeff(x::CExp) = [x.coeff]
 var_exponents(x::CExp) = [zeros(Int, dims(x))]
 dims(q::CExp) = dims(q.x)
 length(q::CExp) = 1
-reorder(q::CExp, var_index_order::Vector{Int}) = CExp(q.coeff, reorder(q.x, var_index_order))
+repartition(q::CExp, var_tuples::Vector{Tuple{Int, Int}}) = CExp(q.coeff, repartition(q.x, var_tuples))
 
 
 struct CLog <: CFunction
@@ -184,7 +190,7 @@ coeff(x::CLog) = [x.coeff]
 var_exponents(x::CLog) = [zeros(Int, dims(x))]
 dims(q::CLog) = dims(q.x)
 length(q::CLog) = 1
-reorder(q::CLog, var_index_order::Vector{Int}) = CLog(q.coeff, reorder(q.x, var_index_order))
+repartition(q::CLog, var_tuples::Vector{Tuple{Int, Int}}) = CLog(q.coeff, repartition(q.x, var_tuples))
 
 
 

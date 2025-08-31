@@ -126,18 +126,11 @@ struct SubSpaceInfo
 
     expanded_index_by_outer::Vector{Vector{Int}} # Which indexes belong to an outer index 
     where_ensembles::Vector{Int}               # which subspaces are ensembles? 
+    ensemble_index_by_outer_index::Vector{Int}  # which index among ensemble indexes is an outer index (gives 0 if not an ensemble subspace)
+
+    how_many_by_ensemble::Vector{Int}
     ensemble_indexes::Vector{Vector{Int}}      # The expanded indexes of the ensembles 
 end
-function Base.show(io::IO, info::SubSpaceInfo)
-    print(io, "SubSpaceInfo:\n")
-    print(io, "  outer_labels:            ", info.outer_labels, "\n")
-    print(io, "  inner_labels:            ", info.inner_labels, "\n")
-    print(io, "  subsystem_sizes:          ", info.subsystem_sizes, "\n")
-    print(io, "  outer_ss_of_expanded:    ", info.outer_ss_of_expanded, "\n")
-    print(io, "  inner_ss_of_expanded:    ", info.inner_ss_of_expanded, "\n")
-    print(io, "  expanded_index_by_outer: ", info.expanded_index_by_outer, "\n")
-end
-
 # Primary constructor from labels
 function SubSpaceInfo(outer_labels_symbols::Vector{Symbol}, inner_labels_symbols::Vector{Vector{Symbol}}, are_ensemble_ss::Vector{Bool})
     inner_labels_symbols_flat = vcat(inner_labels_symbols...)
@@ -168,16 +161,29 @@ function SubSpaceInfo(outer_labels_symbols::Vector{Symbol}, inner_labels_symbols
 
     where_ensembles::Vector{Int} = []
     ensemble_indexes::Vector{Vector{Int}} = []
+    ensemble_index_by_outer_index::Vector{Int} = zeros(Int, length(subsystem_sizes))
     for o in eachindex(subsystem_sizes)
         if are_ensemble_ss[o] 
             push!(where_ensembles, o)
             push!(ensemble_indexes, expanded_index_by_outer[o])
+            ensemble_index_by_outer_index[o] = length(where_ensembles)
         end
     end
+    how_many_by_ensemble::Vector{Int} = [length(x) for x in ensemble_indexes]
     return SubSpaceInfo( outer_labels_symbols, inner_labels_symbols, inner_labels_symbols_flat, 
                          outer_labels, inner_labels, inner_labels_flat, 
                          subsystem_sizes, outer_ss_of_expanded, inner_ss_of_expanded, expanded_index_by_outer,
-                         where_ensembles, ensemble_indexes )
+                         where_ensembles, ensemble_index_by_outer_index, how_many_by_ensemble, ensemble_indexes )
+end
+
+function Base.show(io::IO, info::SubSpaceInfo)
+    print(io, "SubSpaceInfo:\n")
+    print(io, "  outer_labels:            ", info.outer_labels, "\n")
+    print(io, "  inner_labels:            ", info.inner_labels, "\n")
+    print(io, "  subsystem_sizes:          ", info.subsystem_sizes, "\n")
+    print(io, "  outer_ss_of_expanded:    ", info.outer_ss_of_expanded, "\n")
+    print(io, "  inner_ss_of_expanded:    ", info.inner_ss_of_expanded, "\n")
+    print(io, "  expanded_index_by_outer: ", info.expanded_index_by_outer, "\n")
 end
 
 # Convenience: build from your existing `SubSpace` vector
@@ -236,6 +242,11 @@ end
 @inline expanded(is::Vector{SubSpaceIndex}) = [expanded(i) for i in is]
 @inline Index2Symbol(i::SubSpaceIndex, info::SubSpaceInfo) =  info.inner_labels_symbols_flat[i.expanded]
 @inline Index2String(i::SubSpaceIndex, info::SubSpaceInfo) =  info.inner_labels_flat[i.expanded]
+@inline function Index2Ensemble(i::SubSpaceIndex, info::SubSpaceInfo) 
+    ensemble = info.ensemble_index_by_outer_index[i.outer] # shouldn't be zero, otherwise not ensemble index
+    @assert ensemble != 0 "index $i not an ensemble index" 
+    return ensemble
+end
 
 function Base.isless(a::SubSpaceIndex, b::SubSpaceIndex)::Bool
     return a.expanded < b.expanded

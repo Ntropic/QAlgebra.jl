@@ -28,7 +28,7 @@
   Define and manage operator differential equations for expectation values.
 
 - **Simplification & Substitution**  
-  Simplify operator products, reorder terms, and substitute symbols or sub‑expressions.
+  Simplify operator products, repartition terms, and substitute symbols or sub‑expressions.
 
 ---
 

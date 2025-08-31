@@ -5,7 +5,7 @@ using ..CFunctions
 using ..StringUtils
 
 export OperatorSet
-export SubSpace, SubSpaceDefinitions, SubSpaceInfo, SubSpaceIndex, outer, inner, expanded, Index2Symbol, Index2String
+export SubSpace, SubSpaceDefinitions, SubSpaceInfo, SubSpaceIndex, outer, inner, expanded, Index2Symbol, Index2String, Index2Ensemble
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
 export Parameter, ParameterInfo, ParameterDefinitions, map_by_subspace, map_by_tindex
 export StateSpace

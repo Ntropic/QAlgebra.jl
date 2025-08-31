@@ -3,7 +3,7 @@
 @inline function simplify_pair(a::QAbstract, b::QAbstract, ss::StateSpace)
     # (Vector{(coeff, Vector{QAtom})}, changed::Bool, go_left::Bool)
 
-    # Different operator subtypes: maybe reorder
+    # Different operator subtypes: maybe repartition
     if !same_term_type(a, b)
         if commutes_QAtom(a, b, ss) && b < a
             return [(one(ComplexRational), QAtom[b, a])], true, true

@@ -39,9 +39,10 @@ function qAtom2string(q::QAbstract, statespace::StateSpace; do_latex::Bool=false
             curr_string *= "_"*string(q.sub_index)
         end
         if q.dag
-            curr_string *= raw"^{\dagger}"
-            if q.exponent != 1 
-                curr_string = raw"\left("*curr_string* raw"\right)^{"*string(q.exponent)*"}"
+            if q.exponent == 1 
+                curr_string *= raw"^{\dagger}"
+            else
+                curr_string *= raw"^{\dagger "*string(q.exponent)*"}"
             end
         elseif q.exponent != 1 
             curr_string *= "^{"*string(q.exponent)*"}"

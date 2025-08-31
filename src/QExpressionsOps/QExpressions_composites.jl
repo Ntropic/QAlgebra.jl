@@ -82,6 +82,12 @@ Constructor of a `QSum` struct. Defines the indexes to sum over, the expressions
 function Sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=false)::QExpr
     statespace = expr.statespace
     subspace_indexes = SubSpaceIndex.(indexes, Ref(statespace.subspace_info))
+    outers = outer.(subspace_indexes)
+    for (outer, index) in zip(outers, indexes)
+        if iszero(statespace.subspace_info.ensemble_index_by_outer_index[outer])
+            error("Subsystem $index not among ensemble indexes.")
+        end
+    end
     return QExpr(statespace, [QSum(expr, subspace_indexes, neq)])
 end
 function Sum(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false)::QExpr
