@@ -165,6 +165,6 @@ function simplify(q::QExpr)::QExpr
 end
 function simplify(q::diff_QEq)::diff_QEq
     simp_rhs = simplify(q.expr)
-    return diff_QEq(q.statespace, q.left_hand_side, simp_rhs, q.braket)
+    return diff_QEq(q.statespace, q.left_hand_side, simp_rhs, q.do_braket)
 end
 """

@@ -164,73 +164,34 @@ It represents time derivative of an operator expectation value, and wraps the sy
 - `left_hand_side::QTerm`: The LHS operator being differentiated.
 - `expr::QExpr`: The RHS symbolic expression.
 - `statespace::StateSpace`: The StateSpace in which the equation is defined.
-- `braket::Bool`: Whether to use braket notation ⟨⋯⟩ (default = `true`).
+- `do_braket::Bool`: Whether to use do_braket notation ⟨⋯⟩ (default = `true`).
 """
 struct diff_QEq <: QEq
     statespace::StateSpace
     left_hand_side::QAtomProduct
     expr::QExpr 
-    braket::Bool
+    do_braket::Bool
 end
-copy(q::diff_QEq)::diff_QEq = diff_QEq(q.statespace, copy(q.left_hand_side), copy(q.expr), q.braket)
+copy(q::diff_QEq)::diff_QEq = diff_QEq(q.statespace, copy(q.left_hand_side), copy(q.expr), q.do_braket)
 
 """
-    diff_QEq(lhs::QTerm, rhs::QExpr, statespace::StateSpace; braket=true)
+    diff_QEq(lhs::QTerm, rhs::QExpr, statespace::StateSpace; do_braket=true)
 
 Construct a [`diff_QEq`](@ref) that represents the time derivative of ⟨lhs⟩ = rhs.
 
 Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
-function diff_QEq(statespace::StateSpace, left_hand_side::QAtomProduct, expr::QExpr; braket::Bool=true)
+function diff_QEq(statespace::StateSpace, left_hand_side::QAtomProduct, expr::QExpr; do_braket::Bool=true)
     if !contains_abstract(left_hand_side)
-        where_acting = which_ensemble_acting(left_hand_side)
-        new_rhs = neq(expr, where_acting)
-        return diff_QEq(statespace, left_hand_side, new_rhs, braket)
+
+        return repartition(diff_QEq(statespace, left_hand_side, expr, do_braket))
     else
-        return diff_QEq(statespace, left_hand_side, expr, braket)
+        return diff_QEq(statespace, left_hand_side, expr, do_braket)
     end
 end
-
-
-#### Helper Functions #######################################################################################
-# Define iteration for QExpr so that iterating over it yields its QTerm's.
-function iterate(q::QExpr, state::Int=1)
-    state > length(q.terms) && return nothing
-    return q.terms[state], state + 1
+function diff_QEq(statespace::StateSpace, left_hand_side::QAtomProduct, expr::QExpr, ::Val{:nosimp}; do_braket::Bool=true) # no optimization
+    return diff_QEq(statespace, left_hand_side, expr, do_braket)
 end
-function iterate(q::T, state::Int=1) where T <: QComposite
-    error("Cannot iterate over a QComposite of type $(T).")
-end
-
-function getindex(q::QExpr, i::Int)
-    q.terms[i]
-end
-function getindex(q::T, i::Int) where T <: QComposite
-    q.expr[i]
-end
-
-# Optionally, define length and eltype.
-iszero(q::QExpr) = length(q.terms) == 0 || all(iszero, q.terms)
-iszero(q::QAtomProduct) = iszero(q.coeff_fun)
-iszero(q::QSum) = iszero(q.expr)
-iszero(q::T) where T<:QComposite = iszero(q.coeff_fun) || iszero(q.expr)
-iszero(q::T) where T<:QMultiComposite = iszero(q.coeff_fun) || any(iszero, q.expr) 
-
-include("QExpressionsOps/QExpressions_base_operators.jl")
-include("QExpressionsOps/QExpressions_sort.jl")
-include("QExpressionsOps/QExpressions_simplify.jl")
-
-include("QExpressionsOps/QExpressions_algebra.jl")
-include("QExpressionsOps/QExpressions_print.jl")
-
-include("QExpressionsOps/QSum_modify.jl")
-
-include("QExpressionsOps/QExpressions_welldefined.jl")
-include("QExpressionsOps/QExpressions_substitute.jl")
-include("QExpressionsOps/QExpressions_repartition.jl")
-
-include("QExpressionsOps/QExpressions_cumulants.jl")
-
 
 """
     d_dt(statespace::StateSpace, expr)
@@ -268,5 +229,46 @@ function d_dt(left_hand::Union{QAtomProduct,QExpr}, right_hand::QExpr)::diff_QEq
     # Return a diff_QEq constructed from these sides.
     return diff_QEq(qstate, left_hand, right_hand)
 end
+
+#### Helper Functions #######################################################################################
+# Define iteration for QExpr so that iterating over it yields its QTerm's.
+function iterate(q::QExpr, state::Int=1)
+    state > length(q.terms) && return nothing
+    return q.terms[state], state + 1
+end
+function iterate(q::T, state::Int=1) where T <: QComposite
+    error("Cannot iterate over a QComposite of type $(T).")
+end
+
+function getindex(q::QExpr, i::Int)
+    q.terms[i]
+end
+function getindex(q::T, i::Int) where T <: QComposite
+    q.expr[i]
+end
+
+# Optionally, define length and eltype.
+iszero(q::QExpr) = length(q.terms) == 0 || all(iszero, q.terms)
+iszero(q::QAtomProduct) = iszero(q.coeff_fun)
+iszero(q::QSum) = iszero(q.expr)
+iszero(q::T) where T<:QComposite = iszero(q.coeff_fun) || iszero(q.expr)
+iszero(q::T) where T<:QMultiComposite = iszero(q.coeff_fun) || any(iszero, q.expr) 
+
+include("QExpressionsOps/QExpressions_base_operators.jl")
+include("QExpressionsOps/QExpressions_sort.jl")
+include("QExpressionsOps/QExpressions_simplify.jl")
+
+include("QExpressionsOps/QExpressions_properties.jl")
+include("QExpressionsOps/QExpressions_algebra.jl")
+include("QExpressionsOps/QExpressions_print.jl")
+
+include("QExpressionsOps/QSum_modify.jl")
+
+include("QExpressionsOps/QExpressions_welldefined.jl")
+include("QExpressionsOps/QExpressions_substitute.jl")
+include("QExpressionsOps/QExpressions_repartition.jl")
+
+include("QExpressionsOps/QExpressions_cumulants.jl")
+
 
 end

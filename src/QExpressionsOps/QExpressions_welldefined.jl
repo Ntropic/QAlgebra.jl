@@ -1,25 +1,10 @@
-export contains_abstract, which_ensemble_acting, are_indexes_defined
+export which_ensemble_acting, are_indexes_defined
 
-""" 
-    contains_abstract(q::QObj) -> Bool
 
-Checks if the quantum object contains an abstract operator among its leaves.
-"""
-function contains_abstract(term::QExpr)::Bool
-    return any([contains_abstract(t) for t in term.terms])
+function same_statespace(a::S, b::T)::Bool where {S<:QComposite,T<:QComposite}
+    return a.statespace == b.statespace
 end
-function contains_abstract(term::T)::Bool where T<:QComposite
-    return contains_abstract(term.expr)
-end
-function contains_abstract(term::T)::Bool where T<:QMultiComposite
-    return any([contains_abstract(t) for t in term.expr])
-end
-function contains_abstract(term::QAtomProduct)::Bool
-    return any([isa(t, QAbstract) for t in term.expr])
-end
-function contains_abstract(term::diff_QEq)::Bool 
-    return contains_abstract(term.expr) && contains_abstract(term.left_hand_side)
-end
+
 
 function vecvec_or(A::Vector{Vector{Bool}}, B::Vector{Vector{Bool}})
     # Assume they are equally shaped. 

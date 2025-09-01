@@ -120,8 +120,8 @@ function repartition(q::diff_QEq)::diff_QEq
         where_defined_lhs = which_ensemble_acting(left_hand_side)
         op_inds = collect(1:length(op_inds))
         var_inds = collect(1:length(var_inds))
-        q = diff_QEq(q.statespace, left_hand_side, expr, q.braket)
+        q = diff_QEq(q.statespace, left_hand_side, expr, q.do_braket)
     end
     expr = repartition(q.expr, true, where_defined_lhs, op_inds, var_inds)
-    return diff_QEq(q.statespace, q.left_hand_side, expr, q.braket)
+    return diff_QEq(q.statespace, q.left_hand_side, expr, Val(:nosimp), do_braket=q.do_braket)
 end

@@ -53,7 +53,7 @@ export get_default, set_flip_if_first_term_negative, set_do_braced, FLIP_IF_FIRS
 
 include("StringUtils.jl")
 using .StringUtils
-export symbol2formatted, str2sub, str2sup, brace
+export symbol2formatted, str2sub, str2sup, brace, braket
 
 include("CFunctions.jl")
 using .CFunctions
@@ -74,7 +74,8 @@ include("QExpressions.jl")
 using .QExpressions
 export QEq, QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QAtomProduct, QSum, Sum, ∑, QCompositeProduct, diff_QEq, d_dt
 export QCommutator, QExp, QLog, QPower, power, QRoot, root #, simplify
-export Dag, Commutator, is_numeric, same_statespace
+export Dag, Commutator, same_statespace
+export is_numeric, contains_abstract, contains_time
 export base_operators, QExprLookup 
 export repartition, neq
 export string, latex_string
@@ -85,3 +86,4 @@ export substitute, Substitution, -->
 export repartition!
 export QExpr2string   # remove later 
 end # module QAlgebra
+

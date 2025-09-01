@@ -156,6 +156,6 @@ function substitute(target::diff_QEq, sp::AtoP)::diff_QEq
         error("Substitution of $(sp.from) with $(sp.to) in $target did not result in a single term.")
     end
     rhs = substitute(target.expr, sp)
-    return diff_QEq(target.statespace, lhs[1], rhs, target.braket)
+    return diff_QEq(target.statespace, lhs[1], rhs, target.do_braket)
 end
 

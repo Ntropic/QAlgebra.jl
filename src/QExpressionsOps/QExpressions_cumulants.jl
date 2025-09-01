@@ -13,7 +13,7 @@ function signed_int_string(i::Int)::String
         return " +" * string(i)* " "
     end
 end
-function intvec_to_braket(is::Vector{Int})::String
+function intvec_to_do_braket(is::Vector{Int})::String
     return string("<", join(is, ","), ">")
 end
 
@@ -24,7 +24,7 @@ struct IndexedProduct
 end
 
 function string(ind_prod::IndexedProduct)::String
-    return signed_int_string(ind_prod.coeff)*join(intvec_to_braket.(ind_prod.indices),"")
+    return signed_int_string(ind_prod.coeff)*join(intvec_to_do_braket.(ind_prod.indices),"")
 end
 function show(io::IO, ind_prod::IndexedProduct)
     print(io, "IndexedProduct: ", string(ind_prod))
@@ -242,7 +242,7 @@ end
         for (i, ind) in enumerate(indexes)
             curr_atoms[i] = QTerm(I_op, replace_indexes(I_op, curr_op_indexes, ind))
         end
-        qexpr[j] = QAtomProduct(curr_atoms, coeff_fun*coeff, statespace)
+        qexpr[j] = QAtomProduct(statespace, curr_atoms, coeff_fun*coeff, true)  # <- final arg: separate expectation values
     end
     return QCumulant(statespace, copy(atom), qexpr, order, where_acting)
 end

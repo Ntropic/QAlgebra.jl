@@ -178,7 +178,10 @@ function multiply_QAtomProducts(p1::QAtomProduct, p2::QAtomProduct)::Vector{QCom
     if p1.separate_expectation_values != p2.separate_expectation_values
         error("Cannot multiply QAtomProducts with different `separate_expectation_values`")
     end
-    termsums = multiply_QAtomProducts_terms(p1.expr, p2.expr, ss)
     new_coeff_fun = p1.coeff_fun * p2.coeff_fun
+    if p1.separate_expectation_values   # don't simplify the term
+        return [ QAtomProduct(ss, new_coeff_fun, vcat(p1.expr, p2.expr), p1.separate_expectation_values) ]
+    end
+    termsums = multiply_QAtomProducts_terms(p1.expr, p2.expr, ss)
     return [ QAtomProduct(ss, c * new_coeff_fun, t, p1.separate_expectation_values) for (c, t) in termsums ]
 end

@@ -338,7 +338,7 @@ function neq(d_dt::diff_QEq)
     if !contains_abstract(left_hand_side)
         where_acting = which_ensemble_acting(left_hand_side)
         new_rhs = neq(expr, where_acting)
-        return diff_QEq(statespace, left_hand_side, new_rhs, braket)
+        return diff_QEq(statespace, left_hand_side, new_rhs, do_braket)
     else
         error("Cannot neq a differential Equation with a QAbstract on the left hand side.")
     end

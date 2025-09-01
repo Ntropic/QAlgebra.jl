@@ -1,3 +1,8 @@
+contains_c_indexes(c::CAtom, indexes::Vector{Int})::Bool = any(t -> t != 0, c.var_exponents)
+contains_c_indexes(c::Union{CSum, CProd}, indexes::Vector{Int})::Bool = any(t -> contains_c_indexes(t, indexes), c.terms)
+contains_c_indexes(c::CRational, indexes::Vector{Int})::Bool = contains_c_indexes(c.numer, indexes) || contains_c_indexes(c.denom, indexes)
+contains_c_indexes(c::T, indexes::Vector{Int})  where {T <: CFunction} = contains_c_indexes(c.x, indexes)
+
 function printnumeric(f::CAtom)::Bool
     if isnumeric(f) && isonelike(f.coeff) 
         return false 

@@ -1,7 +1,7 @@
 module StringUtils
 
 export subscript_indexes, superscript_indexes, var_substitution, var_substitution_latex
-export str2sub, str2sup, term_pre_split, separate_terms, symbol2formatted, t_suffix, brace, match_indexed_pattern, brace_separate, underscore_separate
+export str2sub, str2sup, term_pre_split, separate_terms, symbol2formatted, t_suffix, brace, braket, match_indexed_pattern, brace_separate, underscore_separate
 
 """
     subscript_indexes::Dict{Char, String}
@@ -113,6 +113,17 @@ function brace(x::String; do_latex::Bool=true)::String
         return raw"\left(" * x * raw"\right)"
     else
         return "(" * x * ")"
+    end
+end
+""" 
+    braket(x::String; do_latex::Bool=true)::String
+Brace a string with parentheses. 
+""" 
+function braket(x::String; do_latex::Bool=true)::String
+    if do_latex 
+        return raw"\braket{" * x * raw"}"
+    else
+        return "⟨" * x * "⟩"
     end
 end
 
