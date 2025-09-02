@@ -65,7 +65,6 @@ function QSum(expr::QExpr, indexes::Vector{SubSpaceIndex}, neq::Base.Bool)
     indexes_sorted = sort(indexes)
     return QSum(statespace,  expr, indexes_sorted, neq)
 end
-copy(q::QSum)::QSum = QSum(q.statespace, q.expr, q.indexes, q.neq)
 modify_expr(q::QSum, expr::QExpr) = QSum(q.statespace, expr, q.indexes, q.neq) # direct construction -> to not resort indexes
 modify_expr_indexes(q::QSum, expr::QExpr, indexes::Vector{SubSpaceIndex}) = QSum(expr, indexes, q.neq)
 modify_expr_indexes(q::QSum, expr::QExpr, indexes::Vector{SubSpaceIndex}, ::Val{:nosort}) = QSum(q.statespace, expr, indexes, q.neq)

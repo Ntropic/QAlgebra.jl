@@ -1,5 +1,5 @@
-export is_numeric, contains_abstract, contains_time
-
+export is_numeric, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, where_acting
+export is_unitary, is_hermitian, substitution_properties_fulfilled
 """ 
     is_numeric(t::QTerm, qspace::StateSpace) -> Bool
     is_numeric(t::QAbstract, qspace::StateSpace) -> Bool
@@ -44,6 +44,27 @@ function is_numeric(expr::QExpr)::Bool
 end
 
 
+"""
+    contains_non_simple_QObj(q::QObj) -> Bool 
+
+Does a QObj contain non Basic Quantum Objects, such as QExp, QLog or QMultiComposites?
+"""
+contains_non_simple_QObj(q::QExpr)::Bool = any(contains_non_simple_QObj, q.terms)
+contains_non_simple_QObj(q::T) where {T <: QComposite} = true 
+contains_non_simple_QObj(q::QAtomProduct)::Bool = false 
+contains_non_simple_QObj(q::QSum)::Bool = any(contains_non_simple_QObj, q.expr)
+
+""" 
+    contains_non_simple(q::QObj) -> 
+
+Checks if it contains any non-simple QObjects, QAbstracts or non-simple CFunctions.
+"""
+contains_non_simple(q::QExpr)::Bool = any(contains_non_simple, q.terms)
+contains_non_simple(q::QSum)::Bool = any(contains_non_simple, q.expr)
+contains_non_simple(q::T) where {T <: QComposite} = true 
+contains_non_simple(q::QAtomProduct)::Bool = contains_non_simple_CFunction(q.coeff_fun) || contains_abstract(q)
+
+
 """ 
     contains_abstract(q::QObj) -> Bool
 
@@ -77,6 +98,9 @@ Checks if any of the CFunctions (in a QObj) depend on the indexes.
 """
 contains_c_indexes(q::QExpr, indexes::Vector{Int})::Bool = any(q -> contains_c_indexes(q, indexes), q.terms) 
 contains_c_indexes(q::QAtom, indexes::Vector{Int}) = error("Cannot be applied to QAtom")
+function contains_c_indexes(q::QAtomProduct, indexes::Vector{Int})::Bool 
+    return contains_c_indexes(q.coeff_fun, indexes) 
+end
 function contains_c_indexes(q::T, indexes::Vector{Int})::Bool where T <: QComposite 
     return contains_c_indexes(q.coeff_fun, indexes) || contains_c_indexes(q.expr, indexes)
 end
@@ -99,7 +123,7 @@ Checks is the quantum object depends on time. Doesn't work for QAtoms!
 """
 contains_time(q::T, t_ind=-1) where T<: QAtom = error("Cannot get time indexes from QAtom. Try QComposites, QExpr, of diff_QEq instead. ")
 function contains_time(q::T; t_ind=-1)::Bool where T <: QObj
-    indexes = get_t_indexes(q.param_info, t_ind)
+    indexes = get_t_indexes(q.statespace.param_info, t_ind)
     return contains_c_indexes(q, indexes)
 end
 
@@ -118,16 +142,23 @@ function isaQAtomProduct(q::QExpr)::Bool
         end
     end
 end
-import Base: isone
+import Base: isone, iszero
 function isone(q::QAtomProduct)::Bool
     if is_numeric(q) && isnumeric(q.coeff_fun)
-        return isone(c)
+        return isone(q.coeff_fun)
     end
     return false
 end
 function isone(q::QExpr)::Bool
     return simple_isa(q, QAtomProduct) && isone(q.terms[1])
 end
+
+# Optionally, define length and eltype.
+iszero(q::QExpr) = length(q.terms) == 0 || all(iszero, q.terms)
+iszero(q::QAtomProduct) = iszero(q.coeff_fun)
+iszero(q::QSum) = iszero(q.expr)
+iszero(q::T) where T<:QComposite = iszero(q.coeff_fun) || iszero(q.expr)
+iszero(q::T) where T<:QMultiComposite = iszero(q.coeff_fun) || any(iszero, q.expr) 
 
 ##################
 
@@ -143,13 +174,28 @@ end
 function where_acting(q::QAbstract, statespace::StateSpace)::Vector{Bool}
     return .!q.operator_type.expanded_ss_acting  # should never be modified! copy would be safer, but slower
 end
-function where_acting(q::QAtomProduct)
-    # combine the action of all of its constituents via OR 
+function where_acting(q::QAtomProduct)::Vector{Bool}
+    # combine the action of all of its constituents via OR
+    statespace = q.statespace 
     if length(q.expr) == 0
         return zeros(Bool, length(statespace.I_op))
     else
-        return reduce(.|, [where_acting(expr, statespace) for expr in q.expr])
+        return mapreduce(expr -> where_acting(expr, statespace), .|, q.expr)
     end
+end
+where_acting(q::QExpr)::Vector{Bool} = mapreduce(t -> where_acting(t), .|, q.terms)
+function where_acting(q::T)::Vector{Bool} where {T<:QComposite}
+    return where_acting(q.expr)
+end
+function where_acting(q::T)::Vector{Bool} where {T<:QMultiComposite}
+    return mapreduce(expr -> where_acting(expr, statespace), .|, q.expr)
+end
+function where_acting(q::QSum)::Vector{Bool}
+    acting = where_acting(q.expr)
+    for ind in q.indexes 
+        acting[expanded(ind)] = true 
+    end
+    return acting
 end
 
 function commutes_QAtom(q1::QAbstract, q2::QAbstract, statespace::StateSpace)::Bool   # for QAtom can check 
@@ -301,4 +347,41 @@ function ==(expr::QExpr, n::Number)
 end
 function ==(n::Number, expr::QExpr)
     return expr == n  # Symmetric
+end
+
+
+#### Check substitution properties 
+function is_unitary(q::QExpr)::Bool
+    return isone(q*q')
+end
+function is_hermitian(q::QExpr)::Bool
+    return q==q'
+end
+function substitution_properties_fulfilled(a::QAbstract, q::QExpr)::Bool 
+    # check if all properties are fulfilled 
+    if a.exponent != 1 || a.dag || length(a.index_map)>0
+        error("Cannot substitute exponentiate, Daggered abstract operators or ones with index-maps defined. 
+            Index maps are respected within substitution, but not in the substitution definition.")
+    end
+    op_type = a.operator_type
+    of_time = op_type.of_time
+    hermitian = op_type.hermitian 
+    unitary = op_type.unitary
+    expanded_ss_acting = op_type.expanded_ss_acting
+    # check each of these:
+    if !of_time && contains_time(q)
+        error("Abstract operator is't time dependent but QExpr $q is. ")
+    end
+    acting = where_acting(q) 
+    # check if any true element of acting is not true in expanded_ss_acting
+    if any(acting .& .!expanded_ss_acting)
+        error("Abstract operator is defined on expanded subspaces: $expanded_ss_acting, but QExpr acts on $acting.")
+    end
+    if hermitian && !is_hermitian(q) 
+        error("Abstract operator expected to be hermitian, but QExpr is not: $q ≠ $(q').")
+    end
+    if unitary && !is_unitary(q)
+        error("Abstract operator expected to be hermitian, but QExpr is not: $q ⋅ $(q') = $(q*q') instead of 1.")
+    end
+    return true 
 end

@@ -6,6 +6,7 @@ using ..QAlgebra: get_default, FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
 
 export CFunction, CAtom, CSum, CRational, CProd, CExp, CLog
 export isnumeric, coeff, var_exponents, depends_on_inds
+export contains_non_simple_CFunction
 
 import Base: copy, exp, log, length
 import ComplexRationals: isonelike
@@ -52,7 +53,6 @@ struct CAtom <: CFunction
         return new(c, copy(var_exponents))
     end
 end
-copy(x::CAtom) =  CAtom(x.coeff, x.var_exponents)
 coeff(a::CAtom)::Vector{ComplexRational} = [a.coeff]
 var_exponents(a::CAtom)::Vector{Vector{Int}} = [a.var_exponents]
 dims(q::CAtom) = length(q.var_exponents)
@@ -90,7 +90,6 @@ struct CSum <: CFunction
         return new(ts)
     end
 end
-copy(x::CSum) = CSum(x.terms, Val{:nosimp}())
 coeff(x::CSum) = [ComplexRational(1,0,1)] #error("Sums don't have a coeff, you likely have a sum in a sum, this shouldn't happen. Please inform the developers. ")
 var_exponents(x::CSum) = error("Sums don't have var_exponents, you likely have a sum in a sum, this shouldn't happen. Please inform the developers. ")
 dims(q::CSum) = dims(q.terms[1])
@@ -114,7 +113,6 @@ end
 function CProd(terms::AbstractVector{<:CFunction})
     CProd(ComplexRational(1, 0, 1), terms)
 end
-copy(x::CProd) = CProd(x.coeff, x.terms, Val{:nosimp}())
 coeff(x::CProd) = [x.coeff]
 var_exponents(x::CProd) = vcat(var_exponents.(x.terms)...)
 dims(q::CProd) = dims(q.terms[1])
@@ -137,9 +135,8 @@ struct CRational <: CFunction
         return new(copy(numer), copy(denom))
     end
 end
-copy(x::CRational) = CRational(x.numer, x.denom, Val{:nosimp}())
 coeff(x::CRational) = coeff(x.numer) #/coeff(x.denom)
-var_exponents(x::CRational) = var_exponents(x.numer)   #vcat(var_exponents.(x.numer), var_exponents.(var_exponents.(x.denom)))
+var_exponents(x::CRational) = vcat(var_exponents.(x.numer), var_exponents.(var_exponents.(x.denom)))
 dims(q::CRational) = dims(q.numer) 
 length(q::CRational) = max(length(q.numer), length(q.denom))
 repartition(q::CRational, var_tuples::Vector{Tuple{Int, Int}}) = CRational(repartition(q.numer, var_tuples), repartition(q.denom, var_tuples))
@@ -161,7 +158,6 @@ end
 function exp(x::CFunction)
     return CExp(x) 
 end
-copy(x::CExp) = CExp(copy(x.coeff), copy(x.x), Val{:nosimp}())
 coeff(x::CExp) = [x.coeff]
 var_exponents(x::CExp) = [zeros(Int, dims(x))]
 dims(q::CExp) = dims(q.x)
@@ -185,7 +181,6 @@ function CLog(x::CFunction)
 function log(x::CFunction)
     return CLog(x) 
 end
-copy(x::CLog) = CLog(copy(x.coeff), copy(x.x), Val{:nosimp}())
 coeff(x::CLog) = [x.coeff] 
 var_exponents(x::CLog) = [zeros(Int, dims(x))]
 dims(q::CLog) = dims(q.x)
@@ -322,15 +317,25 @@ function depends_on_inds(cfun::CProd, inds::Vector{Int})
     end
 end
 function depends_on_inds(cfun::CRational, inds::Vector{Int})
-    return depends_on_inds(cfun.num, inds) || depends_on_inds(cfun.den, inds)
+    return depends_on_inds(cfun.numer, inds) || depends_on_inds(cfun.denom, inds)
 end 
 function depends_on_inds(cfun::Union{CExp, CLog}, inds::Vector{Int})
     if !iszero(cfun)
-        return depends_on_inds(cfun.exp, inds)
+        return depends_on_inds(cfun.x, inds)
     else
         return false
     end
 end
+
+"""
+    contains_non_simple_CFunction(c::CFunction) -> Bool 
+
+Does the expression contain non simple classical functions, such as CExp, CLog, CProd? 
+"""
+contains_non_simple_CFunction(c::T) where {T<: CFunction} = true
+contains_non_simple_CFunction(c::CAtom)::Bool = false 
+contains_non_simple_CFunction(c::CSum)::Bool = any(contains_non_simple_CFunction, c.terms)
+# Not sure if CRational should be counted here?! -> Design choices 
 
 
 include("CFunctionsOps/CFunctions_algebra.jl")

@@ -141,7 +141,6 @@ struct QExpr <: QObj
         return new(terms[1].statespace, simplify_QExpr(Vector{QComposite}(terms)))
     end
 end
-copy(q::QExpr)::QExpr = QExpr(q.statespace, q.terms)
 length(q::QExpr) = length(q.terms)
 each_term(q::QExpr) = q.terms
 each_coeff(q::QExpr)::Vector{CFunction} = flatmap_to(each_coeff, each_term(q), CFunction)
@@ -172,7 +171,6 @@ struct diff_QEq <: QEq
     expr::QExpr 
     do_braket::Bool
 end
-copy(q::diff_QEq)::diff_QEq = diff_QEq(q.statespace, copy(q.left_hand_side), copy(q.expr), q.do_braket)
 
 """
     diff_QEq(lhs::QTerm, rhs::QExpr, statespace::StateSpace; do_braket=true)
@@ -182,9 +180,8 @@ Construct a [`diff_QEq`](@ref) that represents the time derivative of ⟨lhs⟩ 
 Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
 function diff_QEq(statespace::StateSpace, left_hand_side::QAtomProduct, expr::QExpr; do_braket::Bool=true)
-    if !contains_abstract(left_hand_side)
-
-        return repartition(diff_QEq(statespace, left_hand_side, expr, do_braket))
+    if !contains_abstract(left_hand_side) && !contains_abstract(expr)
+        return repartition(neq(diff_QEq(statespace, left_hand_side, expr, do_braket)))
     else
         return diff_QEq(statespace, left_hand_side, expr, do_braket)
     end
@@ -246,13 +243,6 @@ end
 function getindex(q::T, i::Int) where T <: QComposite
     q.expr[i]
 end
-
-# Optionally, define length and eltype.
-iszero(q::QExpr) = length(q.terms) == 0 || all(iszero, q.terms)
-iszero(q::QAtomProduct) = iszero(q.coeff_fun)
-iszero(q::QSum) = iszero(q.expr)
-iszero(q::T) where T<:QComposite = iszero(q.coeff_fun) || iszero(q.expr)
-iszero(q::T) where T<:QMultiComposite = iszero(q.coeff_fun) || any(iszero, q.expr) 
 
 include("QExpressionsOps/QExpressions_base_operators.jl")
 include("QExpressionsOps/QExpressions_sort.jl")

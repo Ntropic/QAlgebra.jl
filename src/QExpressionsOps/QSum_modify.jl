@@ -206,12 +206,12 @@ end
 # handle one QSum
 function neq_qsum(s::QSum, do_abstract::Bool=false)
     # determine where defined 
-    where_defined = which_ensemble_acting(s, do_abstract) 
+    where_defined = which_ensemble_acting(s, do_abstract=do_abstract) 
     return neq_qsum(s, 1, where_defined )
 end
 function neq_qsum(s::QSum, where_defined::Vector{Vector{Bool}})
     # determine where defined 
-    where_defined = vecvec_or(which_ensemble_acting(s, true) , where_defined )
+    where_defined = vecvec_or(which_ensemble_acting(s, do_abstract=true) , where_defined )
     return neq_qsum(s, 1, where_defined )
 end
 function neq_qsum(s::QSum, index::Int, where_defined::Vector{Vector{Bool}})::QExpr
@@ -334,11 +334,11 @@ function neq(q::T, where_defined::Vector{Vector{Bool}})::T where {T<:QMultiCompo
     return modify_expr(q, neq.(q.expr, where_defined))
 end
 
-function neq(d_dt::diff_QEq)
-    if !contains_abstract(left_hand_side)
-        where_acting = which_ensemble_acting(left_hand_side)
-        new_rhs = neq(expr, where_acting)
-        return diff_QEq(statespace, left_hand_side, new_rhs, do_braket)
+function neq(q::diff_QEq)
+    if !contains_abstract(q.left_hand_side)
+        where_acting = which_ensemble_acting(q.left_hand_side)
+        new_rhs = neq(q.expr, where_acting)
+        return diff_QEq(q.statespace, q.left_hand_side, new_rhs, q.do_braket)
     else
         error("Cannot neq a differential Equation with a QAbstract on the left hand side.")
     end

@@ -127,8 +127,12 @@ function substitute(target::QAtomProduct, sp::AtoP)::Vector{QComposite}
     return [QAtomProduct(ss, coeff_fun*t.coeff_fun, t.expr) for t in terms]
 end
 
+substitution_properties_fulfilled(sub::Substitution)::Bool = substitution_properties_fulfilled(sub.from , QExpr(sub.statespace, sub.to))
 # QExpr → QExpr
-function substitute(target::QExpr, sp::AtoP)::QExpr
+function substitute(target::QExpr, sp::AtoP, checks::Bool=false)::QExpr
+    if checks
+        substitution_properties_fulfilled(sp)
+    end
     target.statespace === sp.statespace || error("Statespace mismatch between target and Substitution.")
     new_terms = QComposite[]
     for term in target.terms
@@ -149,13 +153,16 @@ function substitute(targ::T, sp::AtoP) where {T<:QMultiComposite}
 end
 
 # diff_QEq → diff_QEq
-function substitute(target::diff_QEq, sp::AtoP)::diff_QEq
+function substitute(target::diff_QEq, sp::AtoP; checks::Bool=true)::diff_QEq
+    if checks
+        substitution_properties_fulfilled(sp)
+    end
     target.statespace === sp.statespace || error("Statespace mismatch between target and Substitution.")
-    lhs = substitute(target.left_hand_side, sp)
+    lhs = substitute(target.left_hand_side, sp) 
     if length(lhs) != 1
         error("Substitution of $(sp.from) with $(sp.to) in $target did not result in a single term.")
     end
-    rhs = substitute(target.expr, sp)
-    return diff_QEq(target.statespace, lhs[1], rhs, target.do_braket)
+    rhs = substitute(target.expr, sp, false)
+    return diff_QEq(target.statespace, lhs[1], rhs, do_braket=target.do_braket)
 end
 

@@ -60,6 +60,7 @@ using .CFunctions
 export CFunction, CAtom, CSum, CRational, CProd, CExp, CLog
 export repartition, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
 export isnumeric, coeff, var_exponents, expand
+export contains_non_simple_CFunction
 
 include("QSpace.jl")
 using .QSpace
@@ -75,7 +76,8 @@ using .QExpressions
 export QEq, QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QAtomProduct, QSum, Sum, ∑, QCompositeProduct, diff_QEq, d_dt
 export QCommutator, QExp, QLog, QPower, power, QRoot, root #, simplify
 export Dag, Commutator, same_statespace
-export is_numeric, contains_abstract, contains_time
+export is_numeric, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, where_acting
+export is_unitary, is_hermitian, substitution_properties_fulfilled
 export base_operators, QExprLookup 
 export repartition, neq
 export string, latex_string
