@@ -130,9 +130,10 @@ struct SubSpaceInfo
 
     how_many_by_ensemble::Vector{Int}
     ensemble_indexes::Vector{Vector{Int}}      # The expanded indexes of the ensembles 
+    of_time::Bool
 end
 # Primary constructor from labels
-function SubSpaceInfo(outer_labels_symbols::Vector{Symbol}, inner_labels_symbols::Vector{Vector{Symbol}}, are_ensemble_ss::Vector{Bool})
+function SubSpaceInfo(outer_labels_symbols::Vector{Symbol}, inner_labels_symbols::Vector{Vector{Symbol}}, are_ensemble_ss::Vector{Bool}, of_time::Bool=false)
     inner_labels_symbols_flat = vcat(inner_labels_symbols...)
     outer_labels = map(string, outer_labels_symbols)
     inner_labels = [string.(v) for v in inner_labels_symbols]
@@ -173,7 +174,7 @@ function SubSpaceInfo(outer_labels_symbols::Vector{Symbol}, inner_labels_symbols
     return SubSpaceInfo( outer_labels_symbols, inner_labels_symbols, inner_labels_symbols_flat, 
                          outer_labels, inner_labels, inner_labels_flat, 
                          subsystem_sizes, outer_ss_of_expanded, inner_ss_of_expanded, expanded_index_by_outer,
-                         where_ensembles, ensemble_index_by_outer_index, how_many_by_ensemble, ensemble_indexes )
+                         where_ensembles, ensemble_index_by_outer_index, how_many_by_ensemble, ensemble_indexes, of_time )
 end
 
 function Base.show(io::IO, info::SubSpaceInfo)

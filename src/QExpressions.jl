@@ -6,7 +6,7 @@ using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, ^, product, iszero, copy
 using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
 using ..CFunctions: isnumeric
-export QEq, QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, diff_QEq, base_operators, d_dt #simplify
+export QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, diff_QEq, base_operators, d_dt #simplify
 
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
@@ -48,13 +48,6 @@ Abstract type for composite expressions that contain a Vector of QExpr objects.
 """
 abstract type QMultiComposite <: QComposite end
 
-""" 
-    QEq
-
-The abstract type `QEq` is the base type for all quantum expressions in this module.
-"""
-abstract type QEq end  # most general
-
 """
     QTerm
 
@@ -63,16 +56,20 @@ A `QTerm` represents a single term in a quantum expression. It contains:
 """
 struct QTerm <: QAtom
     op_indices::Vector{Vector{Int}}
-    function QTerm(op_indices::Vector{Vector{Int}})
-        return new(copy.(op_indices))
-    end
-    function QTerm(op_indices::Vector{Vector{Int}}, ::Val{:nocopy})
-        return new(op_indices)
+    time_index::Int 
+    function QTerm(op_indices::Vector{Vector{Int}}, time_index::Int=-1)
+        return new(copy.(op_indices), time_index)
     end
 end 
 @inline function Base.getindex(qterm::QTerm, i::Int)
     return qterm.op_indices[i]
 end
+modify_expr(q::QTerm, new_op_indices::Vector{Int}) = QTerm(new_op_indices, q.time_index)
+function modify_time_index(q::QTerm, new_time_index::Int)::QTerm
+    @assert q.time_index != -1 "Cannot change time_index of non time dependent QTerm."
+    QTerm(q.op_indices, new_time_index)
+end
+of_time(q::QTerm) = q.time-index != -1
 
 
 """
@@ -92,16 +89,24 @@ struct QAbstract <: QAtom
     sub_index::Int
     exponent::Int
     dag::Bool
+    time_index::Int
     operator_type::OperatorType
     index_map::Vector{Tuple{SubSpaceIndex,SubSpaceIndex}}
-    function QAbstract(operator_type::OperatorType, key_index::Int, sub_index::Int=-1, exponent::Int=1, dag::Bool=false, index_map::Vector{Tuple{SubSpaceIndex,SubSpaceIndex}}=Tuple{SubSpaceIndex,SubSpaceIndex}[])
-        return new(key_index, sub_index, exponent, dag, operator_type, index_map)
+    function QAbstract(::Val{:nocheck}, operator_type::OperatorType, key_index::Int, sub_index::Int=-1, exponent::Int=1, dag::Bool=false, time_index::Int=-1, index_map::Vector{Tuple{SubSpaceIndex,SubSpaceIndex}}=Tuple{SubSpaceIndex,SubSpaceIndex}[])
+        return new(key_index, sub_index, exponent, dag, time_index, operator_type, index_map)
+    end
+    function QAbstract(operator_type::OperatorType, key_index::Int, sub_index::Int=-1, exponent::Int=1, dag::Bool=false, time_index::Int=-1, index_map::Vector{Tuple{SubSpaceIndex,SubSpaceIndex}}=Tuple{SubSpaceIndex,SubSpaceIndex}[])
+        if operator_type.of_time && time_index < 0
+            error("Constructing an operator of time but no time index >= 0 has been provided!")
+        end
+        return new(key_index, sub_index, exponent, dag, time_index, operator_type, index_map)
     end
 end
-dag_copy(q::QAbstract)::QAbstract = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, !q.dag, q.index_map)
-add_to_index_map(q::QAbstract, added_index_pair::Tuple{SubSpaceIndex,SubSpaceIndex}) = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, q.dag, vcat(q.index_map, added_index_pair))
-change_exp_dag(q::QAbstract, new_exp::Int, new_dag::Bool) = QAbstract(q.operator_type, q.key_index, q.sub_index, new_exp, new_dag, q.index_map)
-
+dag_copy(q::QAbstract)::QAbstract = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, !q.dag, q.time_index, q.index_map)
+add_to_index_map(q::QAbstract, added_index_pair::Tuple{SubSpaceIndex,SubSpaceIndex}) = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, q.dag, q.time_index, vcat(q.index_map, added_index_pair))
+modify_exp_dag(q::QAbstract, new_exp::Int, new_dag::Bool) = QAbstract(q.operator_type, q.key_index, q.sub_index, new_exp, new_dag, q.time_index, q.index_map)
+modify_time_index(q::QAbstract, new_time_index::Int) = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, q.dag, new_time_index, q.index_map)
+of_time(q::QAbstract) = q.operator_type.of_time
 
 """
     QExpr
@@ -149,7 +154,6 @@ multiply_coeff(q::QExpr, coeff::CFunction) = QExpr(q.statespace, [multiply_coeff
 include("QExpressionsOps/QExpressions_composites.jl")
 include("QExpressionsOps/QExpressions_helper.jl") 
 
-
 """
     diff_QEq
 
@@ -165,7 +169,7 @@ It represents time derivative of an operator expectation value, and wraps the sy
 - `statespace::StateSpace`: The StateSpace in which the equation is defined.
 - `do_braket::Bool`: Whether to use do_braket notation ⟨⋯⟩ (default = `true`).
 """
-struct diff_QEq <: QEq
+struct diff_QEq <: QObj
     statespace::StateSpace
     left_hand_side::QAtomProduct
     expr::QExpr 
@@ -228,6 +232,7 @@ function d_dt(left_hand::Union{QAtomProduct,QExpr}, right_hand::QExpr)::diff_QEq
 end
 
 #### Helper Functions #######################################################################################
+QNotAtom = Union{QComposite, QExpr, diff_QEq}
 # Define iteration for QExpr so that iterating over it yields its QTerm's.
 function iterate(q::QExpr, state::Int=1)
     state > length(q.terms) && return nothing

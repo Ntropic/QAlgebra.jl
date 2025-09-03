@@ -1,5 +1,5 @@
-export is_numeric, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, where_acting
-export is_unitary, is_hermitian, substitution_properties_fulfilled
+export is_numeric, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, where_acting
+export is_unitary, is_hermitian, substitution_properties_fulfilled, same_statespace, statespace_check
 """ 
     is_numeric(t::QTerm, qspace::StateSpace) -> Bool
     is_numeric(t::QAbstract, qspace::StateSpace) -> Bool
@@ -49,23 +49,43 @@ end
 
 Does a QObj contain non Basic Quantum Objects, such as QExp, QLog or QMultiComposites?
 """
-contains_non_simple_QObj(q::QExpr)::Bool = any(contains_non_simple_QObj, q.terms)
-contains_non_simple_QObj(q::T) where {T <: QComposite} = true 
-contains_non_simple_QObj(q::QAtomProduct)::Bool = false 
-contains_non_simple_QObj(q::QSum)::Bool = any(contains_non_simple_QObj, q.expr)
+contains_non_simple_QObj(q::QExpr, sum_is_simple::Bool=true)::Bool = any(t -> contains_non_simple_QObj(t, sum_is_simple), q.terms)
+contains_non_simple_QObj(q::T, sum_is_simple::Bool=true) where {T <: QComposite} = true 
+contains_non_simple_QObj(q::QAtomProduct, sum_is_simple::Bool=true)::Bool = false 
+function contains_non_simple_QObj(q::QSum, sum_is_simple::Bool=true)::Bool 
+    if sum_is_simple
+        return any(x -> contains_non_simple_QObj(x, sum_is_simple), q.expr)
+    end 
+    return true
+end
 
 """ 
-    contains_non_simple(q::QObj) -> 
+    contains_non_simple(q::QObj) -> Bool
 
 Checks if it contains any non-simple QObjects, QAbstracts or non-simple CFunctions.
 """
-contains_non_simple(q::QExpr)::Bool = any(contains_non_simple, q.terms)
-contains_non_simple(q::QSum)::Bool = any(contains_non_simple, q.expr)
-contains_non_simple(q::T) where {T <: QComposite} = true 
-contains_non_simple(q::QAtomProduct)::Bool = contains_non_simple_CFunction(q.coeff_fun) || contains_abstract(q)
-
+contains_non_simple(q::QExpr, sum_is_simple::Bool=true)::Bool = any(t -> contains_non_simple(t, sum_is_simple), q.terms)
+contains_non_simple(q::T, sum_is_simple::Bool=true) where {T <: QComposite} = true 
+contains_non_simple(q::QAtomProduct, sum_is_simple::Bool=true)::Bool = contains_non_simple_CFunction(q.coeff_fun) || contains_abstract(q)
+function contains_non_simple(q::QSum, sum_is_simple::Bool=true)::Bool
+    if sum_is_simple
+        return any(t -> contains_non_simple(t, sum_is_simple), q.expr)
+    end
+    return true 
+end
 
 """ 
+    is_local(q::QObj) -> Bool 
+
+Does an operator contains only local operations, or also entangling operators?
+""" 
+is_local(q::QExpr)::Bool = all(is_local, q.terms)
+is_local(q::T) where {T <: QComposite} = is_local(q.expr)
+is_local(q::QCompositeProduct) = false
+is_local(q::QCommutator)::Bool = is_local(q.expr[1]*q.expr[2] - q.expr[2]*q.expr[1])
+is_local(q::QAtomProduct)::Bool = sum(where_acting(q))<= 1
+
+"""
     contains_abstract(q::QObj) -> Bool
 
 Checks if the quantum object contains an abstract operator among its leaves.
@@ -200,11 +220,17 @@ end
 
 function commutes_QAtom(q1::QAbstract, q2::QAbstract, statespace::StateSpace)::Bool   # for QAtom can check 
     # check if all elements of where neutral are NAND
+    if q1.time_index != q2.time_index
+        return false 
+    end
     return statespace.operatortype_info.commute_fun(q1.key_index, q1.sub_index, q1.dag, q2.key_index, q2.sub_index, q2.dag)
 end
 @inline commutes_QAtom_inds(inds::Vector{Int}, q1::QAbstract, q2::QAbstract, statespace) = commutes_QAtom(q1, q2, statespace) 
 
 function commutes_QAtom(q1::QTerm, q2::QTerm, statespace::StateSpace)::Bool
+    if q1.time_index != q2.time_index
+        return false 
+    end
     a_q1 = where_acting(q1, statespace)
     a_q2 = where_acting(q2, statespace)
     inds = findall(a_q1 .& a_q2)
@@ -222,6 +248,9 @@ end
 
 # Add the mixed method once:
 function commutes_QAtom(qt::QTerm, qa::QAbstract, statespace::StateSpace)::Bool
+    if qt.time_index != qa.time_index
+        return false 
+    end
     a_t = where_acting(qt, statespace)
     a_a = where_acting(qa, statespace)
     return !any(a_t .& a_a) 
@@ -305,10 +334,10 @@ commutes(Q2::S, Q1::T) where {S<:QMultiComposite,T<:QComposite} = each_commutes(
 import Base: ==
 
 function ==(a::QTerm, b::QTerm)
-    return a.op_indices == b.op_indices
+    return a.op_indices == b.op_indices && a.time_index == b.time_index
 end
 function ==(a::QAbstract, b::QAbstract)
-    return a.key_index == b.key_index && a.sub_index == b.sub_index && a.exponent == b.exponent && a.dag == b.dag && a.index_map == b.index_map
+    return a.key_index == b.key_index && a.sub_index == b.sub_index && a.exponent == b.exponent && a.dag == b.dag && a.index_map == b.index_map && a.time_index == b.time_index
 end
 function ==(a::QAtomProduct, b::QAtomProduct)
     return a.coeff_fun == b.coeff_fun && all([ai == bi for (ai, bi) in zip(a.expr, b.expr)])
@@ -384,4 +413,17 @@ function substitution_properties_fulfilled(a::QAbstract, q::QExpr)::Bool
         error("Abstract operator expected to be hermitian, but QExpr is not: $q ⋅ $(q') = $(q*q') instead of 1.")
     end
     return true 
+end
+
+########## Statespace check infra ##############################################
+function same_statespace(a::S, b::T)::Bool where {S<:QNotAtom,T<:QNotAtom}
+    return a.statespace === b.statespace
+end
+# Only check at outermost call sites. Internal calls use _NOCHK.
+@inline statespace_check_if(::Val{true}, a, b) =
+    (a.statespace === b.statespace) || _statespace_throw(a, b)
+@inline statespace_check_if(::Val{false}, a, b) = nothing
+
+@noinline function _statespace_throw(a, b)
+    throw(AssertionError("Objects must share the same statespace; got $(summary(a)) vs $(summary(b))"))
 end

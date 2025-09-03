@@ -5,7 +5,8 @@ import Base: string
 export string, latex_string, QExpr2string
 
 
-function operators2string(op_indices::Vector{Vector{Int}}, statespace::StateSpace; do_latex::Bool=false)::String
+function qAtom2string(q::QTerm, statespace::StateSpace; do_latex::Bool=false)::String
+    op_indices = q.op_indices
     op_str::String = ""
     subspaces = statespace.subspaces
     not_neutral = false
@@ -25,41 +26,45 @@ function operators2string(op_indices::Vector{Vector{Int}}, statespace::StateSpac
             end
         end
     end
+    if q.time_index != -1
+        op_str *= "("*t_suffix(q.time_index, do_latex=do_latex)*")"
+    end
     return op_str 
 end
-function qAtom2string(qatom::QTerm, statespace::StateSpace; do_latex::Bool=false)::String
-    return operators2string(qatom.op_indices, statespace; do_latex=do_latex)
-end
+
 function qAtom2string(q::QAbstract, statespace::StateSpace; do_latex::Bool=false)::String
     type = q.operator_type
     name = type.name 
     if do_latex 
-        curr_string = raw"\hat{" * name * "}"
+        op_str = raw"\hat{" * name * "}"
         if q.sub_index != -1 
-            curr_string *= "_"*string(q.sub_index)
+            op_str *= "_"*string(q.sub_index)
         end
         if q.dag
             if q.exponent == 1 
-                curr_string *= raw"^{\dagger}"
+                op_str *= raw"^{\dagger}"
             else
-                curr_string *= raw"^{\dagger "*string(q.exponent)*"}"
+                op_str *= raw"^{\dagger "*string(q.exponent)*"}"
             end
         elseif q.exponent != 1 
-            curr_string *= "^{"*string(q.exponent)*"}"
+            op_str *= "^{"*string(q.exponent)*"}"
         end
     else
-        curr_string = name 
+        op_str = name 
         if q.sub_index != -1 
-            curr_string *= str2sub(string(q.sub_index))
+            op_str *= str2sub(string(q.sub_index))
         end
         if q.dag 
-            curr_string *= "'"
+            op_str *= "'"
         end
         if q.exponent != 1 
-            curr_string *= str2sup(string(q.exponent))
+            op_str *= str2sup(string(q.exponent))
         end
     end
-    return curr_string
+    if q.time_index != -1
+        op_str *= "("*t_suffix(q.time_index, do_latex=do_latex)*")"
+    end
+    return op_str
 end 
 
 function variable_str_vec(q::T; do_latex::Bool=true)::Vector{String} where T<:QComposite

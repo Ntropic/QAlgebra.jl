@@ -1,11 +1,6 @@
 export which_ensemble_acting, are_indexes_defined
 
 
-function same_statespace(a::S, b::T)::Bool where {S<:QComposite,T<:QComposite}
-    return a.statespace == b.statespace
-end
-
-
 function vecvec_or(A::Vector{Vector{Bool}}, B::Vector{Vector{Bool}})
     # Assume they are equally shaped. 
     return broadcast.(|, A, B)

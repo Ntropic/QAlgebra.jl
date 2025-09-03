@@ -2,10 +2,10 @@ function same_term_type(t1::QAtom, t2::QAtom) # generic case
     return false
 end
 function same_term_type(t1::QTerm, t2::QTerm)
-    return t1.op_indices == t2.op_indices 
+    return t1.op_indices == t2.op_indices && t1.time_index == t2.time_index
 end
 function same_term_type(t1::QAbstract, t2::QAbstract) 
-    return t1.key_index == t2.key_index && t1.sub_index == t2.sub_index && t1.index_map == t2.index_map
+    return t1.key_index == t2.key_index && t1.sub_index == t2.sub_index && t1.index_map == t2.index_map && t1.time_index == t2.time_index
 end
 function same_term_type(t1::QAtomProduct, t2::QAtomProduct)::Bool  # different coefficients but same operator content
     # check operators individually -> must all be the same!

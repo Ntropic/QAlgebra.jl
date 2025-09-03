@@ -114,6 +114,7 @@ struct StateSpace
     I_ensemble_op::Vector{Vector{Is}}      # Neutral Vector of all expanded ensemble subspaces
     c_one::CAtom                            # onelike function in CFunctions 
     c_zero::CAtom                           # zerolike function in CFunctions 
+    max_t_ind::Int
 
     function StateSpace(subspace_def::SubSpaceDefinitions, op_def::OperatorDefinitions, param_def::ParameterDefinitions; max_t_ind::Int=0)
         # ==========> 1st Subspaces <==========
@@ -135,7 +136,7 @@ struct StateSpace
         qss = new( subspaces, subspace_info,                                      # Subspaces
                 operatortypes, operatortype_info,                                 # Abstract Operators 
                 vars, param_info,                                                 # Variables / Parameters
-                I_op, I_ensemble_op, c_one, c_zero)                         # Pecomputed operator blueprints 
+                I_op, I_ensemble_op, c_one, c_zero, max_t_ind)                         # Pecomputed operator blueprints 
         return qss
     end
 end

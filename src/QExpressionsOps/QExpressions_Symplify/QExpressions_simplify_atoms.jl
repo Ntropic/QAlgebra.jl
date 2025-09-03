@@ -1,8 +1,7 @@
 #### First output is a vector of tuples each a coefficient and a QAtom product, the second indicates whether we changed the order, the third indicates whether we should stop
-# returns: (new_atoms, changed, stop_chain => go_left if true)
-@inline function simplify_pair(a::QAbstract, b::QAbstract, ss::StateSpace)
-    # (Vector{(coeff, Vector{QAtom})}, changed::Bool, go_left::Bool)
+# Functions return: (new_atoms, changed, go_left)
 
+@inline function simplify_pair(a::QAbstract, b::QAbstract, ss::StateSpace)
     # Different operator subtypes: maybe repartition
     if !same_term_type(a, b)
         if commutes_QAtom(a, b, ss) && b < a
@@ -19,7 +18,7 @@
             if exp == 0
                 return [(one(ComplexRational), QAtom[])], true, false
             else
-                return [(one(ComplexRational), QAtom[change_exp_dag(a, exp, false)])], true, false
+                return [(one(ComplexRational), QAtom[modify_exp_dag(a, exp, false)])], true, false
             end
         elseif a.operator_type.unitary
             # dagger means inverse ⇒ signed exponent sum
@@ -29,7 +28,7 @@
             else
                 dag = exp < 0
                 exp = abs(exp)
-                return [(one(ComplexRational), QAtom[change_exp_dag(a, exp, dag)])], true, false
+                return [(one(ComplexRational), QAtom[modify_exp_dag(a, exp, dag)])], true, false
             end
         else
             # No special rule; keep order
@@ -48,7 +47,7 @@
         if exp == 0
             return [(one(ComplexRational), QAtom[])], true, false
         else
-            return [(one(ComplexRational), QAtom[change_exp_dag(a, exp, dag)])], true, false
+            return [(one(ComplexRational), QAtom[modify_exp_dag(a, exp, dag)])], true, false
         end
     end
 end
@@ -56,18 +55,21 @@ end
 
 # QTerm × QTerm  → multiply (may branch)
 @inline function simplify_pair(x::QTerm, y::QTerm, ss::StateSpace)::Tuple{Vector{Tuple{ComplexRational, Vector{QAtom}}}, Bool, Bool}
-    Ts, Cs = multiply_qterm(x, y, ss)
-    out = Vector{Tuple{ComplexRational, Vector{QAtom}}}()
-    @inbounds for (t, c) in zip(Ts, Cs)
-        if !iszero(c) 
-            if is_numeric(t, ss) 
-                push!(out, (c, Vector{QAtom}([])))
-            else
-                push!(out, (c, Vector{QAtom}([t])))
+    if x.time_index == y.time_index 
+        Ts, Cs = multiply_qterm(x, y, ss)
+        out = Vector{Tuple{ComplexRational, Vector{QAtom}}}()
+        @inbounds for (t, c) in zip(Ts, Cs)
+            if !iszero(c) 
+                if is_numeric(t, ss) 
+                    push!(out, (c, Vector{QAtom}([])))
+                else
+                    push!(out, (c, Vector{QAtom}([t])))
+                end
             end
         end
+        return out, true, true
     end
-    return out, true, true
+    return [(one(ComplexRational), QAtom[x, y])], false, false
 end
 
 @inline function simplify_pair(x::QAbstract, y::QTerm, ss::StateSpace)::Tuple{Vector{Tuple{ComplexRational, Vector{QAtom}}}, Bool, Bool}

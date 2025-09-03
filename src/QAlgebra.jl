@@ -73,10 +73,10 @@ export QubitPauli, QubitPM, Ladder
 
 include("QExpressions.jl")
 using .QExpressions
-export QEq, QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QAtomProduct, QSum, Sum, ∑, QCompositeProduct, diff_QEq, d_dt
+export QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QAtomProduct, QSum, Sum, ∑, QCompositeProduct, diff_QEq, d_dt
 export QCommutator, QExp, QLog, QPower, power, QRoot, root #, simplify
 export Dag, Commutator, same_statespace
-export is_numeric, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, where_acting
+export is_numeric, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, where_acting
 export is_unitary, is_hermitian, substitution_properties_fulfilled
 export base_operators, QExprLookup 
 export repartition, neq

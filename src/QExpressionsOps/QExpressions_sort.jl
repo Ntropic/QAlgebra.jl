@@ -51,20 +51,15 @@ qatom_tag(::QAbstract) = 1
 # Atom-level isless
 # -------------------------------
 # QTerm: compare op_indices lexicographically
-isless(a::QTerm, b::QTerm) = less_vec_int(a.op_indices, b.op_indices)
+function isless(a::QTerm, b::QTerm)::Bool
+    a.time_index == b.time_index || return a.time_index < b.time_index
+    less_vec_int(a.op_indices, b.op_indices)
+end
 
 # QAbstract: compare (key_index, sub_index, exponent, dag)
 function isless(a::QAbstract, b::QAbstract)
-    if a.key_index != b.key_index 
-        return a.key_index < b.key_index
-    elseif a.sub_index != b.sub_index 
-        return a.sub_index < b.sub_index
-    elseif a.dag != b.dag 
-        return a.dag < b.dag
-    end
-    return false
+    return (a.time_index, a.key_index, a.sub_index, a.dag) < (b.time_index, b.key_index, b.sub_index, b.dag)
 end
-
 
 # Cross-type atoms
 function isless(a::Union{QTerm,QAbstract}, b::Union{QTerm,QAbstract})
