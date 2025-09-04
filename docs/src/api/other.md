@@ -8,5 +8,4 @@ str2sub
 str2sup
 QAlgebra.StringUtils.superscript_indexes
 QAlgebra.StringUtils.subscript_indexes
-depends_on_inds
 ```

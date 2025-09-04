@@ -85,7 +85,7 @@ function term_equal_indexes(term::QTerm, index1::SubSpaceIndex, index2::SubSpace
         op_indices = copy(term.op_indices)
         op_indices[ind2] = op
         op_indices[ind1] = neutral
-        push!(new_terms, QTerm(op_indices, Val(:nocopy)))
+        push!(new_terms, QTerm(op_indices, term.time_index))
         push!(new_coeffs, coeff)
     end
     return true, new_terms, new_coeffs  

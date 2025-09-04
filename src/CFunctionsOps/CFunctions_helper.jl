@@ -1,4 +1,4 @@
-contains_c_indexes(c::CAtom, indexes::Vector{Int})::Bool = any(t -> t != 0, c.var_exponents)
+contains_c_indexes(c::CAtom, indexes::Vector{Int})::Bool = any(ind -> c.var_exponents[ind] != 0, indexes)
 contains_c_indexes(c::Union{CSum, CProd}, indexes::Vector{Int})::Bool = any(t -> contains_c_indexes(t, indexes), c.terms)
 contains_c_indexes(c::CRational, indexes::Vector{Int})::Bool = contains_c_indexes(c.numer, indexes) || contains_c_indexes(c.denom, indexes)
 contains_c_indexes(c::T, indexes::Vector{Int})  where {T <: CFunction} = contains_c_indexes(c.x, indexes)
@@ -122,7 +122,7 @@ function separate_CSum(f::CSum )::Tuple{Bool, Union{CAtom, Nothing}, CSum}
             base, multiples = common_denominator_form(coeffs)
             # get exponent offsets 
             offset = common_exponent_offset(vs)
-            new_f = CSum([CAtom(m, v.-offset) for (m, v) in zip(multiples, vs)])
+            new_f = _CSum([CAtom(m, v.-offset) for (m, v) in zip(multiples, vs)])
             pre_f = CAtom(base, offset)
             return true, pre_f, new_f 
         end
@@ -276,7 +276,7 @@ function term_equal_indexes(fsum::CSum, coeff_ind_order::Vector{Tuple{Int, Int}}
         changed_any = changed_any || changed
         push!(new_terms, new_term)
     end
-    return changed_any, CSum(fsum.index, new_terms)
+    return changed_any, _CSum(fsum.index, new_terms)
 end
 function term_equal_indexes(frational::CRational, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool,CRational}
     changed_num, new_num = term_equal_indexes(frational.num, coeff_ind_order)

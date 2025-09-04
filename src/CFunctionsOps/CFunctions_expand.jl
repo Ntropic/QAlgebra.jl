@@ -63,7 +63,7 @@ function _expand(s::CSum, ::Val{M}, ::Type{T}, args...) where {M,T}
         any_exp |= e
     end
     # if nothing changed, just return original
-    return any_exp ? (CSum(terms2), true) : (s, false)
+    return any_exp ? (_CSum(terms2), true) : (s, false)
 end
 
 function _expand(p::CProd, ::Val{M}, ::Type{T}, args...) where {M,T}
@@ -126,7 +126,7 @@ function _expand(e::CExp, ::Val{:Taylor}, ::Type{CExp}, order::Int)   # coeff * 
         end
     end
     # create a sum of the terms 
-    return (CExp(e.coeff, CSum(terms)), true)
+    return (CExp(e.coeff, _CSum(terms)), true)
 end
 
 function _expand(r::CRational, ::Val{:Rational}, ::Type{CRational}, args...) #Distribute a fraction over a sum in the numerator: (A + B + …) / D  ⇒  A/D  +  B/D  +  …
@@ -143,7 +143,7 @@ function _expand(r::CRational, ::Val{:Rational}, ::Type{CRational}, args...) #Di
                 push!(out, new)
             end
         end
-        return (CSum(out), true)
+        return (_CSum(out), true)
     else
         # nothing to expand
         either_changed = changed || changed2
@@ -187,7 +187,7 @@ function _expand(e::CLog, ::Val{:Taylor}, ::Type{CLog}, order::Int)  # log(1+Δ)
         end
     end
 
-    return (CSum(terms), true)
+    return (_CSum(terms), true)
 end
 
 
@@ -217,5 +217,5 @@ function _expand(l::CLog, ::Val{:Log}, ::Type{CLog}, args...)
     # wrap each in a CLog with ±coeff
     logs = [ CLog(l.coeff, f) for f in facs ]
 
-    return (CSum(logs), true)
+    return (_CSum(logs), true)
 end

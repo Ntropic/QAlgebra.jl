@@ -70,7 +70,7 @@ function CFunctions_gen_examples(::Type{T}, depth::Int, max_depth::Int, same_a::
         if T === CAtom
             return [a]
         elseif T === CSum
-            return [CSum([a, a2]), CSum([a, a2, a])]
+            return [_CSum([a, a2]), _CSum([a, a2, a])]
         elseif T === CProd
             return [CProd([a, a2])]
         elseif T === CRational
@@ -93,7 +93,7 @@ function CFunctions_gen_examples(::Type{T}, depth::Int, max_depth::Int, same_a::
             if U !== CSum && V !== CSum 
                 e1 = CFunctions_gen_examples(U, depth+1, max_depth, same_a)[1]
                 e2 = CFunctions_gen_examples(V, depth+1, max_depth, same_a)[1]
-                push!(ex, CSum([e1,e2]))
+                push!(ex, _CSum([e1,e2]))
             end
         end
         return ex

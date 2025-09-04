@@ -31,8 +31,10 @@ function simplify_CSum(elements::AbstractVector{<:CFunction})
     end
     if length(new_elements) == 0 
         push!(new_elements, CAtom(0, zeros(Int, dims(elements[1]))))
+    elseif length(new_elements) == 1
+        return new_elements[1]
     end
-    return CSum(new_elements, Val(:nosimp))
+    return _CSum(new_elements, Val(:nosimp))
 end
 function simplify(s::CSum)
     # first simplify the lower levels 
@@ -41,8 +43,14 @@ end
 
 function simplify_CRational(n::CFunction, d::CFunction)
     # remove fractions in coefficients in Rational
+    if iszero(n)
+        return n 
+    end
+    println("n=$n, d=$d")
     curr_div = vcat(divisors(n), divisors(d))
+    println(curr_div)
     factor = lcm(curr_div...)
+    println(factor)
     n = factor * n
     d = factor * d
     # common denominator
@@ -63,7 +71,7 @@ function simplify_CRational(n::CFunction, d::CFunction)
     end
     # if denom now has exactly one term, collapse back to a sum
     if length(d) == 0 || iszero(d)
-        error("Dividing by zero")
+        error("Dividing by zero: n=$n, d=$d.")
     elseif isa(d, CAtom)
         if isnumeric(d)
             return n/d.coeff
@@ -328,7 +336,7 @@ function vec_multiply(x::CAtom, vector::Vector{Int})::CAtom
     return CAtom(x.coeff, x.var_exponents + vector)
 end
 function vec_multiply(x::CSum, vector::Vector{Int})::CSum
-    return CSum([vec_multiply(t, vector) for t in x.terms], Val(:nosimp))
+    return _CSum([vec_multiply(t, vector) for t in x.terms], Val(:nosimp))
 end
 function vec_multiply(x::CRational, vector::Vector{Int})::CRational
     return CRational(vec_multiply(x.numer), vec_multiply(x.denom), Val(:nosimp))

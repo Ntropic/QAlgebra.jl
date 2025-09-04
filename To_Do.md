@@ -9,7 +9,8 @@
     - [x] print => to print `t_{time_index}`
 
 - [ ] Implement *Unitary Conjugation*
-    - [ ] Create *Conjugate (Krylov) Cycle* via Guassian elimination 
+    - [x] Create *Conjugate (Krylov) Cycle* via Guassian elimination 
+    - [ ] Remove (sum index of current operator) if present in H0 => `make_index_known` function, for example for `H0 = Sum(:i, gamma[:i]*zi)`
     - [ ] Diagonalize CFunction Matrix to construct Operator transformations
     - [ ] Implement Statespace transformation 
 
@@ -18,7 +19,7 @@
         - [ ] QExpr to Function 
     
     - [ ] Implement Cumulants Properly for Terms outside of Operator Set 
-        - [ ] Add *Operator Moment Orders* functions 
+        - [x] Add *Operator Moment Orders* functions (`max_moment_of_terms`)
 
     - [ ] Index EquationSet and Cumulants 
 
@@ -27,6 +28,7 @@
     - [ ] Sampler  
 
 ## Medium Priority 
+- [x] is_t_var
 - [ ] Additional **substitution** checks. 
     - [ ] add time_index check to substitutions, apply time_index transformations to operators at different time points!
 

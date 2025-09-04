@@ -200,7 +200,7 @@ end
     for t in p1.expr
         append!(new_expr, _mul(t, p2, _NOCHK))
     end
-    return [modify_expr(p1, new_expr)]
+    return [modify_expr(p1, QExpr(p1.statespace, new_expr))]
 end
 
 @inline function _mul(p1::QCompositeProduct, p2::T2, ::Val{C})::Vector{QComposite} where {T2<:QComposite,C}
@@ -425,9 +425,7 @@ function Dag(Q::QExpr)::QExpr
 end
 
 function Dag(t::T)::Vector{QComposite} where {T<:QComposite}
-    t_new = copy(t)
-    t_new.expr = Dag(t.expr)
-    return QComposite[t_new]
+    return QComposite[modify_expr(t, Dag(t.expr))]
 end
 
 function Dag(t::QMultiComposite)::Vector{QMultiComposite}

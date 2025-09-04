@@ -76,7 +76,7 @@ using .QExpressions
 export QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QAtomProduct, QSum, Sum, ∑, QCompositeProduct, diff_QEq, d_dt
 export QCommutator, QExp, QLog, QPower, power, QRoot, root #, simplify
 export Dag, Commutator, same_statespace
-export is_numeric, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, where_acting
+export is_numeric, is_t_var, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, max_moment_of_terms, contains_which_t_indexes, where_acting
 export is_unitary, is_hermitian, substitution_properties_fulfilled
 export base_operators, QExprLookup 
 export repartition, neq

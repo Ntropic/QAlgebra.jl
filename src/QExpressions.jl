@@ -69,7 +69,7 @@ function modify_time_index(q::QTerm, new_time_index::Int)::QTerm
     @assert q.time_index != -1 "Cannot change time_index of non time dependent QTerm."
     QTerm(q.op_indices, new_time_index)
 end
-of_time(q::QTerm) = q.time-index != -1
+of_time(q::QTerm) = q.time_index != -1
 
 
 """

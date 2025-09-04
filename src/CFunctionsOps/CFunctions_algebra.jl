@@ -3,7 +3,7 @@ import Base: +, -, *, /, ^, ==
 
 # addition always builds a flat sum
 +(a::T) where {T <: CFunction}  =  a 
-+(a::Ta, b::Tb) where {Ta <: CFunction, Tb <: CFunction}  = CSum( vcat(_terms(a), _terms(b)))
++(a::Ta, b::Tb) where {Ta <: CFunction, Tb <: CFunction}  = _CSum( vcat(_terms(a), _terms(b)))
 +(a::T, b::Number) where {T <: CFunction}  =  a+CAtom(b, zeros(Int, dims(a)))
 +(b::Number, a::T) where {T <: CFunction}  =  a+b
 
@@ -11,7 +11,7 @@ import Base: +, -, *, /, ^, ==
 import Base: -, +
 
 -(a::CAtom) = CAtom(-a.coeff, a.var_exponents)
--(s::CSum) = CSum([ -t for t in s.terms ], Val{:nosimp}())
+-(s::CSum) = _CSum([ -t for t in s.terms ] , Val(:nosimp))
 -(r::CRational) = CRational(-r.numer, r.denom, Val{:nosimp}())
 -(a::CProd) = CProd(-a.coeff, a.terms, Val{:nosimp}())
 -(a::CExp) = CExp(-a.coeff, a.x, Val{:nosimp}())
@@ -21,9 +21,11 @@ import Base: -, +
 -(b::Number, a::CFunction)  = CAtom(b, zeros(Int, dims(a))) - a
 
 # distribute * over sums
-*(a::CSum, b::CSum) = CSum([ x*y for x in a.terms for y in b.terms ])
-*(s::CSum, a::T) where {T<:CFunction}   = CSum([ x*a for x in s.terms ])
+*(a::CSum, b::CSum) = _CSum([ x*y for x in a.terms for y in b.terms ])
+*(s::CSum, a::T) where {T<:CFunction}   = _CSum([ x*a for x in s.terms ])
 *(a::T, s::CSum) where {T<:CFunction}   = s*a
+*(s::CSum, a::CAtom) = _CSum([ x*a for x in s.terms ], Val(:nosimp))
+*(a::CAtom, s::CSum) = s*a
 
 # atom‐level ×
 *(a::CAtom, b::CAtom)     = CAtom(crationalize(a.coeff*b.coeff), a.var_exponents .+ b.var_exponents)
@@ -73,7 +75,7 @@ end
 function *(a::CAtom, b::Number)  
     return CAtom(a.coeff*b, a.var_exponents)
 end
-*(a::CSum, b::Number)  = CSum([ x*b for x in a.terms ], Val{:nosimp}())
+*(a::CSum, b::Number)  = _CSum([ x*b for x in a.terms ], Val(:nosimp))
 *(a::CRational, b::Number) = CRational(a.numer*b, a.denom, Val{:nosimp}())
 function *(a::CProd, b::Number)
     return CProd(a.coeff*b, a.terms, Val{:nosimp}())
@@ -91,8 +93,9 @@ multiply_one(a::CRational, b::Int) = (a.numer * b) / (a.denom * b)
 # division
 /(a::CAtom, b::Number)  = CAtom(a.coeff/b, a.var_exponents)
 
-/(A::CSum, b::CAtom)      = CSum([ x/b for x in A.terms ])
+/(A::CSum, b::CAtom)      = _CSum([ x/b for x in A.terms ], Val(:nosimp))
 /(a::CAtom, b::CAtom)     = CAtom(a.coeff/b.coeff, a.var_exponents .- b.var_exponents)
+
 /(r::CRational, a::CAtom) = CRational(r.numer, r.denom*a)
 
 /(A::CSum, B::CSum)       = CRational(A, B)
@@ -106,15 +109,19 @@ multiply_one(a::CRational, b::Int) = (a.numer * b) / (a.denom * b)
 /(a::T1, b::T2) where {T1 <: CFunction, T2 <: CFunction} = CRational(a, b)#, Val{:nosimp}()) # Continue Here -> needs two variants 
 
 function /(a::CSum, n::Number) 
-    return CSum([ x/n for x in a.terms ], Val{:nosimp}())
+    @assert !iszero(n) "Cannot divide by zero"
+    return _CSum([ x/n for x in a.terms ], Val(:nosimp))
 end
 function /(a::CProd, n::Number) 
+    @assert !iszero(n) "Cannot divide by zero"
     return CProd(a.coeff/n, a.terms, Val{:nosimp}())
 end
 function /(a::CLog, n::Number) 
+    @assert !iszero(n) "Cannot divide by zero"
     return CLog(a.coeff/n, a.x, Val{:nosimp}())
 end
 function /(a::CExp, n::Number) 
+    @assert !iszero(n) "Cannot divide by zero"
     return CExp(a.coeff/n, a.x, Val{:nosimp}())
 end
 /(n::Number, a::T)  where T <: CFunction  = CAtom(n, zeros(Int, dims(a))) / a
@@ -132,7 +139,7 @@ end
 
 # exponentiation 
 ^(A::CAtom, n::Int) = CAtom(A.coeff^n, A.var_exponents .* n)
-^(A::CSum, n::Int) = CSum([ x^n for x in A.terms ])
+^(A::CSum, n::Int) = _CSum([ x^n for x in A.terms ])
 ^(a::CRational, n::Int) = CRational(a.numer^n, a.denom^n)
 ^(a::CProd, n::Int) = CProd(a.coeff^n, [ x^n for x in A.terms ])
 ^(a::CExp, n::Int) = CExp(a.coeff^n, a.x * n)
@@ -140,14 +147,14 @@ end
 
 import Base: inv 
 inv(a::CAtom) = CAtom(a.coeff^(-1), a.var_exponents .*(-1))
-inv(a::CSum) = CSum(inv.(a.terms))
+inv(a::CSum) = _CSum(inv.(a.terms))
 inv(a::CRational) = CRational(inv(a.numer), inv(a.denom)) 
 
 import Base: adjoint, conj 
 function adjoint(f::CAtom)::CAtom
     return CAtom(conj(f.coeff), copy(f.var_exponents))
 end
-adjoint(f::CSum) = CSum([adjoint(t) for t in f.terms])
+adjoint(f::CSum) = _CSum([adjoint(t) for t in f.terms])
 adjoint(f::CRational) = CRational(adjoint(f.numer), adjoint(f.denom))
 conj(f::CFunction) = adjoint(f)
 

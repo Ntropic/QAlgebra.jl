@@ -1,4 +1,4 @@
-export is_numeric, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, where_acting
+export is_numeric, is_t_var, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, contains_which_t_indexes, max_moment_of_terms, where_acting
 export is_unitary, is_hermitian, substitution_properties_fulfilled, same_statespace, statespace_check
 """ 
     is_numeric(t::QTerm, qspace::StateSpace) -> Bool
@@ -43,6 +43,24 @@ function is_numeric(expr::QExpr)::Bool
     return all(is_numeric, terms)
 end
 
+function is_t_var(t::QExpr)::Bool
+    # must be a single QAtomProduct term that is numeric
+    if length(t) != 1 || !(t.terms[1] isa QAtomProduct) || !is_numeric(t.terms[1])
+        return false
+    end
+
+    coeff_fun = t.terms[1].coeff_fun
+    # coeff_fun must be a CAtom with unit coefficient
+    if !isa(coeff_fun, CAtom) || !isone(coeff_fun.coeff)
+        return false
+    end
+
+    inds = findall(!=(0), coeff_fun.var_exponents)
+    # must be exactly one variable with exponent 1
+    return length(inds) == 1 &&
+           coeff_fun.var_exponents[inds[1]] == 1 &&
+           t.statespace.vars[inds[1]].is_t
+end
 
 """
     contains_non_simple_QObj(q::QObj) -> Bool 
@@ -129,6 +147,21 @@ function contains_c_indexes(q::M, indexes::Vector{Int})::Bool where M <: QMultiC
 end
 contains_c_indexes(q::QSum, indexes::Vector{Int})::Bool = any(q -> contains_c_indexes(q, indexes), q.expr) 
 contains_c_indexes(q::diff_QEq, indexes::Vector{Int})::Bool = contains_c_indexes(q.expr, indexes)
+
+
+contains_t_indexes(q::QExpr, indexes::Vector{Int})::Bool = any(q -> contains_t_indexes(q, indexes), q.terms) 
+contains_t_indexes(q::QAtom, indexes::Vector{Int}) = error("Cannot be applied to QAtom")
+function contains_t_indexes(q::QAtomProduct, indexes::Vector{Int})::Bool 
+    return contains_c_indexes(q.coeff_fun, indexes) || any(x -> x.time_index != -1, q.expr)
+end
+function contains_t_indexes(q::T, indexes::Vector{Int})::Bool where T <: QComposite 
+    return contains_c_indexes(q.coeff_fun, indexes) || contains_t_indexes(q.expr, indexes)
+end
+function contains_t_indexes(q::M, indexes::Vector{Int})::Bool where M <: QMultiComposite
+    return contains_c_indexes(q.coeff_fun) || any(t -> contains_t_indexes(x, indexes), q.expr)
+end
+contains_t_indexes(q::QSum, indexes::Vector{Int})::Bool = any(q -> contains_t_indexes(q, indexes), q.expr) 
+contains_t_indexes(q::diff_QEq, indexes::Vector{Int})::Bool = contains_t_indexes(q.expr, indexes) || contains_t_indexes(q.left_hand_side)
 function get_t_indexes(param_info::ParameterInfo, t_ind::Int=-1)::Vector{Int} 
     if t_ind == -1 
         return param_info.indexes_of_t
@@ -136,15 +169,45 @@ function get_t_indexes(param_info::ParameterInfo, t_ind::Int=-1)::Vector{Int}
         return param_info.indexes_by_t_index[t_ind+1]
     end
 end
+
 """ 
     contains_time(q::QObj) -> Bool 
 
 Checks is the quantum object depends on time. Doesn't work for QAtoms!
 """
-contains_time(q::T, t_ind=-1) where T<: QAtom = error("Cannot get time indexes from QAtom. Try QComposites, QExpr, of diff_QEq instead. ")
-function contains_time(q::T; t_ind=-1)::Bool where T <: QObj
+@inline contains_time(q::T, t_ind=0) where T<:QAtom = error("Cannot get time indexes from QAtom. Try QComposites, QExpr, of diff_QEq instead. ")
+
+@inline function contains_time(q::T, t_ind=0)::Bool where T <: QObj
     indexes = get_t_indexes(q.statespace.param_info, t_ind)
-    return contains_c_indexes(q, indexes)
+    return contains_t_indexes(q, indexes)
+end
+""" 
+    contains_which_t_indexes(q::QObj) -> Vector{Bool} 
+
+Returns a Boolean Vector of whether each time index is present in the QObj, 
+with time indexes starting at `t_index=0` and ending at `t_index=max_t_ind`  
+"""
+contains_which_t_indexes(q::T) where T<:QAtom = error("Cannot get time indexes from QAtom. Try QComposites, QExpr, of diff_QEq instead. ")
+function contains_which_t_indexes(q::T)::Vector{Bool} where T <: QObj
+    max_t_index = q.statespace.max_t_ind
+    return [contains_t_indexes(q, get_t_indexes(q.statespace.param_info, t_ind)) for t_ind in 0:max_t_index] 
+end
+
+@inline function max_moment_of_terms(q::QAtomProduct)::Int
+    @assert length(q.expr) == 1 && isa(q.expr[1], QTerm) "QAtomProduct can only contain a single QTerm to specify moment of operator."
+    return sum(where_acting(q.expr[1], q.statespace))
+end 
+@inline function max_moment_of_terms(q::T)::Int where T <: QComposite
+    return max_moment_of_terms(q.expr)
+end
+@inline function max_moment_of_terms(q::T)::Int where T <: QMultiComposite
+    return maximum(max_moment_of_terms.(x) for x in q.expr)
+end
+@inline function max_moment_of_terms(q::QExpr)::Int 
+    return maximum(max_moment_of_terms(t) for t in q.terms)
+end
+@inline function max_moment_of_terms(q::diff_QEq)::Int 
+    return max(max_moment_of_terms(q.left_hand_side), max_moment_of_terms(q.expr))
 end
 
 ###################
@@ -340,7 +403,7 @@ function ==(a::QAbstract, b::QAbstract)
     return a.key_index == b.key_index && a.sub_index == b.sub_index && a.exponent == b.exponent && a.dag == b.dag && a.index_map == b.index_map && a.time_index == b.time_index
 end
 function ==(a::QAtomProduct, b::QAtomProduct)
-    return a.coeff_fun == b.coeff_fun && all([ai == bi for (ai, bi) in zip(a.expr, b.expr)])
+    return a.coeff_fun == b.coeff_fun && all([ai == bi for (ai, bi) in zip(a.expr, b.expr)]) && a.statespace == b.statespace
 end
 
 function ==(a::QExpr, b::QExpr)
@@ -353,13 +416,13 @@ function ==(a::QExpr, b::QExpr)
     return all([ai == bi for (ai, bi) in zip(a, b)])
 end
 function ==(a::QSum, b::QSum)
-    if a.element_indexes != b.element_indexes
-        return false
-    end
-    if a.subsystem_index != b.subsystem_index
+    if a.indexes != b.indexes
         return false
     end
     if a.neq != b.neq
+        return false
+    end
+    if a.statespace != b.statespace
         return false
     end
     return a.expr == b.expr

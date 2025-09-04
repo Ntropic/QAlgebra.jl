@@ -5,7 +5,7 @@ using ComplexRationals
 using ..QAlgebra: get_default, FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
 
 export CFunction, CAtom, CSum, CRational, CProd, CExp, CLog
-export isnumeric, coeff, var_exponents, depends_on_inds
+export isnumeric, coeff, var_exponents
 export contains_non_simple_CFunction
 
 import Base: copy, exp, log, length
@@ -75,26 +75,27 @@ Constructs a sum of `CFunction` terms.
 """
 struct CSum <: CFunction
     terms::Vector{CFunction}
-    function CSum(ts::AbstractVector{<:CFunction}) 
-        if length(ts) == 1
-            return ts[1]
-        end
-        for t in ts
-            if t isa CSum
-                error("Shouldn't have a CSum in a CSum!")  # remove this loop later on 
-            end
-        end
-        return simplify_CSum(ts)
+
+end
+function _CSum(ts::AbstractVector{<:CFunction}) 
+    if length(ts) == 1
+        return ts[1]
     end
-    function CSum(ts::AbstractVector{<:CFunction}, ::Val{:nosimp})
-        return new(ts)
+    for t in ts
+        if t isa CSum
+            error("Shouldn't have a CSum in a CSum!")  # remove this loop later on 
+        end
     end
+    return simplify_CSum(ts)
+end
+function _CSum(ts::AbstractVector{<:CFunction}, ::Val{:nosimp})
+    return CSum(ts)
 end
 coeff(x::CSum) = [ComplexRational(1,0,1)] #error("Sums don't have a coeff, you likely have a sum in a sum, this shouldn't happen. Please inform the developers. ")
 var_exponents(x::CSum) = error("Sums don't have var_exponents, you likely have a sum in a sum, this shouldn't happen. Please inform the developers. ")
 dims(q::CSum) = dims(q.terms[1])
 length(q::CSum) = length(q.terms)
-repartition(f::CSum, var_tuples::Vector{Tuple{Int, Int}}) = CSum(repartition.(f.terms, Ref(var_tuples)) )
+repartition(f::CSum, var_tuples::Vector{Tuple{Int, Int}}) = _CSum(repartition.(f.terms, Ref(var_tuples)) )
 
 
 struct CProd <: CFunction
@@ -132,7 +133,7 @@ struct CRational <: CFunction
         return simplify_CRational(numer, denom)
     end
     function CRational(numer::T, denom::S,  ::Val{:nosimp}) where {T <: CFunction, S <: CFunction}  
-        return new(copy(numer), copy(denom))
+        return new(numer, denom)
     end
 end
 coeff(x::CRational) = coeff(x.numer) #/coeff(x.denom)
@@ -280,52 +281,8 @@ length(p::CFunction)::Int = 1
 
 getindex(p::CSum, i::Int) = p.terms[i]
 iterate(p::CSum, state=1) = state > length(p.terms) ? nothing : (p.terms[state], state + 1)
-deleteat!(p::CSum, i::Int) = CSum(deleteat!(p.terms, i))
+deleteat!(p::CSum, i::Int) = _CSum(deleteat!(p.terms, i))
 reverse(q::CSum) = CSum(reverse(q.terms))
-
-""" 
-    depends_on_inds(cfun::CFunction, inds::Vector{Int})
-
-Returns true if the CFunction depends on the indices in inds. Checks if the function is non trivial first, 
-then if the components depend on the parameters specified by their indexes in inds.
-"""
-function depends_on_inds(cfun::CAtom, inds::Vector{Int})::Bool
-    if !iszero(cfun) 
-        return any(cfun.var_exponents[inds] .> 0)  # if any of the
-    else 
-        return false
-    end     
-end
-function depends_on_inds(cfun::CSum, inds::Vector{Int})
-    for i in eachindex(cfun.terms)
-        if depends_on_inds(cfun.terms[i], inds)
-            return true
-        end
-    end
-    return false
-end
-function depends_on_inds(cfun::CProd, inds::Vector{Int})
-    if !iszero(cfun)
-        for i in eachindex(cfun.terms)
-            if depends_on_inds(cfun.terms[i], inds)
-                return true
-            end
-        end
-        return false
-    else
-        return false
-    end
-end
-function depends_on_inds(cfun::CRational, inds::Vector{Int})
-    return depends_on_inds(cfun.numer, inds) || depends_on_inds(cfun.denom, inds)
-end 
-function depends_on_inds(cfun::Union{CExp, CLog}, inds::Vector{Int})
-    if !iszero(cfun)
-        return depends_on_inds(cfun.x, inds)
-    else
-        return false
-    end
-end
 
 """
     contains_non_simple_CFunction(c::CFunction) -> Bool 
