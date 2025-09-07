@@ -118,7 +118,7 @@ struct SubSpaceInfo
     
     outer_labels::Vector{String}               # Letters identifying outer subspaces
     inner_labels::Vector{Vector{String}}       # Letters identifying the inder subspaces 
-    inner_labels_flat::Vector{String}         # Letters identifying the inder subspaces flattened
+    param_names::Vector{String}         # Letters identifying the inder subspaces flattened
 
     subsystem_sizes::Vector{Int}                # How many inner subsystems in each other subsystem
     outer_ss_of_expanded::Vector{Int}          # Identify the outer subsystem for each expanded index
@@ -137,7 +137,7 @@ function SubSpaceInfo(outer_labels_symbols::Vector{Symbol}, inner_labels_symbols
     inner_labels_symbols_flat = vcat(inner_labels_symbols...)
     outer_labels = map(string, outer_labels_symbols)
     inner_labels = [string.(v) for v in inner_labels_symbols]
-    inner_labels_flat = map(string, inner_labels_symbols_flat)
+    param_names = map(string, inner_labels_symbols_flat)
     @assert length(outer_labels) == length(inner_labels)
     subsystem_sizes = Int[length(v) for v in inner_labels]
     @assert all(>=(1), subsystem_sizes) "Every subsystem must have at least one inner element."
@@ -172,7 +172,7 @@ function SubSpaceInfo(outer_labels_symbols::Vector{Symbol}, inner_labels_symbols
     end
     how_many_by_ensemble::Vector{Int} = [length(x) for x in ensemble_indexes]
     return SubSpaceInfo( outer_labels_symbols, inner_labels_symbols, inner_labels_symbols_flat, 
-                         outer_labels, inner_labels, inner_labels_flat, 
+                         outer_labels, inner_labels, param_names, 
                          subsystem_sizes, outer_ss_of_expanded, inner_ss_of_expanded, expanded_index_by_outer,
                          where_ensembles, ensemble_index_by_outer_index, how_many_by_ensemble, ensemble_indexes, of_time )
 end
@@ -242,7 +242,7 @@ end
 @inline inner(is::Vector{SubSpaceIndex}) = [inner(i) for i in is]
 @inline expanded(is::Vector{SubSpaceIndex}) = [expanded(i) for i in is]
 @inline Index2Symbol(i::SubSpaceIndex, info::SubSpaceInfo) =  info.inner_labels_symbols_flat[i.expanded]
-@inline Index2String(i::SubSpaceIndex, info::SubSpaceInfo) =  info.inner_labels_flat[i.expanded]
+@inline Index2String(i::SubSpaceIndex, info::SubSpaceInfo) =  info.param_names[i.expanded]
 @inline function Index2Ensemble(i::SubSpaceIndex, info::SubSpaceInfo) 
     ensemble = info.ensemble_index_by_outer_index[i.outer] # shouldn't be zero, otherwise not ensemble index
     @assert ensemble != 0 "index $i not an ensemble index" 

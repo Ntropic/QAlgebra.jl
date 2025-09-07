@@ -53,11 +53,12 @@ export get_default, set_flip_if_first_term_negative, set_do_braced, FLIP_IF_FIRS
 
 include("StringUtils.jl")
 using .StringUtils
-export symbol2formatted, str2sub, str2sup, brace, braket
+export symbol2formatted, str2sub, str2sup, brace, braket, indexes2str
 
 include("CFunctions.jl")
 using .CFunctions
 export CFunction, CAtom, CSum, CRational, CProd, CExp, CLog
+export CMatrix, CVector, CPower
 export repartition, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
 export isnumeric, coeff, var_exponents, expand
 export contains_non_simple_CFunction

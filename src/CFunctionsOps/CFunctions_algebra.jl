@@ -1,185 +1,387 @@
+############ CFunctions_algebra.jl (updated for new structs) ################
+import Base: +, -, *, /, ^, sqrt, ==, inv, adjoint, conj, transpose
+using ..CFunctions: CFunction, CAtom, CSum, CRational, CProd, CExp, CLog, CPower,
+                    CVector, CMatrix, _CSum, coeff, length, modify_expr, modify_exprs
+using ComplexRationals: ComplexRational, crationalize
+using ..CFunctions: CR_ZERO, CR_ONE
 
-import Base: +, -, *, /, ^, ==
+# -------- helpers -----------------------------------------------------------
+@inline pinfo(f::CFunction) = f.param_info
+@inline dims(f::CFunction)  = f.param_info.dims
 
-# addition always builds a flat sum
-+(a::T) where {T <: CFunction}  =  a 
-+(a::Ta, b::Tb) where {Ta <: CFunction, Tb <: CFunction}  = _CSum( vcat(_terms(a), _terms(b)))
-+(a::T, b::Number) where {T <: CFunction}  =  a+CAtom(b, zeros(Int, dims(a)))
-+(b::Number, a::T) where {T <: CFunction}  =  a+b
+@inline function _ensure_same_param_info(a::CFunction, b::CFunction)
+    if pinfo(a) !== pinfo(b)
+        error("ParameterInfo mismatch between operands.")
+    end
+end
 
-# unary minus & subtraction
-import Base: -, +
+@inline function num_atom(f::CFunction, n::Number)
+    CAtom(pinfo(f), crationalize(n + 0im), zeros(Int, dims(f)))
+end
+@inline zero_atom(f::CFunction) = CAtom(pinfo(f), CR_ZERO, zeros(Int, dims(f)))
+@inline one_atom(f::CFunction)  = CAtom(pinfo(f), CR_ONE , zeros(Int, dims(f)))
 
--(a::CAtom) = CAtom(-a.coeff, a.var_exponents)
--(s::CSum) = _CSum([ -t for t in s.terms ] , Val(:nosimp))
--(r::CRational) = CRational(-r.numer, r.denom, Val{:nosimp}())
--(a::CProd) = CProd(-a.coeff, a.terms, Val{:nosimp}())
--(a::CExp) = CExp(-a.coeff, a.x, Val{:nosimp}())
--(a::CLog) = CLog(-a.coeff, a.x, Val{:nosimp}())
+# Clean accessors for “terms”
+_terms(f::CFunction) = [f]
+_terms(s::CSum)      = s.expr
+
+# -------- addition ----------------------------------------------------------
++(a::T) where {T<:CFunction} = a
+
+function +(a::Ta, b::Tb) where {Ta<:CFunction, Tb<:CFunction}
+    _ensure_same_param_info(a, b)
+    _CSum(pinfo(a), vcat(_terms(a), _terms(b)))
+end
+
++(a::T, b::Number) where {T<:CFunction} = a + num_atom(a, b)
++(b::Number, a::T) where {T<:CFunction} = a + b
+
+function +(u::CVector, v::CVector)
+    u.row == v.row || error("Vector orientations must match for addition.")
+    length(u.exprs) == length(v.exprs) || error("Vector lengths must match.")
+    _ensure_same_param_info(u.exprs[1], v.exprs[1])
+    CVector(pinfo(u), [ u.coeff*ui + v.coeff*vi for (ui,vi) in zip(u.exprs, v.exprs) ]; row=u.row)
+end
+
+function +(A::CMatrix, B::CMatrix)
+    size(A.entries) == size(B.entries) || error("Matrix sizes must match for addition.")
+    m, n = size(A.entries)
+    _ensure_same_param_info(A.entries[1,1], B.entries[1,1])
+    CMatrix(pinfo(A), [ A.coeff*A.entries[i,j] + B.coeff*B.entries[i,j] for i in 1:m, j in 1:n ])
+end
+
+# -------- unary minus & subtraction ----------------------------------------
+-(a::CAtom) = CAtom(pinfo(a), -a.coeff, a.var_exponents)
+-(s::CSum)  = _CSum(pinfo(s), [ -t for t in s.expr ], Val(:nosimp))
+-(r::CRational) = CRational(pinfo(r), -r.numer, r.denom, Val(:nosimp))
+-(a::CProd) = CProd(pinfo(a), -a.coeff, a.expr, Val(:nosimp))
+-(a::CExp)  = CExp(pinfo(a), -a.coeff, a.expr, Val(:nosimp))
+-(a::CLog)  = CLog(pinfo(a), -a.coeff, a.expr, Val(:nosimp))
+-(p::CPower)= CPower(p.param_info, -p.coeff, p.expr, p.exponent, Val(:nosimp))
+-(v::CVector) = CVector(pinfo(v), -v.coeff, v.exprs; row=v.row)
+-(M::CMatrix) = CMatrix(pinfo(M), -M.coeff, M.entries)
+
 -(a::CFunction, b::CFunction) = a + (-b)
--(a::CFunction, b::Number)  = a + CAtom(-b, zeros(Int, dims(a)))
--(b::Number, a::CFunction)  = CAtom(b, zeros(Int, dims(a))) - a
+-(a::CFunction, b::Number)    = a + num_atom(a, -b)
+-(b::Number, a::CFunction)    = num_atom(a, b) - a
 
-# distribute * over sums
-*(a::CSum, b::CSum) = _CSum([ x*y for x in a.terms for y in b.terms ])
-*(s::CSum, a::T) where {T<:CFunction}   = _CSum([ x*a for x in s.terms ])
-*(a::T, s::CSum) where {T<:CFunction}   = s*a
-*(s::CSum, a::CAtom) = _CSum([ x*a for x in s.terms ], Val(:nosimp))
-*(a::CAtom, s::CSum) = s*a
+function -(u::CVector, v::CVector)
+    u.row == v.row || error("Vector orientations must match for subtraction.")
+    length(u.exprs) == length(v.exprs) || error("Vector lengths must match.")
+    _ensure_same_param_info(u.exprs[1], v.exprs[1])
+    CVector(pinfo(u), [ u.coeff*ui - v.coeff*vi for (ui,vi) in zip(u.exprs, v.exprs) ]; row=u.row)
+end
 
-# atom‐level ×
-*(a::CAtom, b::CAtom)     = CAtom(crationalize(a.coeff*b.coeff), a.var_exponents .+ b.var_exponents)
-*(a::T, r::CRational) where {T<:CFunction} = CRational(a*r.numer, r.denom)
-*(r::CRational, a::T) where {T<:CFunction} = CRational(r.numer*a, r.denom)
-*(a::CRational, b::CRational) = CRational(a.numer*b.numer, a.denom*b.denom)
+function -(A::CMatrix, B::CMatrix)
+    size(A.entries) == size(B.entries) || error("Matrix sizes must match for subtraction.")
+    m, n = size(A.entries)
+    _ensure_same_param_info(A.entries[1,1], B.entries[1,1])
+    CMatrix(pinfo(A), [ A.coeff*A.entries[i,j] - B.coeff*B.entries[i,j] for i in 1:m, j in 1:n ])
+end
 
-*(a::CSum, b::CRational) = CRational(a*b.numer, b.denom)
-*(b::CRational, a::CSum) = CRational(a*b.numer, b.denom)
-function *(a::Ta, b::Tb) where {Ta <: CFunction, Tb <: CFunction}  
-    ca = coeff(a)
-    cb = coeff(b)
+# -------- multiplication (distribute over sums) -----------------------------
+*(a::CSum, b::CSum) = _CSum(pinfo(a), [ x*y for x in a.expr for y in b.expr ])
+*(s::CSum, a::CFunction) = _CSum(pinfo(s), [ x*a for x in s.expr ])
+*(a::CFunction, s::CSum) = s*a
+
+# Scale CPower by a Number
+*(p::CPower, k::Number) = CPower(p.param_info, p.coeff*k, p.expr, p.exponent, Val(:nosimp))
+*(k::Number, p::CPower) = p * k
+
+# atom-level ×
+function *(a::CAtom, b::CAtom)
+    _ensure_same_param_info(a, b)
+    CAtom(pinfo(a), crationalize(a.coeff*b.coeff), a.var_exponents .+ b.var_exponents)
+end
+
+# Rational interactions
+*(a::CFunction, r::CRational) = CRational(pinfo(a), a*r.numer, r.denom)
+*(r::CRational, a::CFunction) = CRational(pinfo(a), r.numer*a, r.denom)
+*(a::CRational, b::CRational) = CRational(pinfo(a), a.numer*b.numer, a.denom*b.denom)
+
+# generic multiply when both are non-sums
+function *(a::Ta, b::Tb) where {Ta<:CFunction, Tb<:CFunction}
+    _ensure_same_param_info(a, b)
+    ca = coeff(a); cb = coeff(b)
     if length(ca) != 1 || length(cb) != 1
-        throw(ArgumentError("Cannot multiply two CFunctions with more than one coefficient (this function shouldn't be called by CSum)."))
+        throw(ArgumentError("Internal: multiply() called on multi-coeff CFunctions."))
     end
-    if !(iszero(cb[1]) || iszero(ca[1])) 
-        return CProd(ca[1]*cb[1], sort!([a/ca[1], b/cb[1]]))
+    if iszero(cb[1]) || iszero(ca[1])
+        return zero_atom(a)
     else
-        return CAtom(ComplexRational(0,0,1), zeros(Int, dims(a)))
+        # Factor out coefficients into CProd
+        return CProd(pinfo(a), ca[1]*cb[1], sort!([a/ca[1], b/cb[1]]))
     end
 end
-function *(a::CProd, b::T) where T <: CFunction 
-    ca = coeff(a)
+
+function *(a::CProd, b::CFunction)
+    _ensure_same_param_info(a, b)
     cb = coeff(b)
-    if !iszero(cb[1])
-        return CProd(ca[1]*cb[1], sort!(vcat(a.terms, b/cb[1])))
+    if iszero(cb[1])
+        return zero_atom(a)
     else
-        return CAtom(cb[1], zeros(Int, dims(a)))
+        return CProd(pinfo(a), a.coeff*cb[1], sort!(vcat(a.expr, b/cb[1])))
     end
 end
-*(a::T, b::CProd) where T <: CFunction = b*a 
-*(a::CSum, b::CProd) = CProd(b.coeff, vcat(a, b.terms))
-*(b::CProd, a::CSum) = CProd(b.coeff, vcat(a, b.terms))
-*(a::CProd, b::CProd) = CProd(a.coeff*b.coeff, sort!(vcat(a.terms, b.terms)))
-*(a::CExp, b::CExp) = CExp(a.coeff*b.coeff, a.x+b.x)
-function *(a::CRational, b::CProd) 
-    ind = findfirst(x -> isa(x, Union{CAtom, CSum, CRational}), b.terms)
+*(a::CFunction, b::CProd) = b*a
+
+*(a::CSum, b::CProd) = _CSum(pinfo(a), [ x*b for x in a.expr ])
+*(b::CProd, a::CSum) = a*b
+
+*(a::CProd, b::CProd) = CProd(pinfo(a), a.coeff*b.coeff, sort!(vcat(a.expr, b.expr)))
+
+# Exp/Log
+*(a::CExp, b::CExp) = CExp(pinfo(a), a.coeff*b.coeff, a.expr + b.expr)
+
+# CRational × CProd: push multiplication into first “scalar-like” term if present
+function *(a::CRational, b::CProd)
+    ind = findfirst(x -> x isa Union{CAtom, CSum, CRational}, b.expr)
     if ind === nothing
-        return CRational(a.numer*b, a.denom) 
+        return CRational(pinfo(a), a.numer*b, a.denom)
     end
-    term_ind = b.terms[ind] * a
-    return CProd(b.coeff , vcat(b.terms[1:ind-1], term_ind, b.terms[ind+1:end]))
-end 
+    term_ind = b.expr[ind] * a
+    CProd(pinfo(b), b.coeff, vcat(b.expr[1:ind-1], term_ind, b.expr[ind+1:end]))
+end
 *(a::CProd, b::CRational) = b * a
 
-# number 
-function *(a::CAtom, b::Number)  
-    return CAtom(a.coeff*b, a.var_exponents)
+# Number scaling for various types
+*(a::CAtom, b::Number) = CAtom(pinfo(a), a.coeff*b, a.var_exponents)
+*(s::CSum, b::Number)  = _CSum(pinfo(s), [ x*b for x in s.expr ])
+*(a::CRational, b::Number) = CRational(pinfo(a), a.numer*b, a.denom, Val(:nosimp))
+*(a::CProd, b::Number) = CProd(pinfo(a), a.coeff*b, a.expr, Val(:nosimp))
+*(a::CLog,  b::Number) = CLog(pinfo(a),  b*a.coeff, a.expr, Val(:nosimp))
+*(a::CExp,  b::Number) = CExp(pinfo(a),  b*a.coeff, a.expr, Val(:nosimp))
+*(b::Number, a::CFunction) = a * b
+
+# Vector/Matrix scaling and mixing
+*(k::Number, v::CVector) = CVector(pinfo(v), v.coeff*k, v.exprs; row=v.row)
+*(v::CVector, k::Number) = k * v
+*(s::CFunction, v::CVector) = CVector(pinfo(v), v.coeff, [s * x for x in v.exprs]; row=v.row)
+*(v::CVector, s::CFunction) = CVector(pinfo(v), v.coeff, [x * s for x in v.exprs]; row=v.row)
+
+*(k::Number, A::CMatrix) = CMatrix(pinfo(A), A.coeff*k, A.entries)
+*(A::CMatrix, k::Number) = k * A
+*(s::CFunction, A::CMatrix) = CMatrix(pinfo(A), A.coeff, [s * x for x in A.entries])
+*(A::CMatrix, s::CFunction) = CMatrix(pinfo(A), A.coeff, [x * s for x in A.entries])
+
+function *(u::CVector, v::CVector)
+    mu, nu = size(u); mv, nv = size(v)
+    if mu == 1 && nv == 1 && nu == mv
+        s = _CSum(pinfo(u), [ u.exprs[i] * v.exprs[i] for i in 1:nu ])
+        return s * (u.coeff * v.coeff)
+    elseif nu == 1 && mv == 1
+        n = mu; m = nv
+        return CMatrix(pinfo(u), u.coeff * v.coeff,
+                       [ u.exprs[i] * v.exprs[j] for i in 1:n, j in 1:m ])
+    else
+        error("Vector * Vector mismatch: size(u)=$(size(u)), size(v)=$(size(v)).")
+    end
 end
-*(a::CSum, b::Number)  = _CSum([ x*b for x in a.terms ], Val(:nosimp))
-*(a::CRational, b::Number) = CRational(a.numer*b, a.denom, Val{:nosimp}())
-function *(a::CProd, b::Number)
-    return CProd(a.coeff*b, a.terms, Val{:nosimp}())
+
+function *(A::CMatrix, v::CVector)
+    m, n = size(A.entries)
+    size(v) == (n, 1) || error("A*v mismatch: size(A)=($m,$n), size(v)=$(size(v)).")
+    CVector(pinfo(A), A.coeff * v.coeff,
+            [ _CSum(pinfo(A), [ A.entries[i,j] * v.exprs[j] for j in 1:n ]) for i in 1:m ];
+            row=false)
 end
-function *(a::CLog, b::Number)
-    return CLog(b*a.coeff, a.x, Val{:nosimp}())
+
+function *(u::CVector, A::CMatrix)
+    m, n = size(A.entries)
+    size(u) == (1, m) || error("u*A mismatch: size(u)=$(size(u)), size(A)=($m,$n).")
+    CVector(pinfo(A), u.coeff * A.coeff,
+            [ _CSum(pinfo(A), [ u.exprs[i] * A.entries[i,j] for i in 1:m ]) for j in 1:n ];
+            row=true)
 end
-function *(a::CExp, b::Number)
-    return CExp(b*a.coeff, a.x, Val{:nosimp}())
+
+function *(A::CMatrix, B::CMatrix)
+    m, n = size(A.entries); n2, p = size(B.entries)
+    n == n2 || error("Inner dimensions must match for matrix multiplication.")
+    CMatrix(pinfo(A), A.coeff * B.coeff,
+            [ _CSum(pinfo(A), [ A.entries[i,k] * B.entries[k,j] for k in 1:n ])
+              for i in 1:m, j in 1:p ])
 end
-*(b::Number, a::T) where T <: CFunction = a * b
 
-multiply_one(a::CRational, b::Int) = (a.numer * b) / (a.denom * b)
+# -------- Hadamard (broadcasted * ) ----------------------------------------
+# Helpers
+_check_vec_same_shape(u::CVector, v::CVector) = (u.row == v.row && length(u.exprs) == length(v.exprs)) ||
+    error("Hadamard requires same vector orientation and length.")
 
-# division
-/(a::CAtom, b::Number)  = CAtom(a.coeff/b, a.var_exponents)
+_hadamard(u::CVector, v::CVector) = begin
+    _check_vec_same_shape(u, v)
+    CVector(pinfo(u), u.coeff * v.coeff, [ ui * vi for (ui, vi) in zip(u.exprs, v.exprs) ]; row=u.row)
+end
 
-/(A::CSum, b::CAtom)      = _CSum([ x/b for x in A.terms ], Val(:nosimp))
-/(a::CAtom, b::CAtom)     = CAtom(a.coeff/b.coeff, a.var_exponents .- b.var_exponents)
+_hadamard(A::CMatrix, B::CMatrix) = begin
+    size(A.entries) == size(B.entries) || error("Hadamard requires same matrix size.")
+    m, n = size(A.entries)
+    CMatrix(pinfo(A), A.coeff * B.coeff, [ A.entries[i,j] * B.entries[i,j] for i in 1:m, j in 1:n ])
+end
 
-/(r::CRational, a::CAtom) = CRational(r.numer, r.denom*a)
+Base.Broadcast.broadcasted(::typeof(*), u::CVector, v::CVector) = _hadamard(u, v)
+Base.Broadcast.broadcasted(::typeof(*), v::CVector, k::Number) = CVector(pinfo(v), v.coeff * k, v.exprs; row=v.row)
+Base.Broadcast.broadcasted(::typeof(*), k::Number, v::CVector) = CVector(pinfo(v), v.coeff * k, v.exprs; row=v.row)
+Base.Broadcast.broadcasted(::typeof(*), v::CVector, s::CFunction) = CVector(pinfo(v), v.coeff, [ x * s for x in v.exprs ]; row=v.row)
+Base.Broadcast.broadcasted(::typeof(*), s::CFunction, v::CVector) = CVector(pinfo(v), v.coeff, [ s * x for x in v.exprs ]; row=v.row)
 
-/(A::CSum, B::CSum)       = CRational(A, B)
-/(A::CAtom, B::CSum)      = CRational(A, B)
+Base.Broadcast.broadcasted(::typeof(*), A::CMatrix, B::CMatrix) = _hadamard(A, B)
+Base.Broadcast.broadcasted(::typeof(*), A::CMatrix, k::Number) = CMatrix(pinfo(A), A.coeff * k, A.entries)
+Base.Broadcast.broadcasted(::typeof(*), k::Number, A::CMatrix) = CMatrix(pinfo(A), A.coeff * k, A.entries)
+Base.Broadcast.broadcasted(::typeof(*), A::CMatrix, s::CFunction) = CMatrix(pinfo(A), A.coeff, [ x * s for x in A.entries ])
+Base.Broadcast.broadcasted(::typeof(*), s::CFunction, A::CMatrix) = CMatrix(pinfo(A), A.coeff, [ s * x for x in A.entries ])
 
-/(a::CAtom, r::CRational) = CRational(a*r.denom, r.numer)
-/(a::CRational, b::CRational) = CRational(a.numer*b.denom, a.denom*b.numer)
-/(a::CRational, b::CSum)  = CRational(a.numer, a.numer*b)
-/(a::CSum, b::CRational)  = CRational(a*b.denom, b.numer)
-/(a::CRational, b::Number)  = CRational(a.numer, a.denom*b, Val{:nosimp}())
-/(a::T1, b::T2) where {T1 <: CFunction, T2 <: CFunction} = CRational(a, b)#, Val{:nosimp}()) # Continue Here -> needs two variants 
+# -------- division ----------------------------------------------------------
+/(a::CAtom, b::Number) = CAtom(pinfo(a), a.coeff/b, a.var_exponents)
 
-function /(a::CSum, n::Number) 
+function /(A::CSum, b::CAtom)
+    _CSum(pinfo(A), [ x/b for x in A.expr ])
+end
+
+/(a::CAtom, b::CAtom) = begin
+    _ensure_same_param_info(a, b)
+    CAtom(pinfo(a), a.coeff/b.coeff, a.var_exponents .- b.var_exponents)
+end
+
+/(r::CRational, a::CAtom) = CRational(pinfo(r), r.numer, r.denom*a)
+
+# generic to rational
+/(A::CSum, B::CSum)   = CRational(pinfo(A), A, B)
+/(A::CAtom, B::CSum)  = CRational(pinfo(A), A, B)
+#/ fallback for two CFunctions:
+(/)(a::T1, b::T2) where {T1<:CFunction, T2<:CFunction} = CRational(pinfo(a), a, b)
+
+# rational & sums
+/(a::CAtom, r::CRational)      = CRational(pinfo(a), a*r.denom, r.numer)
+(/)(a::CRational, b::CRational)= CRational(pinfo(a), a.numer*b.denom, a.denom*b.numer)
+(/)(a::CRational, b::CSum)     = CRational(pinfo(a), a.numer, a.denom*b)
+(/)(a::CSum, b::CRational)     = CRational(pinfo(a), a*b.denom, b.numer)
+(/)(a::CRational, b::Number)   = CRational(pinfo(a), a.numer, a.denom*b)
+
+# Numbers
+function /(a::CSum, n::Number)
     @assert !iszero(n) "Cannot divide by zero"
-    return _CSum([ x/n for x in a.terms ], Val(:nosimp))
+    _CSum(pinfo(a), [ x/n for x in a.expr ])
 end
-function /(a::CProd, n::Number) 
+function /(a::CProd, n::Number)
     @assert !iszero(n) "Cannot divide by zero"
-    return CProd(a.coeff/n, a.terms, Val{:nosimp}())
+    CProd(pinfo(a), a.coeff/n, a.expr, Val(:nosimp))
 end
-function /(a::CLog, n::Number) 
+function /(a::CLog, n::Number)
     @assert !iszero(n) "Cannot divide by zero"
-    return CLog(a.coeff/n, a.x, Val{:nosimp}())
+    CLog(pinfo(a), a.coeff/n, a.expr, Val(:nosimp))
 end
-function /(a::CExp, n::Number) 
+function /(a::CExp, n::Number)
     @assert !iszero(n) "Cannot divide by zero"
-    return CExp(a.coeff/n, a.x, Val{:nosimp}())
+    CExp(pinfo(a), a.coeff/n, a.expr, Val(:nosimp))
 end
-/(n::Number, a::T)  where T <: CFunction  = CAtom(n, zeros(Int, dims(a))) / a
+/(n::Number, a::T) where {T<:CFunction} = num_atom(a, n) / a
 
-function /(a::CProd, b::CAtom) 
-    ind = findfirst(x -> isa(x, Union{CAtom, CSum, CRational}), a.terms)
+function /(a::CProd, b::CAtom)
+    _ensure_same_param_info(a, b)
+    ind = findfirst(x -> x isa Union{CAtom, CSum, CRational}, a.expr)
     if ind === nothing
-        return CRational(a, b, Val{:nosimp}()) 
+        return CRational(pinfo(a), a, b, Val(:nosimp))
     end
     cb = b.coeff
-    term_ind = a.terms[ind] / b * cb
-    return CProd(a.coeff / cb, vcat(a.terms[1:ind-1], term_ind, a.terms[ind+1:end]))
-end 
+    term_ind = a.expr[ind] / b * cb
+    CProd(pinfo(a), a.coeff / cb, vcat(a.expr[1:ind-1], term_ind, a.expr[ind+1:end]))
+end
 
+/(v::CVector, k::Number) = CVector(pinfo(v), v.coeff / k, v.exprs; row=v.row)
+/(v::CVector, s::CFunction) = CVector(pinfo(v), v.coeff, [x / s for x in v.exprs]; row=v.row)
+/(A::CMatrix, k::Number) = CMatrix(pinfo(A), A.coeff / k, A.entries)
+/(A::CMatrix, s::CFunction) = CMatrix(pinfo(A), A.coeff, [x / s for x in A.entries])
 
-# exponentiation 
-^(A::CAtom, n::Int) = CAtom(A.coeff^n, A.var_exponents .* n)
-^(A::CSum, n::Int) = _CSum([ x^n for x in A.terms ])
-^(a::CRational, n::Int) = CRational(a.numer^n, a.denom^n)
-^(a::CProd, n::Int) = CProd(a.coeff^n, [ x^n for x in A.terms ])
-^(a::CExp, n::Int) = CExp(a.coeff^n, a.x * n)
-^(a::CLog, n::Int) = error("Cannot take the power of a logarithm. Waiting to implement CPower type for this.")
+# CPower / number
+/(p::CPower, k::Number) = CPower(p.param_info, p.coeff/k, p.expr, p.exponent, Val(:nosimp))
 
-import Base: inv 
-inv(a::CAtom) = CAtom(a.coeff^(-1), a.var_exponents .*(-1))
-inv(a::CSum) = _CSum(inv.(a.terms))
-inv(a::CRational) = CRational(inv(a.numer), inv(a.denom)) 
+# -------- exponentiation ----------------------------------------------------
+^(x::CFunction, q::Rational{Int}) = CPower(pinfo(x), x, q)
+^(x::CFunction, n::Int)           = CPower(pinfo(x), x, n//1)
 
-import Base: adjoint, conj 
+^(A::CAtom, n::Int) = CAtom(pinfo(A), A.coeff^n, A.var_exponents .* n)
+^(a::CRational, n::Int) = CRational(pinfo(a), a.numer^n, a.denom^n)
+^(a::CProd, n::Int) = CProd(pinfo(a), a.coeff^n, [ x^n for x in a.expr ])
+^(a::CExp, n::Int)  = CExp(pinfo(a), a.coeff^n, a.expr * n)
+
+function ^(p::CPower, n::Int)
+    n >= 0 && return CPower(p.param_info, p.coeff^n, p.expr, p.exponent*n, Val(:nosimp))
+    # negative: return 1 / p^(-n)
+    return CRational(p.param_info, one_atom(p), p^(-n))
+end
+
+function ^(s::CSum, n::Int)
+    if n < 0
+        return CRational(pinfo(s), one_atom(s), s^(-n))
+    elseif n == 0
+        return one_atom(s)
+    elseif n == 1
+        return s
+    else
+        result = s
+        for _ in 2:n
+            result = expand_prod(result, s)
+        end
+        return result
+    end
+end
+
+# Helper: distributive law for sums
+expand_prod(a::CSum, b::CSum) = _CSum(pinfo(a), vcat([x*y for x in a.expr, y in b.expr]...))
+expand_prod(a::CSum, b::CFunction) = _CSum(pinfo(a), [ x*b for x in a.expr ])
+expand_prod(a::CFunction, b::CSum) = _CSum(pinfo(b), [ a*y for y in b.expr ])
+
+# -------- roots -------------------------------------------------------------
+include("ComplexRationals_sqrt.jl")
+sqrt(x::CFunction) = CPower(pinfo(x), x, 1//2)
+function sqrt(x::CAtom)
+    if has_rational_sqrt(x.coeff) && all(e -> e % 2 == 0, x.var_exponents)
+        return CAtom(pinfo(x), principal_sqrt(x.coeff), x.var_exponents .÷ 2)
+    else
+        return CPower(pinfo(x), x, 1//2)
+    end
+end
+
+# -------- inverses & adjoints ----------------------------------------------
+inv(a::CAtom) = CAtom(pinfo(a), inv(a.coeff), a.var_exponents .* (-1))
+inv(a::CSum)  = CRational(pinfo(a), one_atom(a), a)
+inv(a::CRational) = CRational(pinfo(a), inv(a.numer), inv(a.denom))
+inv(p::CPower) = CPower(p.param_info, inv(p.coeff), p.expr, -p.exponent, Val(:nosimp))
+
 function adjoint(f::CAtom)::CAtom
-    return CAtom(conj(f.coeff), copy(f.var_exponents))
+    CAtom(pinfo(f), conj(f.coeff), copy(f.var_exponents))
 end
-adjoint(f::CSum) = _CSum([adjoint(t) for t in f.terms])
-adjoint(f::CRational) = CRational(adjoint(f.numer), adjoint(f.denom))
-conj(f::CFunction) = adjoint(f)
+adjoint(f::CSum)      = _CSum(pinfo(f), [adjoint(t) for t in f.expr])
+adjoint(f::CRational) = CRational(pinfo(f), adjoint(f.numer), adjoint(f.denom))
+adjoint(p::CPower)    = CPower(p.param_info, conj(p.coeff), adjoint(p.expr), p.exponent, Val(:nosimp))
+conj(f::CFunction)    = adjoint(f)
 
-function ==(a::S, b::T) where {S <: CFunction, T <: CFunction}
-    return false 
-end
-function ==(a::S, b::S) where S <: CFunction
-    error("Equality not implemented for type $S")
-end
-function ==(a::CAtom, b::CAtom)
-    return (a.coeff == b.coeff && a.var_exponents == b.var_exponents)
-end
-function ==(a::CSum, b::CSum)
-    return length(a) == length(b) && a.terms == b.terms
-end
-function ==(a::CRational, b::CRational)
-    return (a.numer == b.numer && a.denom == b.denom)
-end
-function ==(a::CProd, b::CProd)
-    return length(a.terms) == length(b.terms) && a.coeff == b.coeff && a.terms == b.terms
-end
-function ==(a::CExp, b::CExp)
-    return a.coeff == b.coeff && a.x == b.x 
-end
-function ==(a::CLog, b::CLog) 
-    return a.coeff == b.coeff && a.x == b.x 
-end
+transpose(v::CVector) = CVector(pinfo(v), v.coeff, v.exprs; row = !v.row)
+adjoint(v::CVector)   = CVector(pinfo(v), conj(v.coeff), adjoint.(v.exprs); row = !v.row)
+conj(v::CVector)      = CVector(pinfo(v), conj(v.coeff), adjoint.(v.exprs); row = v.row)
 
+transpose(A::CMatrix) = CMatrix(pinfo(A), A.coeff, permutedims(A.entries))
+adjoint(A::CMatrix)   = CMatrix(pinfo(A), conj(A.coeff), adjoint.(permutedims(A.entries)))
+conj(A::CMatrix)      = CMatrix(pinfo(A), conj(A.coeff), adjoint.(A.entries))
+
+# -------- equality ----------------------------------------------------------
+==(a::S, b::T) where {S<:CFunction, T<:CFunction} = false
+==(a::S, b::S) where {S<:CFunction} = error("Equality not implemented for type $S")
+
+==(a::CAtom, b::CAtom) = (a.coeff == b.coeff && a.var_exponents == b.var_exponents)
+==(a::CSum, b::CSum)   = (length(a) == length(b) && a.expr == b.expr)
+==(a::CRational, b::CRational) = (a.numer == b.numer && a.denom == b.denom)
+==(a::CProd, b::CProd) = (length(a.expr) == length(b.expr) && a.coeff == b.coeff && a.expr == b.expr)
+==(a::CExp, b::CExp)   = (a.coeff == b.coeff && a.expr == b.expr)
+==(a::CLog, b::CLog)   = (a.coeff == b.coeff && a.expr == b.expr)
+==(a::CPower, b::CPower)= (a.exponent == b.exponent && a.coeff == b.coeff && a.expr == b.expr)
+
+==(u::CVector, v::CVector) =
+    (u.row == v.row) &&
+    (length(u.exprs) == length(v.exprs)) &&
+    all( (u.coeff*u.exprs[i]) == (v.coeff*v.exprs[i]) for i in eachindex(u.exprs) )
+
+==(A::CMatrix, B::CMatrix) =
+    (size(A.entries) == size(B.entries)) &&
+    all( (A.coeff*A.entries[i]) == (B.coeff*B.entries[i]) for i in eachindex(A.entries) )
+##############################################################################

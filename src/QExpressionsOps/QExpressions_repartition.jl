@@ -5,8 +5,8 @@ export repartition
 function where_defined_to_index_order(statespace::StateSpace, where_defined::Vector{Vector{Bool}})::Tuple{Vector{Int}, Vector{Tuple{Int, Int}}}
     # takes where_defined and the ensemble indexes to determine the new order for both operators and variables 
     # for each element of where_defined, we shift all the true elements to the left, and all false elements to the right, we want to get the indexes of the permutation that achieves that 
-    function permutation_moves(p::Vector{Int})  # helper to extract the moves 
-        swaps = []
+    function permutation_moves(p::Vector{Int})::Vector{Tuple{Int, Int}}  # helper to extract the moves 
+        swaps::Vector{Tuple{Int, Int}} = []
         for (i, pi) in enumerate(p)
             if pi > i   # only count once
                 push!(swaps, (i, pi))
@@ -16,7 +16,7 @@ function where_defined_to_index_order(statespace::StateSpace, where_defined::Vec
     end
 
     n_ops = length(statespace.I_op)
-    n_vars = length(statespace.vars)
+    n_vars = length(statespace.params)
 
     param_info = statespace.param_info 
     subspace_info = statespace.subspace_info
@@ -26,7 +26,6 @@ function where_defined_to_index_order(statespace::StateSpace, where_defined::Vec
 
     ensemble_indexes = subspace_info.ensemble_indexes
     where_ensembles = subspace_info.where_ensembles
-    
     for (outer, w, c)  in zip(where_ensembles, where_defined, ensemble_indexes) # iterate over ensemble subspaces
         w_order = sortperm(w, rev=true)
         op_inds[c] = op_inds[c][w_order]
@@ -55,13 +54,13 @@ function repartition(q::QAtomProduct, add_at_sum::Bool,  where_defined::Vector{V
     return modify_coeff_expr(q, repartition(q.coeff_fun, var_tuples), QAtom[repartition(x, index_order) for x in q.expr])
 end
 function repartition(q::QExpr, add_at_sum::Bool, where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_tuples::Vector{Tuple{Int, Int}})::QExpr
-    return QExpr(q.statespace, [repartition(qq, add_at_sum, where_defined, index_order, var_tuples) for qq in q.terms])
+    return QExpr(q.statespace, [repartition(qq, add_at_sum, where_defined, index_order) for qq in q.terms])
 end
 function repartition(q::T, add_at_sum::Bool, where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_tuples::Vector{Tuple{Int, Int}})::T where T <: QComposite
-    return modify_expr(q, repartition(q.expr, add_at_sum, where_defined, index_order, var_tuples))
+    return modify_coeff_expr(q, repartition(q.coeff_fun, var_tuples), repartition(q.expr, add_at_sum, where_defined, index_order, var_tuples, perm_moves))
 end
 function repartition(q::T, add_at_sum::Bool, where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_tuples::Vector{Tuple{Int, Int}})::T where T <: QMultiComposite
-    modify_expr(q, [repartition(qq, add_at_sum, where_defined, index_order, var_tuples) for qq in q.expr])
+    return modify_coeff_expr(q, repartition(q.coeff_fun, var_tuples), [repartition(qq, add_at_sum, where_defined, index_order, var_tuples, perm_moves) for qq in q.expr])
 end
 function repartition(q::QSum, add_at_sum::Bool, where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_tuples::Vector{Tuple{Int, Int}})::QSum
     # define improved index_order and var_index_order
@@ -120,7 +119,7 @@ function repartition(q::diff_QEq)::diff_QEq
         where_defined_lhs = which_ensemble_acting(left_hand_side)
         op_inds = collect(1:length(op_inds))
         var_inds = collect(1:length(var_inds))
-        q = diff_QEq(q.statespace, left_hand_side, expr, q.do_braket)
+        return diff_QEq(q.statespace, left_hand_side, expr, q.do_braket)
     end
     expr = repartition(q.expr, true, where_defined_lhs, op_inds, var_inds)
     return diff_QEq(q.statespace, q.left_hand_side, expr, Val(:nosimp), do_braket=q.do_braket)

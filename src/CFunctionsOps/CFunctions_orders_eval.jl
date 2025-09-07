@@ -25,6 +25,9 @@ end
 max_exponents(e::CExp) = max_exponents(e.x)
 max_exponents(l::CLog) = max_exponents(l.x)
 max_exponents(v::AbstractVector{<:CFunction}) = max_exponents([max_exponents(t) for t in v])
+max_exponents(p::CPower) = max_exponents(p.x)          # treat like exp/log: inner drives needs
+max_exponents(v::CVector) = max_exponents(v.expr)   # orientation, coeff irrelevant
+max_exponents(M::CMatrix) = max_exponents(vec(M.expr))
 
 """
     build_xpows(x::Vector{<:Number}, max_exp::Vector{Int}) -> Vector{Vector}
@@ -42,6 +45,14 @@ function build_xpows(x::Vector{T}, max_exp::Vector{Int})::Vector{Vector{T}}  whe
     return xpows
 end
 
+# Rational exponent on a numeric base
+@inline function _pow_r(y, q::Rational{Int})
+    if denominator(q) == 1
+        return y ^ Int(q)
+    else
+        return y ^ float(q)    # works for real/complex bases
+    end
+end
 ctimes(c::ComplexRational, d::T) where T <: Number = (c.a+im*c.b)/c.c * d
 
 """
@@ -73,6 +84,16 @@ function evaluate(p::CProd, x::Vector{<:Number})
         prod(evaluate(term, x) for term in p.terms)
     )
 end
+function evaluate(p::CPower, x::Vector{<:Number})
+    ctimes(p.coeff, _pow_r(evaluate(p.x, x), p.exponent))
+end
+function evaluate(v::CVector, x::Vector{<:Number})
+    [ ctimes(v.coeff, evaluate(e, x)) for e in v.expr ]
+end
+function evaluate(M::CMatrix, x::Vector{<:Number})
+    m, n = size(M.expr)
+    reshape([ ctimes(M.coeff, evaluate(e, x)) for e in M.expr ], m, n)
+end
 
 # Evaluate but with xpows
 function evaluate(a::CAtom, xpows::Vector{Vector{T}}) where T <: Number
@@ -98,4 +119,14 @@ function evaluate(p::CProd, xpows::Vector{Vector{T}}) where T<:Number
     # coefficient times the product of all term‐evaluations via xpows
     ctimes(p.coeff,
         prod(evaluate(term, xpows) for term in p.terms))
+end
+function evaluate(p::CPower, xpows::Vector{Vector{T}}) where {T<:Number}
+    ctimes(p.coeff, _pow_r(evaluate(p.x, xpows), p.exponent))
+end
+function evaluate(v::CVector, xpows::Vector{Vector{T}}) where {T<:Number}
+    [ ctimes(v.coeff, evaluate(e, xpows)) for e in v.expr ]
+end
+function evaluate(M::CMatrix, xpows::Vector{Vector{T}}) where {T<:Number}
+    m, n = size(M.expr)
+    reshape([ ctimes(M.coeff, evaluate(e, xpows)) for e in M.expr ], m, n)
 end

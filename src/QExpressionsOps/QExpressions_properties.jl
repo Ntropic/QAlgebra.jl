@@ -59,7 +59,7 @@ function is_t_var(t::QExpr)::Bool
     # must be exactly one variable with exponent 1
     return length(inds) == 1 &&
            coeff_fun.var_exponents[inds[1]] == 1 &&
-           t.statespace.vars[inds[1]].is_t
+           t.statespace.params[inds[1]].is_t
 end
 
 """

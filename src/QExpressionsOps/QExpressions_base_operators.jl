@@ -10,12 +10,12 @@ Time handling:
 """
 function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false, by_ensemble::Bool=false)
     # -------------------- helpers --------------------
-    _I_expr() = QExpr(statespace, QAtomProduct(statespace, CAtom(zeros(Int, length(statespace.vars))), QTerm[]))
+    _I_expr() = QExpr(statespace, QAtomProduct(statespace, CAtom(zeros(Int, length(statespace.params))), QTerm[]))
 
     _qexpr_for_var(i::Int) = begin
-        vexp = zeros(Int, length(statespace.vars))
+        vexp = zeros(Int, length(statespace.params))
         vexp[i] += 1
-        QExpr(statespace, QAtomProduct(statespace, CAtom(vexp), QTerm[]))
+        QExpr(statespace, QAtomProduct(statespace, CAtom(statespace.param_info, vexp), QTerm[]))
     end
 
     # parse "x_tN" once and reuse
@@ -39,11 +39,11 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
     ops_comb = Vector{Vector{Symbol}}()
     ops_vec  = QExpr[]
 
-    for (i, var) in enumerate(statespace.vars)
-        pref     = string(var.var_symbol)
+    for (i, var) in enumerate(statespace.params)
+        pref     = string(var.param_symbol)
         pref_fmt = symbol2formatted(pref)
 
-        if name_base == var.var_name_no_t || name_base == var.var_str_no_t ||
+        if name_base == var.param_name_no_t || name_base == var.param_str_no_t ||
            name_base == pref || name_base == pref_fmt
 
             if t_spec === nothing || t_spec == var.t_index

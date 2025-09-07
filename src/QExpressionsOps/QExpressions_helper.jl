@@ -60,8 +60,8 @@ function QExprLookup(ops_comb::Vector{Vector{Symbol}}, ops_vec::Vector{QExpr};
 end
 
 # Make it callable
-function (ql::QExprLookup)(vars...)
-    syms = Tuple(Symbol.(vars))  # normalize to Tuple
+function (ql::QExprLookup)(params...)
+    syms = Tuple(Symbol.(params))  # normalize to Tuple
     if ql.use_dict
         return get(ql.dict, syms) do
             error("No operator found for input $(syms)")
@@ -75,8 +75,8 @@ function (ql::QExprLookup)(vars...)
         error("No operator found for input $(syms)")
     end
 end
-function Base.getindex(ql::QExprLookup, vars...)
-    return ql(vars...)   # just forward to the call
+function Base.getindex(ql::QExprLookup, params...)
+    return ql(params...)   # just forward to the call
 end
 # Provide available keys
 import Base: keys

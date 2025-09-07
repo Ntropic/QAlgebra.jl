@@ -7,7 +7,7 @@ using ..StringUtils
 export OperatorSet
 export SubSpace, SubSpaceDefinitions, SubSpaceInfo, SubSpaceIndex, outer, inner, expanded, Index2Symbol, Index2String, Index2Ensemble
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
-export Parameter, ParameterInfo, ParameterDefinitions, map_by_subspace, map_by_tindex
+export Parameter, ParameterDefinitions, map_by_subspace, map_by_tindex
 export StateSpace
 
 Is = Vector{Int}
@@ -107,7 +107,7 @@ struct StateSpace
     operatortype_info::OperatorTypeInfo
 
     # Parameter fields:
-    vars::Vector{Parameter}
+    params::Vector{Parameter}
     param_info::ParameterInfo
 
     I_op::Vector{Is}               # Neutral Vector of all expanded subspaces
@@ -128,14 +128,14 @@ struct StateSpace
         operatortype_info = OperatorTypeInfo(operatortypes, commute_fun=op_def.commute_fun, check_n=op_def.check_n) 
 
         # ==========> 3rd Parameters <==========
-        vars, param_info = ParameterDefinitions2Parameters(param_def, subspace_info, used_symbols, max_t_ind)
+        params, param_info = ParameterDefinitions2Parameters(param_def, subspace_info, used_symbols, max_t_ind)
     
         # Generate the string representations
-        c_one = CAtom(ComplexRational(1,0,1), zeros(Int, length(vars)))
-        c_zero = CAtom(ComplexRational(0,0,1), zeros(Int, length(vars)))
+        c_one = CAtom(param_info, zeros(Int, length(params)))
+        c_zero = CAtom(param_info, ComplexRational(0,0,1), zeros(Int, length(params)))
         qss = new( subspaces, subspace_info,                                      # Subspaces
                 operatortypes, operatortype_info,                                 # Abstract Operators 
-                vars, param_info,                                                 # Variables / Parameters
+                params, param_info,                                                 # Variables / Parameters
                 I_op, I_ensemble_op, c_one, c_zero, max_t_ind)                         # Pecomputed operator blueprints 
         return qss
     end
@@ -143,8 +143,8 @@ end
 # Define the custom show for StateSpace.
 function Base.show(io::IO, statespace::StateSpace)
     # First line: StateSpace and its variables.
-    var_str = join([p.var_str for p in statespace.vars], ", ")
-    println(io, "StateSpace: [" * var_str * "]")
+    param_str = join([p.param_str for p in statespace.params], ", ")
+    println(io, "StateSpace: [" * param_str * "]")
     # Then print each subspace on its own line.
     for ss in statespace.subspaces
         println(io, "   - ", string(ss))
@@ -157,7 +157,7 @@ end
 ## Test 
 #xi, yi, zi = base_operators("i", qs)
 #I = base_operators("I", qs)
-#alpha, beta = base_operators("vars", qs)
+#alpha, beta = base_operators("params", qs)
 function cleanup_terms(terms::Vector{Tuple{T,S}})::Vector{Tuple{T,S}} where {T<:Number,S}
     # 1) sort once by index
     sort!(terms, by = x -> x[2])

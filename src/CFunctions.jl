@@ -4,18 +4,188 @@ using ..StringUtils
 using ComplexRationals
 using ..QAlgebra: get_default, FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
 
-export CFunction, CAtom, CSum, CRational, CProd, CExp, CLog
+export CFunction, CAbstractDefinition, CTypeDefinition, ParameterInfo, define_cabstract, define_ctype, CAbstract, CCustomType, CAtom, CSum, CRational, CProd, CExp, CLog, CPower, CVector, CMatrix
+export CMatrix, CVector, CPower
 export isnumeric, coeff, var_exponents
 export contains_non_simple_CFunction
 
-import Base: copy, exp, log, length
+import Base: copy, exp, log, length, getindex, iterate, size
 import ComplexRationals: isonelike
+
+const CR_ZERO = ComplexRational(0,0,1)
+const CR_ONE  = ComplexRational(1,0,1)
+
+
 """
     CFunction
 
 Abstract supertype for symbolic functions representing atoms (`CAtom`), sums (`CSum`), and rationals (`CRational`).
 """
 abstract type CFunction end
+abstract type CComposite <: CFunction end 
+abstract type CMultiComposite <: CFunction end 
+abstract type CDef end
+
+# =======================> Abstract CFun Definitions <===================================================================
+abstract type AbstractCAbstract <: CComposite end   # define here as a resesrvation, to concretely define later, for circular dependencies.
+abstract type AbstractParameterInfo end
+"""
+    CAbstractDef
+
+Defines an abstract symbol, specifying its string and latex string, its index and referencing it to a CDefinitionsDB.
+Contains:
+- `symbol`     : unique tag
+- `index`      : identifies which abstract definition in DB in is
+- `plain`      : string to print for it 
+- `latex`      : latexstring to print for it
+"""
+struct CAbstractDefinition <: CDef
+    symbol::Symbol
+    name::String   # e.g. "A₁"
+    latex::String  # e.g. "A_{1}"
+    index::Int     # index in param_info
+    sortkey::Int
+    param_info::AbstractParameterInfo
+end
+
+"""
+    CTypeDefinition
+
+Row in the *functions* cluster (parametric defs like cos, sinh).
+- `name`     : unique tag
+- `plain`    : "cos"
+- `latex`    : raw"\\cos"
+- `sortkey`  : Int used by your sorter
+- `fun` : (param_info, x)::CFunction → definitional expansion (outer coeff is not included)
+"""
+struct CTypeDefinition <: CDef
+    name::Symbol
+    plain::String
+    latex::String
+    index::Int    # index in param_info
+    sortkey::Int
+    fun::CFunction
+    has_abstract::Bool
+    abstract_parameters::Vector{AbstractCAbstract}
+    param_info::AbstractParameterInfo
+end
+
+
+"""
+    ParameterInfo
+
+Holds both clusters and the dimension of the polynomial variable space.
+"""
+struct ParameterInfo <: AbstractParameterInfo
+    dims::Int
+    outer_labels_symbols::Vector{Symbol}
+    inner_labels_symbols_flat::Vector{Symbol}
+    
+    outer_labels::Vector{String}
+    params_name::Vector{String}
+    params_str::Vector{String}
+    params_latex::Vector{String}
+
+    param_of_indexes::Vector{Bool}   
+    outer_group_by_index::Vector{Int}   
+    t_index_by_index::Vector{Int}       # -1 for parameters that aren't of t. 
+    ss_ensemble_indexes_by_group::Vector{Vector{Int}}    # which ss ensembles are used for indexing in each group. 
+    ss_ensemble_present_by_group::Vector{Vector{Bool}}   # which ss ensembles are present in each group.
+
+    indexed_parameter_indexes::Vector{Int}                  # which parameters have indexes?
+    where_acting_by_parameter::Vector{Vector{Vector{Bool}}}  # for each variable, where are they acting. 
+
+    # Maps indexes for index transformation, once for switching subsystem indexes and once for time indexes
+    subspace_index_maps::Vector{Array{Vector{Int},2}}
+    t_index_transform::Array{Vector{Int},2}
+    indexes_by_t_index::Vector{Vector{Int}}   # for each t_index which indexes have it? 
+    indexes_of_t::Vector{Int}
+
+    param_of_t::Vector{Bool}
+    param_is_t::Vector{Bool}
+    param_values::Vector
+    abstract_definitions::Vector{CAbstractDefinition}
+    custom_ctype::Vector{CTypeDefinition}
+    function ParameterInfo(
+        outer_labels_symbols::Vector{Symbol}, inner_labels_symbols_flat::Vector{Symbol}, outer_labels::Vector{String}, params_name::Vector{String},
+        params_str::Vector{String}, params_latex::Vector{String}, param_of_indexes::Vector{Bool}, outer_group_by_index::Vector{Int},
+        t_index_by_index::Vector{Int}, ss_ensemble_indexes_by_group::Vector{Vector{Int}}, ss_ensemble_present_by_group::Vector{Vector{Bool}}, indexed_parameter_indexes::Vector{Int},
+        where_acting_by_parameter::Vector{Vector{Vector{Bool}}}, subspace_index_maps::Vector{Array{Vector{Int},2}}, t_index_transform::Array{Vector{Int},2}, indexes_by_t_index::Vector{Vector{Int}},
+        indexes_of_t::Vector{Int}, param_of_t::Vector{Bool}, param_is_t::Vector{Bool}, param_values::Vector)
+        dims = length(outer_labels_symbols)
+        new(dims, outer_labels_symbols, inner_labels_symbols_flat, outer_labels,
+            params_name, params_str, params_latex, param_of_indexes,
+            outer_group_by_index, t_index_by_index, ss_ensemble_indexes_by_group, ss_ensemble_present_by_group,
+            indexed_parameter_indexes, where_acting_by_parameter, subspace_index_maps, t_index_transform,
+            indexes_by_t_index, indexes_of_t, param_of_t, param_is_t, param_values, [],[])
+    end
+end
+
+######################################################################################################################################################
+function define_cabstract(param_info::ParameterInfo, name)::CAbstractDefinition
+    name_str, name_latex = symbol2formatted(String(name))
+
+    for (i, abstract_def) in enumerate(param_info.abstract_definitions)
+        if abstract_def.name == String(name)
+            error("Abstract with name $(String(name)) already defined.")
+        end
+    end
+
+    index = length(param_info.abstract_definitions) + 1
+    sortkey = index + 15
+    c_abstract = CAbstractDefinition(Symbol(name), name_str, name_latex, index, sortkey, param_info)
+    push!(param_info.abstract_definitions, c_abstract)
+    return c_abstract
+end
+
+function define_ctype(param_info::ParameterInfo; name, fun::CFunction)::CTypeDefinition
+    name_str, name_latex = symbol2formatted(String(name))
+    index = length(param_info.custom_ctype) + 1
+    sortkey = index + 10^6
+    abstract_parameters = contains_which_abstract(fun)
+    has_abstract = !isempty(abstract_parameters)
+    c_type_def = CTypeDefinition(Symbol(name), name_str, name_latex, index, sortkey, fun, has_abstract, abstract_parameters, param_info)
+    push!(param_info.custom_ctype, c_type_def)
+    return c_type_def
+end
+
+
+""" 
+    CAbstract
+"""
+struct CAbstract <: AbstractCAbstract
+    param_info::ParameterInfo
+    index::Int 
+    abstract_def::CAbstractDefinition
+end
+repartition(f::CAbstract, var_tuples::Vector{Tuple{Int, Int}}) = error("You should not repartition abstract parameters! Remove them from your main equations before repartitioning.")
+
+
+"""
+    CCustomType(param_info, def_id, coeff, x)
+
+Instance of a parametric custom function: `coeff * name(x)`.
+"""
+struct CCustomType <: CFunction
+    param_info::ParameterInfo
+    coeff::ComplexRational
+    expr::Vector{CFunction}
+    ctype_def::CTypeDefinition
+end
+function repartition(f::CCustomType, var_tuples::Vector{Tuple{Int, Int}})::CCustomType
+    new_parameters = repartition.(expr, Ref(var_tuples))
+    return CCustomType(f.param_info, f.coeff, new_parameters, f.ctype_def)
+end
+function modify_expr(f::CCustomType, new_expr::Vector{CFunction})
+    return CCustomType(f.param_info, f.coeff, new_expr, f.ctype_def)
+end
+coeff(f::CCustomType) = [f.coeff]
+length(f:: CCustomType) = 1
+
+# ===================> MAIN TYPES <==========================================================================================
+function modify_expr(f::CFunction, new_expr::Vector{CFunction})
+    error("modify_expr not implemented for type $(typeof(f)).")
+end
 
 """
     CAtom(coeff::Int, var_exponents::Vector{Int})
@@ -27,35 +197,38 @@ A single term with a complex‐rational coefficient and integer exponents for ea
 - `var_exponents[j]` is the exponent of variable _j_.
 """
 struct CAtom <: CFunction
+    param_info::ParameterInfo
     coeff::ComplexRational
     var_exponents::Vector{Int}
-    function CAtom(var_exponents::Vector{Int})
+    function CAtom(param_info::ParameterInfo, var_exponents::Vector{Int})
         c = ComplexRational(1, 0, 1)
-        return new(c, copy(var_exponents))
+        return new(param_info, c, copy(var_exponents))
     end
-    function CAtom(coeff::Int, var_exponents::Vector{Int})
+    function CAtom(param_info::ParameterInfo, coeff::Int, var_exponents::Vector{Int})
         c = ComplexRational(coeff, 0, 1)
-        return new(c, copy(var_exponents))
+        return new(param_info, c, copy(var_exponents))
     end
-    function CAtom(coeff::Rational, var_exponents::Vector{Int})
+    function CAtom(param_info::ParameterInfo, coeff::Rational, var_exponents::Vector{Int})
         c = ComplexRational(numerator(coeff), 0, denominator(coeff))
-        return new(c, copy(var_exponents))
+        return new(param_info, c, copy(var_exponents))
     end
-    function CAtom(coeff::Complex, var_exponents::Vector{Int})
+    function CAtom(param_info::ParameterInfo, coeff::Complex, var_exponents::Vector{Int})
         c = crationalize(coeff)
-        return new(c, copy(var_exponents))
+        return new(param_info, c, copy(var_exponents))
     end
-    function CAtom(coeff::ComplexRational, var_exponents::Vector{Int})
-        return new(coeff, copy(var_exponents))
+    function CAtom(param_info::ParameterInfo, coeff::ComplexRational, var_exponents::Vector{Int})
+        return new(param_info, coeff, copy(var_exponents))
     end
-    function CAtom(coeff::Number, var_exponents::Vector{Int})
+    function CAtom(param_info::ParameterInfo, coeff::Number, var_exponents::Vector{Int})
         c = crationalize(coeff+0im)
-        return new(c, copy(var_exponents))
+        return new(param_info, c, copy(var_exponents))
     end
 end
 coeff(a::CAtom)::Vector{ComplexRational} = [a.coeff]
-var_exponents(a::CAtom)::Vector{Vector{Int}} = [a.var_exponents]
-dims(q::CAtom) = length(q.var_exponents)
+modify_exponents(a::CAtom, var_exponents::Vector{Vector{Int}})::CAtom = CAtom(a.param_info, a.coeff, var_exponents)
+modify_coeff(a::CAtom, coeff::ComplexRational)::CAtom = CAtom(a.param_info, coeff, a.var_exponents)
+modify_coeff_exponents(a::CAtom, coeff::ComplexRational, var_exponents::Vector{Vector{Int}}) = CAtom(a.param_info, coeff, var_exponents)
+
 length(a::CAtom) = 1
 function repartition(f::CAtom, var_tuples::Vector{Tuple{Int, Int}})::CAtom 
     curr_var_exponents = f.var_exponents
@@ -63,21 +236,21 @@ function repartition(f::CAtom, var_tuples::Vector{Tuple{Int, Int}})::CAtom
         curr_var_exponents[tar] += curr_var_exponents[i]
         curr_var_exponents[i] = 0 
     end 
-    CAtom(f.coeff, curr_var_exponents)
+    CAtom(f.param_info, f.coeff, curr_var_exponents)
 end
 
 """
-    CSum(terms::AbstractVector{<:CFunction})
+    CSum(expr::AbstractVector{<:CFunction})
 
-Constructs a sum of `CFunction` terms.
+Constructs a sum of `CFunction` expr.
 - Flattens any nested `CSum` automatically.
 - Variadic form `CSum(a, b, c)` is provided for convenience.
 """
-struct CSum <: CFunction
-    terms::Vector{CFunction}
-
+struct CSum <: CMultiComposite
+    param_info::ParameterInfo
+    expr::Vector{CFunction}
 end
-function _CSum(ts::AbstractVector{<:CFunction}) 
+function _CSum(param_info::ParameterInfo, ts::AbstractVector{<:CFunction}) 
     if length(ts) == 1
         return ts[1]
     end
@@ -86,203 +259,216 @@ function _CSum(ts::AbstractVector{<:CFunction})
             error("Shouldn't have a CSum in a CSum!")  # remove this loop later on 
         end
     end
-    return simplify_CSum(ts)
+    return simplify_CSum(param_info, collect(ts))
 end
-function _CSum(ts::AbstractVector{<:CFunction}, ::Val{:nosimp})
-    return CSum(ts)
+function _CSum(param_info::ParameterInfo, ts::AbstractVector{<:CFunction}, ::Val{:nosimp})
+    return CSum(param_info, ts)
+end
+function modify_expr(f::CSum, new_expr::Vector{CFunction})
+    return CSum(f.param_info, new_expr)
 end
 coeff(x::CSum) = [ComplexRational(1,0,1)] #error("Sums don't have a coeff, you likely have a sum in a sum, this shouldn't happen. Please inform the developers. ")
-var_exponents(x::CSum) = error("Sums don't have var_exponents, you likely have a sum in a sum, this shouldn't happen. Please inform the developers. ")
-dims(q::CSum) = dims(q.terms[1])
-length(q::CSum) = length(q.terms)
-repartition(f::CSum, var_tuples::Vector{Tuple{Int, Int}}) = _CSum(repartition.(f.terms, Ref(var_tuples)) )
+length(q::CSum) = length(q.expr)
+repartition(f::CSum, var_tuples::Vector{Tuple{Int, Int}}) = _CSum(f.param_info, repartition.(f.expr, Ref(var_tuples)) )
 
 
-struct CProd <: CFunction
+struct CProd <: CMultiComposite
+    param_info::ParameterInfo
     coeff::ComplexRational
-    terms::Vector{CFunction}
-    function CProd(coeff::ComplexRational, terms::AbstractVector{<:CFunction})
-        if length(terms) == 1
-            return terms[1] * coeff
+    expr::Vector{CFunction}
+    function CProd(param_info::ParameterInfo, coeff::ComplexRational, expr::AbstractVector{<:CFunction})
+        if length(expr) == 1
+            return expr[1] * coeff
         end
-        return simplify_CProd(coeff, terms)
+        return simplify_CProd(param_info, coeff, collect(expr))
     end
-    function CProd(coeff::ComplexRational, terms::AbstractVector{<:CFunction}, ::Val{:nosimp})
-        return new(coeff, copy(terms))
+    function CProd(param_info::ParameterInfo, coeff::ComplexRational, expr::AbstractVector{<:CFunction}, ::Val{:nosimp})
+        return new(param_info, coeff, copy(expr))
     end
 end
-function CProd(terms::AbstractVector{<:CFunction})
-    CProd(ComplexRational(1, 0, 1), terms)
+function CProd(param_info::ParameterInfo, expr::AbstractVector{<:CFunction})
+    CProd(param_info, ComplexRational(1, 0, 1), collect(expr))
+end
+function modify_expr(f::CProd, new_expr::Vector{CFunction})
+    return CProd(f.param_info, f.coeff, new_expr, Val(:nosimp))
 end
 coeff(x::CProd) = [x.coeff]
-var_exponents(x::CProd) = vcat(var_exponents.(x.terms)...)
-dims(q::CProd) = dims(q.terms[1])
-length(q::CProd) = max(length.(q.terms)...)
-repartition(f::CProd, var_tuples::Vector{Tuple{Int, Int}})= CProd(f.coeff, repartition.(f.terms, Ref(var_tuples)) )
+length(q::CProd) = max(length.(q.expr)...)
+repartition(f::CProd, var_tuples::Vector{Tuple{Int, Int}})= CProd(f.param_info, f.coeff, repartition.(f.expr, Ref(var_tuples)) )
 
 
 """
     CRational(numer::CSum, denom::CSum)
 
-Represents a rational function with numerator `numer` and denominator `denom`, both sums of `CFunction` terms.
+Represents a rational function with numerator `numer` and denominator `denom`, both sums of `CFunction` expr.
 """
-struct CRational <: CFunction
+struct CRational <: CFunction   # special case
+    param_info::ParameterInfo
     numer::CFunction
     denom::CFunction
-    function CRational(numer::T, denom::S) where {T <: CFunction, S <: CFunction}  
-        return simplify_CRational(numer, denom)
+    function CRational(param_info::ParameterInfo, numer::T, denom::S) where {T <: CFunction, S <: CFunction}  
+        return simplify_CRational(param_info, numer, denom)
     end
-    function CRational(numer::T, denom::S,  ::Val{:nosimp}) where {T <: CFunction, S <: CFunction}  
-        return new(numer, denom)
+    function CRational(param_info::ParameterInfo, numer::T, denom::S,  ::Val{:nosimp}) where {T <: CFunction, S <: CFunction}  
+        return new(param_info, numer, denom)
     end
 end
 coeff(x::CRational) = coeff(x.numer) #/coeff(x.denom)
-var_exponents(x::CRational) = vcat(var_exponents.(x.numer), var_exponents.(var_exponents.(x.denom)))
-dims(q::CRational) = dims(q.numer) 
 length(q::CRational) = max(length(q.numer), length(q.denom))
-repartition(q::CRational, var_tuples::Vector{Tuple{Int, Int}}) = CRational(repartition(q.numer, var_tuples), repartition(q.denom, var_tuples))
+repartition(q::CRational, var_tuples::Vector{Tuple{Int, Int}}) = CRational(q.param_info, repartition(q.numer, var_tuples), repartition(q.denom, var_tuples))
 
 
-struct CExp <: CFunction
+struct CExp <: CComposite
+    param_info::ParameterInfo
     coeff::ComplexRational
-    x::CFunction
-    function CExp(coeff::ComplexRational, x::T,  ::Val{:nosimp}) where T <: CFunction
-        new(coeff, copy(x))
+    expr::CFunction
+    function CExp(param_info::ParameterInfo, coeff::ComplexRational, expr::T,  ::Val{:nosimp}) where T <: CFunction
+        new(param_info, coeff, expr)
     end
-    function CExp(coeff::ComplexRational, x::T) where T <: CFunction
-        return simplify_CExp(coeff, x)
+    function CExp(param_info::ParameterInfo, coeff::ComplexRational, expr::T) where T <: CFunction
+        return simplify_CExp(param_info, coeff, expr)
     end
 end
-function CExp(x::CFunction)
-    CExp(ComplexRational(1,0,1), x)
+function CExp(param_info::ParameterInfo, expr::CFunction)
+    CExp(param_info, ComplexRational(1,0,1), expr)
 end
-function exp(x::CFunction)
-    return CExp(x) 
+function exp(param_info::ParameterInfo, expr::CFunction)
+    return CExp(param_info, expr) 
+end
+function exp(expr::CFunction)
+    return CExp(expr.param_info, expr) 
+end
+function modify_expr(f::CExp, new_expr::Vector{CFunction})
+    @assert length(new_expr) == 1
+    return CExp(f.param_info, f.coeff, new_expr[1], Val(:nosimp))
 end
 coeff(x::CExp) = [x.coeff]
-var_exponents(x::CExp) = [zeros(Int, dims(x))]
-dims(q::CExp) = dims(q.x)
 length(q::CExp) = 1
-repartition(q::CExp, var_tuples::Vector{Tuple{Int, Int}}) = CExp(q.coeff, repartition(q.x, var_tuples))
+repartition(q::CExp, var_tuples::Vector{Tuple{Int, Int}}) = CExp(q.param_info, q.coeff, repartition(q.expr, var_tuples))
 
 
-struct CLog <: CFunction
+struct CLog <: CComposite
+    param_info::ParameterInfo
     coeff::ComplexRational
-    x::CFunction
-    function CLog(coeff::ComplexRational, x::T,  ::Val{:nosimp}) where T <: CFunction
-        new(copy(coeff), copy(x))
+    expr::CFunction
+    function CLog(param_info::ParameterInfo, coeff::ComplexRational, expr::T,  ::Val{:nosimp}) where T <: CFunction
+        new(param_info, coeff, expr)
     end
-    function CLog(coeff::ComplexRational, x::T)  where T <: CFunction
-        return simplify_CLog(coeff, x)
+    function CLog(param_info::ParameterInfo, coeff::ComplexRational, expr::T)  where T <: CFunction
+        return simplify_CLog(param_info, coeff, expr)
     end
 end
-function CLog(x::CFunction)
-        CLog(ComplexRational(1,0,1), copy(x))
-    end
+function CLog(param_info::ParameterInfo, expr::CFunction)
+    CLog(param_info, ComplexRational(1,0,1), expr)
+end
+function log(param_info::ParameterInfo, x::CFunction)
+    return CLog(param_info, expr) 
+end
 function log(x::CFunction)
-    return CLog(x) 
+    return CLog(expr.param_info, expr) 
+end
+function modify_expr(f::CLog, new_expr::Vector{CFunction})
+    @assert length(new_expr) == 1
+    return CLog(f.param_info, f.coeff, new_expr[1], Val(:nosimp))
 end
 coeff(x::CLog) = [x.coeff] 
-var_exponents(x::CLog) = [zeros(Int, dims(x))]
-dims(q::CLog) = dims(q.x)
 length(q::CLog) = 1
-repartition(q::CLog, var_tuples::Vector{Tuple{Int, Int}}) = CLog(q.coeff, repartition(q.x, var_tuples))
+repartition(q::CLog, var_tuples::Vector{Tuple{Int, Int}}) = CLog(q.param_info, q.coeff, repartition(q.expr, var_tuples))
 
+"""
+    CPower(coeff::ComplexRational, x::CFunction, exponent::Rational{Int})
+    CPower(x::CFunction, exponent::Rational{Int})
+    CPower(x::CFunction, exponent::Integer)
 
+Symbolic power with a **rational** exponent: `coeff * x^(p//q)`.
+Use `x ^ (p//q)` or `sqrt(x)` (which maps to `x^(1//2)`).
+"""
+struct CPower <: CComposite
+    param_info::ParameterInfo
+    coeff::ComplexRational
+    expr::CFunction
+    exponent::Rational{Int}
+    # inner :nosimp constructor that *only* wraps
+    function CPower(param_info::ParameterInfo, coeff::ComplexRational, expr::T, exponent::Rational{Int}, ::Val{:nosimp}) where {T<:CFunction}
+        new(param_info, coeff, expr, exponent)
+    end
+end
+
+# thin outer constructors that delegate to simplify
+function CPower(param_info::ParameterInfo, coeff::ComplexRational, expr::CFunction, exponent::Rational{Int})
+    simplify_CPower(param_info, coeff, expr, exponent)
+end
+CPower(param_info::ParameterInfo, expr::CFunction, n::Integer)       = CPower(param_info, ComplexRational(1,0,1), expr, n//1)
+CPower(param_info::ParameterInfo, expr::CFunction, q::Rational{Int}) = CPower(param_info, ComplexRational(1,0,1), expr, q)
+function modify_expr(f::CPower, new_expr::Vector{CFunction})
+    @assert length(new_expr) == 1
+    return CPower(f.param_info, f.coeff, new_expr[1], f.exponent, Val(:nosimp))
+end
+coeff(p::CPower) = [p.coeff]
+length(::CPower) = 1
+repartition(p::CPower, var_tuples::Vector{Tuple{Int,Int}}) = CPower(p.param_info, p.coeff, repartition(p.expr, var_tuples), p.exponent)
+
+"""
+    CVector(entries::AbstractVector{<:CFunction}; row::Bool=false)
+    CVector(coeff::ComplexRational, entries::AbstractVector{<:CFunction}; row::Bool=false)
+
+An oriented vector of `CFunction`s.
+- `row=false` ⇒ n×1 (column, Julia's default)
+- `row=true`  ⇒ 1×n (row)
+"""
+struct CVector <: CFunction
+    param_info::ParameterInfo
+    coeff::ComplexRational
+    exprs::Vector{CFunction}
+    row::Bool  # false => n×1 (column), true => 1×n (row)
+end
+CVector(param_info::ParameterInfo, entries::AbstractVector{<:CFunction}; row::Bool=false) = CVector(param_info, ComplexRational(1,0,1), collect(entries), row)
+CVector(param_info::ParameterInfo, coeff::ComplexRational, entries::AbstractVector{<:CFunction}; row::Bool=false) = CVector(param_info, coeff, collect(entries), row)
+function modify_exprs(f::CVector, new_expr::Vector{CFunction})
+    return CVector(f.param_info, f.coeff, new_expr; row=f.row)
+end
+coeff(v::CVector) = isempty(v.expr) ? ComplexRational[] : vcat(coeff.(v.expr)...)
+length(v::CVector) = length(v.expr)
+size(v::CVector) = v.row ? (1, length(v.expr)) : (length(v.expr), 1)
+getindex(v::CVector, i::Int) = v.expr[i]
+iterate(v::CVector, st::Int=1) = st > length(v.expr) ? nothing : (v.expr[st], st+1)
+repartition(M::CVector, var_tuples::Vector{Tuple{Int,Int}}) = CVector(reshape(repartition.(M.expr[:], Ref(var_tuples)), size(M.expr)))
+
+"""
+    CMatrix(entries::AbstractMatrix{<:CFunction})
+    CMatrix(coeff::ComplexRational, entries::AbstractMatrix{<:CFunction})
+
+A matrix of `CFunction`s. 
+"""
+struct CMatrix <: CFunction
+    param_info::ParameterInfo
+    coeff::ComplexRational
+    entries::Matrix{CFunction}
+end
+CMatrix(param_info::ParameterInfo, entries::AbstractMatrix{<:CFunction}) = CMatrix(param_info, ComplexRational(1,0,1), Matrix{CFunction}(entries))
+CMatrix(param_info::ParameterInfo, coeff::ComplexRational, entries::AbstractMatrix{<:CFunction}) = CMatrix(param_info, coeff, Matrix{CFunction}(entries))
+function modify_exprs(f::CMatrix, new_expr::Matrix{CFunction})
+    return CMatrix(f.param_info, f.coeff, new_expr)
+end
+coeff(M::CMatrix) = [M.coeff]
+length(M::CMatrix) = length(M.expr)         # number of elements (m*n)
+size(M::CMatrix) = size(M.expr)
+getindex(M::CMatrix, i::Int, j::Int) = M.expr[i, j]
+repartition(M::CMatrix, var_tuples::Vector{Tuple{Int,Int}}, perm_moves::Vector{Tuple{Int, Int}}) = CMatrix(reshape(repartition.(M.expr[:], Ref(var_tuples), Ref(perm_moves)), size(M.expr)))
 
 
 #### Some basic functions ##############################################################################################
 
-
-_terms(f::T) where T <: CFunction = [f]
-_terms(f::CSum) =  f.terms 
-
-import Base: iszero, isempty, isone
-"""
-    iszero(a::CAtom)     -> Bool
-    iszero(s::CSum)      -> Bool
-    iszero(r::CRational) -> Bool
-
-Returns `true` if the expression is identically zero:
-- **Atom**: zero coefficient.
-- **Sum**: all terms zero or empty.
-- **Rational**: zero numerator.
-"""
-iszero(a::CAtom)        = iszero(a.coeff)
-iszero(s::CSum)         = isempty(s.terms) || all(iszero, s.terms)
-iszero(p::CProd)        = iszero(p.coeff) || all(iszero, p.terms)
-iszero(r::CRational)    = iszero(r.numer)
-iszero(x::CExp)         = iszero(x.coeff)
-iszero(x::CLog)         = iszero(x.coeff)
-
-isempty(s::CSum)        = isempty(s.terms)
-
-"""
-    isnumeric(a::CAtom)    -> Bool
-    isnumeric(s::CSum)     -> Bool
-    isnumeric(r::CRational) -> Bool
-
-Returns `true` if the expression contains no variables (i.e., all exponents are zero in atoms, and both numerator and denominator are numeric sums).
-"""
-isnumeric(a::CAtom)    = all(e->e==0, a.var_exponents)
-isnumeric(s::CSum)     = all(isnumeric, s.terms)
-isnumeric(p::CProd)    = all(isnumeric, p.terms)
-isnumeric(r::CRational)= isnumeric(r.numer) && isnumeric(r.denom)
-isnumeric(x::CExp)     = isnumeric(x.x)
-isnumeric(x::CLog)     = isnumeric(x.x)
-
-isone(c::CFunction) = false 
-isone(a::CAtom)     = isnumeric(a) && isone(a.coeff)
-
-allnegative(a::CAtom) = is_negative(a.coeff)
-allnegative(s::CSum)  = !isempty(s.terms) && all(allnegative, s.terms)
-allnegative(p::CProd) = is_negative(p.coeff)
-allnegative(r::CRational) = allnegative(r.numer)
-allnegative(x::CExp)  = false
-allnegative(x::CLog)  = false
-
-
-min_exponents(a::CAtom)::Vector{Int}    = a.var_exponents
-function min_exponents(s::CSum)::Vector{Int}
-    if length(s.terms) == 0
-        return []
-    end
-    min_vals = min_exponents(s.terms[1])
-    for term in s.terms[2:end]
-        curr_min_vals = min_exponents(term)
-        min_vals = min.(min_vals, curr_min_vals)
-    end
-    return min_vals
-end
-function min_exponents(p::CProd)::Vector{Int}
-    min_vals = min_exponents(p.terms[1])
-    for term in p.terms[2:end]
-        new_min = min_exponents(term)
-        min_vals = min.(min_vals, new_min)
-    end 
-    return min_vals
-end
-function min_exponents(r::CRational)::Vector{Int}
-    min_vals = min_exponents(r.numer)
-    min_vals2 = min_exponents(r.denom)
-    return min.(min_vals, min_vals2)
-end
-function min_exponents(x::CExp)::Vector{Int}
-    return zeros(Int, length(min_exponents(x.x)))
-end
-function min_exponents(x::CLog)::Vector{Int}
-    return zeros(Int, length(min_exponents(x.x)))
-end
 
 
 import Base: length, getindex, iterate, deleteat!, reverse
 length(p::CFunction)::Int = 1
 
 
-getindex(p::CSum, i::Int) = p.terms[i]
-iterate(p::CSum, state=1) = state > length(p.terms) ? nothing : (p.terms[state], state + 1)
-deleteat!(p::CSum, i::Int) = _CSum(deleteat!(p.terms, i))
-reverse(q::CSum) = CSum(reverse(q.terms))
+getindex(p::CSum, i::Int) = p.expr[i]
+iterate(p::CSum, state=1) = state > length(p.expr) ? nothing : (p.expr[state], state + 1)
+deleteat!(p::CSum, i::Int) = _CSum(deleteat!(p.expr, i))
+reverse(q::CSum) = CSum(reverse(q.expr))
 
 """
     contains_non_simple_CFunction(c::CFunction) -> Bool 
@@ -291,7 +477,7 @@ Does the expression contain non simple classical functions, such as CExp, CLog, 
 """
 contains_non_simple_CFunction(c::T) where {T<: CFunction} = true
 contains_non_simple_CFunction(c::CAtom)::Bool = false 
-contains_non_simple_CFunction(c::CSum)::Bool = any(contains_non_simple_CFunction, c.terms)
+contains_non_simple_CFunction(c::CSum)::Bool = any(contains_non_simple_CFunction, c.expr)
 # Not sure if CRational should be counted here?! -> Design choices 
 
 

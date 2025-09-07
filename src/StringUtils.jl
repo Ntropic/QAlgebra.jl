@@ -1,7 +1,7 @@
 module StringUtils
 
 export subscript_indexes, superscript_indexes, var_substitution, var_substitution_latex
-export str2sub, str2sup, term_pre_split, separate_terms, symbol2formatted, t_suffix, brace, braket, match_indexed_pattern, brace_separate, underscore_separate
+export str2sub, str2sup, indexes2str, term_pre_split, separate_terms, symbol2formatted, t_suffix, brace, braket, match_indexed_pattern, brace_separate, underscore_separate
 
 """
     subscript_indexes::Dict{Char, String}
@@ -101,6 +101,32 @@ function t_suffix(t_ind::Int; do_latex::Bool=false)
         else
             return "t"*str2sub(string(t_ind))
         end 
+    end
+end
+
+function indexes2str(indexes::Vector{Symbol}; do_latex::Bool=false)::String 
+    return indexes2str(String.(indexes), do_latex=do_latex)
+end
+function indexes2str(indexes::Vector{Int}; do_latex::Bool=false)::String 
+    return indexes2str(String.(indexes), do_latex=do_latex)
+end
+function indexes2str(indexes::Int; do_latex::Bool=false)::String 
+    return indexes2str([String(indexes)], do_latex=do_latex)
+end
+function indexes2str(indexes::Symbol; do_latex::Bool=false)::String 
+    return indexes2str([String.(indexes)], do_latex=do_latex)
+end
+function indexes2str(indexes::Vector{String}; do_latex::Bool=false)::String 
+    if !isempty(indexes)
+        connector = all([length(i)==1 for i in indexes]) ? "," : ""
+        index_str_raw = join(indexes, connector)
+        if do_latex 
+            return "_{" * index_str_raw * "}"
+        else
+            return str2sub(index_str_raw)
+        end
+    else
+        return ""
     end
 end
 

@@ -11,7 +11,7 @@
     ph, mh, zh, _, _ = base_operators(qspace, "h", do_dict=false)
     b, n = base_operators(qspace, "b", do_dict=false)
     I = base_operators(qspace, "I")
-    var_dict2 = base_operators(qspace, "vars")
+    var_dict2 = base_operators(qspace, "params")
     alpha = base_operators(qspace, "alpha")
     beta = base_operators(qspace, "beta")
     gamma_i, gamma_j, gamma_k = base_operators(qspace, "gamma", do_dict=false)
