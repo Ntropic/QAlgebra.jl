@@ -51,17 +51,22 @@ end
 
 export get_default, set_flip_if_first_term_negative, set_do_braced, FLIP_IF_FIRST_TERM_NEGATIVE , DO_BRACED
 
+include("Helper.jl")
+
 include("StringUtils.jl")
 using .StringUtils
 export symbol2formatted, str2sub, str2sup, brace, braket, indexes2str
+export int_exponent2str, exponentdag2str
 
 include("CFunctions.jl")
 using .CFunctions
-export CFunction, CAtom, CSum, CRational, CProd, CExp, CLog
+export CFunction, CAbstractDefinition, CTypeDefinition, ParameterInfo, add_cabstract!, add_ctype!, CAbstract, CCustomType, CAtom, CSum, CRational, CProd, CExp, CLog
 export CMatrix, CVector, CPower
 export repartition, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
 export isnumeric, coeff, var_exponents, expand
 export contains_non_simple_CFunction
+export define_cabstract, define_ctype, list_cabstracts, list_ctypes
+export which_ensemble_acting
 
 include("QSpace.jl")
 using .QSpace
@@ -83,8 +88,9 @@ export base_operators, QExprLookup
 export repartition, neq
 export string, latex_string
 export term
+export @define, QExpr2CFunction
 
-export contains_abstract, which_ensemble_acting, are_indexes_defined
+export contains_abstract, are_indexes_defined
 export substitute, Substitution, --> 
 export repartition!
 export QExpr2string   # remove later 

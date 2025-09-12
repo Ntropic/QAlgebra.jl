@@ -2,6 +2,12 @@ export substitute, Substitution, -->
 
 
 # --- typed Substitution + ASCII operator ------------------------------------------
+"""
+    Substitution(from_expr::QExpr, to_expr::QExpr)
+
+Create a substitution struct from `from_expr` → `to_expr`.  
+Requires both to be in the same `StateSpace`.
+"""
 struct Substitution
     from::QAbstract
     to::QAtom
@@ -19,11 +25,15 @@ function Substitution(from_expr::QExpr, to_expr::QExpr)
 end
 
 # ASCII-friendly constructor:  q_from --> q_to
+"""
+    q_from --> q_to
+
+ Shortcut to define a substitution via the --> operator.
+"""
 const --> = Substitution
 
 # Handy alias for the concrete mapping used below
 const AtoP = Substitution
-
 
 
 function extract_qabstract(q::QExpr)::QAbstract
@@ -106,10 +116,19 @@ function substitute_qAtom(target::QAbstract, sp::AtoP)::Vector{QAtomProduct}
 end
 
 # --- top-level substitute (new order everywhere) ------------------------------
-# QAtomProduct → Vector{QComposite}
-function substitute(target::QAtomProduct, sp::AtoP)::Vector{QComposite}
+"""
+    substitute(T, sp::AtoP; checks=false) where T <: QObj
+
+Apply a substitution `sp::Substitution` (alias `AtoP`) to different target types:
+
+Optionally, property checks can be enabled via `checks=true`.
+"""
+function substitute(target::QAtomProduct, sp::AtoP; checks::Bool=false)::Vector{QComposite}
     # sanity: statespace compatibility
-    target.statespace === sp.statespace || error("Statespace mismatch between target and Substitution.")
+    if checks
+        substitution_properties_fulfilled(sp)
+        target.statespace === sp.statespace || error("Statespace mismatch between target and Substitution.")
+    end
     ss = target.statespace
     expr = target.expr
     coeff_fun = target.coeff_fun
@@ -132,8 +151,8 @@ substitution_properties_fulfilled(sub::Substitution)::Bool = substitution_proper
 function substitute(target::QExpr, sp::AtoP, checks::Bool=false)::QExpr
     if checks
         substitution_properties_fulfilled(sp)
+        target.statespace === sp.statespace || error("Statespace mismatch between target and Substitution.")
     end
-    target.statespace === sp.statespace || error("Statespace mismatch between target and Substitution.")
     new_terms = QComposite[]
     for term in target.terms
         append!(new_terms, substitute(term, sp))
@@ -142,13 +161,21 @@ function substitute(target::QExpr, sp::AtoP, checks::Bool=false)::QExpr
 end
 
 # Any single composite holding one expr
-function substitute(targ::T, sp::AtoP) where {T<:QComposite}
+function substitute(targ::T, sp::AtoP; checks::Bool=false) where {T<:QComposite}
     # Note: QMultiComposite is <: QComposite; a more specific method follows below.
+    if checks
+        substitution_properties_fulfilled(sp)
+        target.statespace === sp.statespace || error("Statespace mismatch between target and Substitution.")
+    end
     return [modify_expr(targ, substitute(targ.expr, sp))]
 end
 
 # Any multi-composite holding many sub-expressions
-function substitute(targ::T, sp::AtoP) where {T<:QMultiComposite}
+function substitute(targ::T, sp::AtoP; checks::Bool=false) where {T<:QMultiComposite}
+    if checks
+        substitution_properties_fulfilled(sp)
+        target.statespace === sp.statespace || error("Statespace mismatch between target and Substitution.")
+    end
     return [modify_expr(targ, map(x -> substitute(x, sp), targ.expr))]
 end
 
@@ -156,8 +183,8 @@ end
 function substitute(target::diff_QEq, sp::AtoP; checks::Bool=true)::diff_QEq
     if checks
         substitution_properties_fulfilled(sp)
+        target.statespace === sp.statespace || error("Statespace mismatch between target and Substitution.")
     end
-    target.statespace === sp.statespace || error("Statespace mismatch between target and Substitution.")
     lhs = substitute(target.left_hand_side, sp) 
     if length(lhs) != 1
         error("Substitution of $(sp.from) with $(sp.to) in $target did not result in a single term.")

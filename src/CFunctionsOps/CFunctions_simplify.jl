@@ -7,10 +7,10 @@ simplify(s::CSum)  = simplify_CSum(s.param_info, s.expr)
 simplify(r::CRational) = simplify_CRational(r.param_info, r.numer, r.denom)
 simplify(e::CExp)  = simplify_CExp(e.param_info, e.coeff, e.expr)
 simplify(l::CLog)  = simplify_CLog(l.param_info, l.coeff, l.expr)
-simplify(p::CProd) = simplify_CProd(p.param_info, p.coeff, p.terms)
+simplify(p::CProd) = simplify_CProd(p.param_info, p.coeff, p.expr)
 simplify(v::CVector) = CVector(v.param_info, v.coeff, simplify.(v.expr); row=v.row)
 simplify(M::CMatrix) = CMatrix(M.param_info, M.coeff, reshape(simplify.(M.expr[:]), size(M.expr)))
-simplify(p::CPower)  = simplify_CPower(p.param_info, p.coeff, simplify(p.param_info, ), p.exponent)
+simplify(p::CPower)  = simplify_CPower(p.param_info, p.coeff, p.param_info, p.expr, p.exponent)
 
 # helpers
 @inline _isint(q::Rational{Int}) = denominator(q) == 1
@@ -46,11 +46,11 @@ function simplify_CPower(param_info::ParameterInfo, coeff::ComplexRational, x::C
     elseif x isa CProd
         if _isint(q)
             n = Int(q)
-            tP = [ t^n for t in x.terms ]
+            tP = [ t^n for t in x.expr ]
             return simplify( (coeff * (x.coeff^n)) * CProd(tP) )
         else
             cP = CPower(param_info, ComplexRational(1,0,1), _const_atom(param_info, x.coeff), q)
-            tP = [ CPower(param_info, ComplexRational(1,0,1), t, q) for t in x.terms ]
+            tP = [ CPower(param_info, ComplexRational(1,0,1), t, q) for t in x.expr ]
             return simplify( coeff * (cP * CProd(tP)) )
         end
 
@@ -66,10 +66,10 @@ function simplify_CPower(param_info::ParameterInfo, coeff::ComplexRational, x::C
         # (c*exp(y))^q = c^q * exp(q*y)
         if _isint(q)
             n = Int(q)
-            return simplify( (x.coeff^n * coeff) * CExp(ComplexRational(1,0,1), n * x.x) )
+            return simplify( (x.coeff^n * coeff) * CExp(ComplexRational(1,0,1), n * x.expr) )
         else
             cP = CPower(param_info, ComplexRational(1,0,1), _const_atom(param_info, x.coeff), q)
-            return simplify( coeff * ( cP * CExp(param_info, ComplexRational(1,0,1), q * x.x) ) )
+            return simplify( coeff * ( cP * CExp(param_info, ComplexRational(1,0,1), q * x.expr) ) )
         end
 
     elseif x isa CPower
@@ -77,10 +77,10 @@ function simplify_CPower(param_info::ParameterInfo, coeff::ComplexRational, x::C
         ab = x.exponent * q
         if _isint(q)
             n = Int(q)
-            return simplify( CPower(param_info, coeff * (x.coeff^n), x.x, ab) )
+            return simplify( CPower(param_info, coeff * (x.coeff^n), x.expr, ab) )
         else
             cP = CPower(param_info, ComplexRational(1,0,1), _const_atom(param_info, x.coeff), q)
-            return simplify( coeff * ( cP * CPower(param_info, ComplexRational(1,0,1), x.x, ab) ) )
+            return simplify( coeff * ( cP * CPower(param_info, ComplexRational(1,0,1), x.expr, ab) ) )
         end
     else
         return CPower(param_info, coeff, x, q, Val(:nosimp))
@@ -138,8 +138,8 @@ function simplify_CRational(param_info::ParameterInfo, n::CFunction, d::CFunctio
     n = n / factor
     d = d / factor
 
-    min_n = min_exponents_simple(n)
-    min_d = min_exponents_simple(d)
+    min_n = min_exponents(n)
+    min_d = min_exponents(d)
     min_vals = min.(min_n, min_d)
     if any(min_vals .> 0)
         n = vec_multiply(n, .-min_vals)
@@ -167,7 +167,7 @@ end
 function simplify_CExp(param_info::ParameterInfo, coeff::ComplexRational, x::CFunction)
     # exp(log(y)) ⇒ y
     if x isa CLog
-        return x.x * coeff 
+        return x.expr * coeff 
     # exp(0) ⇒ 1
     elseif iszero(x)
         return CAtom(param_info, coeff, zeros(Int, dims(x)))
@@ -178,7 +178,7 @@ end
 function simplify_CLog(param_info::ParameterInfo, coeff::ComplexRational, x::CFunction)
     # log(exp(y)) ⇒ y
     if x isa CExp
-        return x.x * coeff 
+        return x.expr * coeff 
     end
     # log(1) ⇒ 0
     if isone(x)
@@ -189,73 +189,127 @@ end
 
 # CAtom, CSum, CProd, CRational, CExp, CLog
 
-function simplify_CProd(param_info::ParameterInfo, coeff::ComplexRational, terms::AbstractVector{<:CFunction})
-    coeff, atoms, sums, rats, exps, logs, pows = collect_prod_terms(param_info, coeff, terms)
 
-    # 1) combine atoms back into one "base" factor (coeff pulled out already)
+
+# -------------------- CProd simplification (new) --------------------
+
+# Factor a single numeric coefficient out of a CFunction if it has exactly one.
+# Returns (scaled_term_with_unit_coeff, pulled_coeff)
+@inline function _pull_coeff(t::CFunction)
+    cvec = coeff(t)
+    if length(cvec) == 1
+        c = cvec[1]
+        return (t / c, c)
+    else
+        return (t, ComplexRational(1,0,1))
+    end
+end
+
+function simplify_CProd(param_info::ParameterInfo, c0::ComplexRational, expr::AbstractVector{<:CFunction}) 
+    cacc, atoms, abstracts, customs, sums, rats, exps, logs, pows, rest = collect_prod_terms(param_info, c0, expr)
+    final_terms = CFunction[]
     has_term = false
-    local term::CFunction
+
     if !isempty(atoms)
         var_ex = zeros(Int, length(atoms[1].var_exponents))
         @inbounds for a in atoms
             var_ex .+= a.var_exponents
         end
-        term = CAtom(param_info, ComplexRational(1,0,1), var_ex)
+        push!(final_terms, CAtom(param_info, ComplexRational(1,0,1), var_ex))
         has_term = true
     end
 
-    # 2) multiply sums/rationals (at most one of each after reduce)
+    
+
     if !isempty(sums)
         s = length(sums) == 1 ? sums[1] : reduce(*, sums)
-        term = has_term ? term * s : (has_term = true; s)
+        if has_term
+            final_terms[1] = final_terms[1] * s
+        else
+            push!(final_terms, s); has_term = true
+        end
     end
     if !isempty(rats)
         r = length(rats) == 1 ? rats[1] : reduce(*, rats)
-        term = has_term ? term * r : (has_term = true; r)
+        if has_term
+            final_terms[1] = final_terms[1] * r
+        else
+            push!(final_terms, r); has_term = true
+        end
     end
 
-    # 3) reattach exp/log/pow factors (keep a stable order: exp, log, power)
-    final_terms = CFunction[]
-    if has_term
-        push!(final_terms, term)
-    end
     if length(exps) > 1
-        exps = [reduce(*, exps)]   # you already define *(::CExp, ::CExp)
+        exps = [reduce(*, exps)]
     end
+
+    append!(final_terms, abstracts)     # any other future types
     append!(final_terms, exps)
     append!(final_terms, logs)
-    append!(final_terms, pows)     # carry powers as-is (optionally merge same-base here)
+    append!(final_terms, pows)
+    append!(final_terms, customs)  # keep custom symbols as-is (unit coeff inside)
+    append!(final_terms, rest)     # any other future types
 
-    # 4) trivial cases
+    # 5) Trivial outcomes
     if isempty(final_terms)
-        # only scalar coeff remained; keep dimensions from first original term
-        return CAtom(param_info, coeff, zeros(Int, dims(terms[1])))
+        # only scalar coeff remained
+        return CAtom(param_info, cacc, zeros(Int, param_info.dims))
     elseif length(final_terms) == 1
-        return coeff * final_terms[1]
+        # just one factor: re-attach scalar coeff
+        return cacc * final_terms[1]
     end
 
-    # 5) canonical sort of the tail (do not reorder the leading combined term)
+    # 6) Sort tail but keep the (possibly combined) leading term intact
     start_idx = has_term ? 2 : 1
-    if start_idx <= length(final_terms)-1
+    if start_idx <= length(final_terms) - 1
         sort!(final_terms[start_idx:end])
     end
 
-    return CProd(param_info, coeff, final_terms, Val(:nosimp))
+    return CProd(param_info, cacc, final_terms, Val(:nosimp))
 end
 
-# Helper 
-function collect_prod_terms(param_info::ParameterInfo, coeff::ComplexRational, terms::AbstractVector{<:CFunction})
-    atoms, sums, rats, exps, logs, pows = CAtom[], CSum[], CRational[], CExp[], CLog[], CPower[]
-    for t in terms
+
+function collect_prod_terms(param_info::ParameterInfo, c0::ComplexRational, expr::AbstractVector{<:CFunction})
+    cacc = c0
+    atoms  = CAtom[]
+    sums   = CSum[]
+    rats   = CRational[]
+    exps   = CExp[]
+    logs   = CLog[]
+    pows   = CPower[]
+    customs = CCustomType[]
+    abstracts = CAbstract[]
+    rest   = CFunction[]
+
+    for t in expr
+        # fully simplify each factor, then pull its numeric coeff into cacc
         t = simplify(t)
         if t isa CProd
-            c2, a2, s2, r2, e2, l2, p2 = collect_prod_terms(param_info, t.coeff, t.terms)
-            coeff *= c2
-            append!(atoms, a2); append!(sums, s2)
-            append!(rats,  r2); append!(exps, e2); append!(logs, l2); append!(pows, p2)
-        elseif t isa CAtom
-            coeff *= t.coeff
-            push!(atoms, CAtom(param_info, ComplexRational(1,0,1), copy(t.var_exponents)))
+            c2, a2, ab2, cu2, s2, r2, e2, l2, p2, rest2 =
+                collect_prod_terms(param_info, t.coeff, t.expr)
+            cacc *= c2
+            append!(atoms, a2)
+            append!(abstracts, ab2)   # << just collect, no abmap
+            append!(customs, cu2)
+            append!(sums, s2)
+            append!(rats, r2)
+            append!(exps, e2)
+            append!(logs, l2)
+            append!(pows, p2)
+            append!(rest, rest2)
+            continue
+        end
+
+        t, c = _pull_coeff(t)
+        cacc *= c
+
+        if t isa CAtom
+            # unit coeff guaranteed; only exponents matter
+            push!(atoms, t)
+        elseif t isa CAbstract
+            # merge by (index, dag) and sum rational exponents
+            push!(abstracts, t)
+        elseif t isa CCustomType
+            push!(customs, t)
         elseif t isa CSum
             push!(sums, t)
         elseif t isa CRational
@@ -267,10 +321,32 @@ function collect_prod_terms(param_info::ParameterInfo, coeff::ComplexRational, t
         elseif t isa CPower
             push!(pows, t)
         else
-            error("unsupported term in CProd: $t")
+            push!(rest, t)
         end
     end
-    return coeff, atoms, sums, rats, exps, logs, pows
+
+    # merge adjacent CAbstracts (same index & dag) within this bucket
+    if !isempty(abstracts) 
+        sort!(abstracts)  # uses your isless(::CAbstract,::CAbstract)^
+        merged = CAbstract[]
+        i = 1
+        while i <= length(abstracts)
+            a = abstracts[i]
+            exp = a.exponent
+            j = i + 1
+            while j <= length(abstracts) && abstracts[j].index == a.index && abstracts[j].dag == a.dag
+                exp += abstracts[j].exponent
+                j += 1
+            end
+            if exp != 0//1
+                push!(merged, CAbstract(param_info, ComplexRational(1,0,1), a.index, exp, a.dag))
+            end
+            i = j
+        end
+        abstracts = merged
+    end
+
+    return cacc, atoms, abstracts, customs, sums, rats, exps, logs, pows, sort!(rest)
 end
 
 
@@ -278,7 +354,7 @@ end
 
 firstnegative(a::CAtom) = is_negative(a.coeff)
 firstnegative(a::CAbstract) = false
-firstnegative(s::CSum)  = firstnegative(s.terms[1])
+firstnegative(s::CSum)  = firstnegative(s.expr[1])
 firstnegative(p::CMultiComposite) = is_negative(p.coeff)
 function firstnegative(r::CRational) 
     if allnegative(r.denom) || (FLIP_IF_FIRST_TERM_NEGATIVE  && firstnegative(r.denom))   # prefer negatives on numerator
@@ -301,10 +377,10 @@ function addable(a::CSum, b::CSum)::Bool
     true
 end
 function addable(a::CProd, b::CProd)::Bool
-    if length(a.terms) != length(b.terms) 
+    if length(a.expr) != length(b.expr) 
         return false
     end
-    for (el_a, el_b) in zip(a.terms, b.terms)
+    for (el_a, el_b) in zip(a.expr, b.expr)
         if el_a != el_b
             return false
         end
@@ -315,13 +391,13 @@ function addable(a::CRational, b::CRational)::Bool
     return a.denom == b.denom
 end
 function addable(a::CExp, b::CExp)::Bool
-    if a.x == b.x
+    if a.expr == b.expr
         return true
     end 
     return false
 end
 function addable(a::CLog, b::CLog)::Bool
-    if a.x == b.x
+    if a.expr == b.expr
         return true
     end 
     return false
@@ -331,7 +407,7 @@ end
 # assume addable
 function unify_add(a::CAtom, b::CAtom)::CFunction
     absum = a.coeff+b.coeff
-    return CAtom(absum, copy(a.var_exponents))
+    return CAtom(absum, a.var_exponents)
 end
 function unify_add(a::CSum, b::CSum)::CFunction
     error("CSum shouldn't contain another CSum!")
@@ -339,19 +415,19 @@ function unify_add(a::CSum, b::CSum)::CFunction
 end
 function unify_add(a::CProd, b::CProd)::CFunction
     absum = a.coeff+b.coeff
-    return CProd(absum, copy(a.terms), Val(:nosimp))
+    return CProd(absum, a.expr, Val(:nosimp))
 end
 function unify_add(a::CRational, b::CRational)::CFunction
     simple_numer = simplify(a.numer+b.numer)
-    return CRational(simple_numer, copy(a.denom), Val(:nosimp))
+    return CRational(simple_numer, a.denom, Val(:nosimp))
 end
 function unify_add(a::CExp, b::CExp)::CFunction
     absum = a.coeff+b.coeff
-    return CExp(absum, copy(a.x), Val(:nosimp))
+    return CExp(absum, a.expr, Val(:nosimp))
 end
 function unify_add(a::CLog, b::CLog)::CFunction
     absum = a.coeff+b.coeff
-    return CLog(absum, copy(a.x), Val(:nosimp))
+    return CLog(absum, a.expr, Val(:nosimp))
 end 
 
 
@@ -363,7 +439,7 @@ function divisors(a::CAtom)::Vector{Int}
     return [a.coeff.c]
 end
 function divisors(a::CSum)::Vector{Int}
-    return reduce(vcat, [divisors(t) for t in a.terms])
+    return reduce(vcat, [divisors(t) for t in a.expr])
 end
 function divisors(a::CProd)::Vector{Int}
     return [a.coeff.c]
@@ -382,15 +458,15 @@ function vec_multiply(x::CAtom, vector::Vector{Int})::CAtom
     return CAtom(x.coeff, x.var_exponents + vector)
 end
 function vec_multiply(x::T, vector::Vector{Int})::T where T <: CComposite
-    return modify_exprs([vec_multiply(t, vector) for t in x.terms], Val(:nosimp))
+    return modify_exprs([vec_multiply(t, vector) for t in x.expr], Val(:nosimp))
 end
 function vec_multiply(x::CRational, vector::Vector{Int})::CRational
     return CRational(vec_multiply(x.numer), vec_multiply(x.denom), Val(:nosimp))
 end
 function vec_multiply(x::CProd, vector::Vector{Int})::CProd
-    terms = x.terms
-    terms[1] = vec_multiply(terms[1], vector)   
-    return CProd(x.coeff, terms, Va(:nosimp)) 
+    expr = x.expr
+    expr[1] = vec_multiply(expr[1], vector)   
+    return CProd(x.coeff, expr, Va(:nosimp)) 
 end
 
 
@@ -404,7 +480,7 @@ function numer(s::CAtom)::Vector{Int}
 end
 function numer(s::CSum)::Vector{Int}
     ints::Vector{Int} = Int[]
-    for t in s.terms 
+    for t in s.expr 
         append!(ints, numer(t))
     end
     return ints 

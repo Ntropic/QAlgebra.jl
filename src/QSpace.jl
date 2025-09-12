@@ -188,6 +188,4 @@ function cleanup_terms(terms::Vector{Tuple{T,S}})::Vector{Tuple{T,S}} where {T<:
     resize!(cleaned, cnt)                # trim unused slots
     return cleaned
 end
-
-
 end # module QSpace

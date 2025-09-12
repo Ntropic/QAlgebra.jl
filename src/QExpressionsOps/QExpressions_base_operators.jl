@@ -10,7 +10,7 @@ Time handling:
 """
 function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false, by_ensemble::Bool=false)
     # -------------------- helpers --------------------
-    _I_expr() = QExpr(statespace, QAtomProduct(statespace, CAtom(zeros(Int, length(statespace.params))), QTerm[]))
+    _I_expr() = QExpr(statespace, QAtomProduct(statespace, CAtom(statespace.param_info, zeros(Int, length(statespace.params))), QTerm[]))
 
     _qexpr_for_var(i::Int) = begin
         vexp = zeros(Int, length(statespace.params))
@@ -61,6 +61,28 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
         else
             return length(ops_vec) == 1 ? ops_vec[1] : (ops_vec...,)
         end
+    end
+
+    # ==================> CAbstract Parameters <===============================
+    if name_base == name 
+        abstract_definitions = statespace.param_info.abstract_definitions
+        for abstract_defintion in abstract_definitions
+            if abstract_defintion.name == name
+                cfun = CAbstract(param_info, ComplexRational(1,0,1), abstract_defintion.index)
+                return QExpr(statespace, [QAtomProduct(statespace, cfun)])
+            end
+        end
+    end
+    if name == "CAbstract"
+        abstract_definitions = statespace.param_info.abstract_definitions
+        exprs = QExpr[]
+        for abstract_defintion in abstract_definitions
+            if abstract_defintion.name == name
+                cfun = CAbstract(param_info, ComplexRational(1,0,1), abstract_defintion.index)
+                push!(exprs, QExpr(statespace, [QAtomProduct(statespace, cfun)]))
+            end
+        end
+        return exprs
     end
 
     # ===================> Subspace Operators <=================================
@@ -164,7 +186,7 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
             (length(ops_vec) == 1 ? ops_vec[1] : (ops_vec...,))
     end
 
-    # ===================> Abstract Operators <=================================
+    # ===================> QAbstract Operators <=================================
     for (key_index, operatortype) in enumerate(statespace.operatortypes)
         ti_default = _default_time_index(operatortype.of_time, t_spec)
         max_t = statespace.max_t_ind

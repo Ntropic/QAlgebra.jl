@@ -46,6 +46,12 @@ end
 
 
 # QObj
+"""
+    repartition!(q::diff_QEq) -> diff_QEq
+
+Reorders the indexes of ensemble-subspaces to the left, so that present indexes are for example  i,j,k and not i,_,k,m .
+This allows simplify to further simplify expressions, by removing differences only in indexing parameters
+"""
 function repartition(q::QTerm, index_order::Vector{Int})::QTerm
     op_indices = q.op_indices[index_order]
     return QTerm(op_indices)
@@ -54,13 +60,13 @@ function repartition(q::QAtomProduct, add_at_sum::Bool,  where_defined::Vector{V
     return modify_coeff_expr(q, repartition(q.coeff_fun, var_tuples), QAtom[repartition(x, index_order) for x in q.expr])
 end
 function repartition(q::QExpr, add_at_sum::Bool, where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_tuples::Vector{Tuple{Int, Int}})::QExpr
-    return QExpr(q.statespace, [repartition(qq, add_at_sum, where_defined, index_order) for qq in q.terms])
+    return QExpr(q.statespace, [repartition(qq, add_at_sum, where_defined, index_order, var_tuples) for qq in q.terms])
 end
 function repartition(q::T, add_at_sum::Bool, where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_tuples::Vector{Tuple{Int, Int}})::T where T <: QComposite
-    return modify_coeff_expr(q, repartition(q.coeff_fun, var_tuples), repartition(q.expr, add_at_sum, where_defined, index_order, var_tuples, perm_moves))
+    return modify_coeff_expr(q, repartition(q.coeff_fun, var_tuples), repartition(q.expr, add_at_sum, where_defined, index_order, var_tuples))
 end
 function repartition(q::T, add_at_sum::Bool, where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_tuples::Vector{Tuple{Int, Int}})::T where T <: QMultiComposite
-    return modify_coeff_expr(q, repartition(q.coeff_fun, var_tuples), [repartition(qq, add_at_sum, where_defined, index_order, var_tuples, perm_moves) for qq in q.expr])
+    return modify_coeff_expr(q, repartition(q.coeff_fun, var_tuples), [repartition(qq, add_at_sum, where_defined, index_order, var_tuples) for qq in q.expr])
 end
 function repartition(q::QSum, add_at_sum::Bool, where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_tuples::Vector{Tuple{Int, Int}})::QSum
     # define improved index_order and var_index_order
@@ -100,12 +106,6 @@ function repartition(q::QSum, add_at_sum::Bool, where_defined::Vector{Vector{Boo
     end
 end
 
-"""
-    repartition!(q::diff_QEq) -> diff_QEq
-
-Reorders the indexes of ensemble-subspaces to the left, so that present indexes are for example  i,j,k and not i,_,k,m .
-This allows simplify to further simplify expressions, by removing differences only in indexing parameters
-"""
 function repartition(q::diff_QEq)::diff_QEq
     # check index order on left side 
     where_defined_lhs = which_ensemble_acting(q.left_hand_side)

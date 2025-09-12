@@ -4,13 +4,16 @@ using ..StringUtils
 using ComplexRationals
 using ..QAlgebra: get_default, FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
 
-export CFunction, CAbstractDefinition, CTypeDefinition, ParameterInfo, define_cabstract, define_ctype, CAbstract, CCustomType, CAtom, CSum, CRational, CProd, CExp, CLog, CPower, CVector, CMatrix
+export CFunction, CAbstractDefinition, CTypeDefinition, ParameterInfo, add_cabstract!, add_ctype!, CAbstract, CCustomType, CAtom, CSum, CRational, CProd, CExp, CLog, CPower, CVector, CMatrix
 export CMatrix, CVector, CPower
 export isnumeric, coeff, var_exponents
 export contains_non_simple_CFunction
+export define_cabstract, define_ctype, list_cabstracts, list_ctypes
+export which_ensemble_acting
 
 import Base: copy, exp, log, length, getindex, iterate, size
 import ComplexRationals: isonelike
+import ..QAlgebra: vecvec_or, vecvec_or!, sort_unique!, variants_C
 
 const CR_ZERO = ComplexRational(0,0,1)
 const CR_ONE  = ComplexRational(1,0,1)
@@ -22,12 +25,13 @@ const CR_ONE  = ComplexRational(1,0,1)
 Abstract supertype for symbolic functions representing atoms (`CAtom`), sums (`CSum`), and rationals (`CRational`).
 """
 abstract type CFunction end
+abstract type CAtomic <: CFunction end
 abstract type CComposite <: CFunction end 
 abstract type CMultiComposite <: CFunction end 
 abstract type CDef end
 
 # =======================> Abstract CFun Definitions <===================================================================
-abstract type AbstractCAbstract <: CComposite end   # define here as a resesrvation, to concretely define later, for circular dependencies.
+abstract type AbstractCAbstract <: CAtomic end   # define here as a resesrvation, to concretely define later, for circular dependencies.
 abstract type AbstractParameterInfo end
 """
     CAbstractDef
@@ -37,7 +41,8 @@ Contains:
 - `symbol`     : unique tag
 - `index`      : identifies which abstract definition in DB in is
 - `plain`      : string to print for it 
-- `latex`      : latexstring to print for it
+- `latex`      : latexstring to print for i
+This type is not to be used for manipulations of equations. Instead it is used to define new CTypes from existing ones. 
 """
 struct CAbstractDefinition <: CDef
     symbol::Symbol
@@ -60,6 +65,7 @@ Row in the *functions* cluster (parametric defs like cos, sinh).
 """
 struct CTypeDefinition <: CDef
     name::Symbol
+    type_symbols::NTuple{5,Symbol}
     plain::String
     latex::String
     index::Int    # index in param_info
@@ -67,10 +73,25 @@ struct CTypeDefinition <: CDef
     fun::CFunction
     has_abstract::Bool
     abstract_parameters::Vector{AbstractCAbstract}
+    index_map::Vector{Int} # maps the Cabstract.index to our abstractvector
     param_info::AbstractParameterInfo
 end
 
+struct ParameterIndexes # Helps find the indexes (ensemble and time indexes) associated with the parameters 
+    labels::Vector{String}
 
+    t_labels::Vector{String}
+    t_labels_latex::Vector{String}
+    label_parameter_indexes::Vector{Vector{Int}}
+    label_parameter_t_indexes::Vector{Vector{Int}}
+
+    all_indexes::Vector{Int}   # for has_indexes -> all parameters that would lead to an index being present 
+
+    function ParameterIndexes(labels::Vector{String}, t_labels::Vector{String}, t_labels_latex::Vector{String}, label_parameter_indexes::Vector{Vector{Int}}, label_parameter_t_indexes::Vector{Vector{Int}})
+        all_indexes = sort_unique!(vcat(vcat(label_parameter_indexes...),vcat(label_parameter_t_indexes...)))
+        new(labels, t_labels, t_labels_latex, label_parameter_indexes, label_parameter_t_indexes, all_indexes)
+    end
+end
 """
     ParameterInfo
 
@@ -101,36 +122,42 @@ struct ParameterInfo <: AbstractParameterInfo
     indexes_by_t_index::Vector{Vector{Int}}   # for each t_index which indexes have it? 
     indexes_of_t::Vector{Int}
 
+    how_many_by_ensemble::Vector{Int}
+
     param_of_t::Vector{Bool}
     param_is_t::Vector{Bool}
-    param_values::Vector
+    param_values::Vector   # specifies for example values or functions or vectors for the parameters (vectors of the index values), functions of time ...
+    
+    param_indexes::ParameterIndexes
     abstract_definitions::Vector{CAbstractDefinition}
     custom_ctype::Vector{CTypeDefinition}
+
     function ParameterInfo(
         outer_labels_symbols::Vector{Symbol}, inner_labels_symbols_flat::Vector{Symbol}, outer_labels::Vector{String}, params_name::Vector{String},
         params_str::Vector{String}, params_latex::Vector{String}, param_of_indexes::Vector{Bool}, outer_group_by_index::Vector{Int},
         t_index_by_index::Vector{Int}, ss_ensemble_indexes_by_group::Vector{Vector{Int}}, ss_ensemble_present_by_group::Vector{Vector{Bool}}, indexed_parameter_indexes::Vector{Int},
         where_acting_by_parameter::Vector{Vector{Vector{Bool}}}, subspace_index_maps::Vector{Array{Vector{Int},2}}, t_index_transform::Array{Vector{Int},2}, indexes_by_t_index::Vector{Vector{Int}},
-        indexes_of_t::Vector{Int}, param_of_t::Vector{Bool}, param_is_t::Vector{Bool}, param_values::Vector)
-        dims = length(outer_labels_symbols)
+        indexes_of_t::Vector{Int}, how_many_by_ensemble::Vector{Int}, param_of_t::Vector{Bool}, param_is_t::Vector{Bool}, param_values::Vector, param_indexes::ParameterIndexes)
+        dims = length(inner_labels_symbols_flat)
         new(dims, outer_labels_symbols, inner_labels_symbols_flat, outer_labels,
             params_name, params_str, params_latex, param_of_indexes,
             outer_group_by_index, t_index_by_index, ss_ensemble_indexes_by_group, ss_ensemble_present_by_group,
             indexed_parameter_indexes, where_acting_by_parameter, subspace_index_maps, t_index_transform,
-            indexes_by_t_index, indexes_of_t, param_of_t, param_is_t, param_values, [],[])
+            indexes_by_t_index, indexes_of_t, how_many_by_ensemble, param_of_t, param_is_t, param_values, param_indexes, [],[])
     end
 end
 
 ######################################################################################################################################################
-function define_cabstract(param_info::ParameterInfo, name)::CAbstractDefinition
+function list_cabstracts(param_info::ParameterInfo)
+    return param_info.abstract_definitions
+end
+function define_cabstract(param_info::ParameterInfo,  name::Union{Symbol, String})::CAbstractDefinition
     name_str, name_latex = symbol2formatted(String(name))
-
     for (i, abstract_def) in enumerate(param_info.abstract_definitions)
         if abstract_def.name == String(name)
             error("Abstract with name $(String(name)) already defined.")
         end
     end
-
     index = length(param_info.abstract_definitions) + 1
     sortkey = index + 15
     c_abstract = CAbstractDefinition(Symbol(name), name_str, name_latex, index, sortkey, param_info)
@@ -138,28 +165,88 @@ function define_cabstract(param_info::ParameterInfo, name)::CAbstractDefinition
     return c_abstract
 end
 
-function define_ctype(param_info::ParameterInfo; name, fun::CFunction)::CTypeDefinition
-    name_str, name_latex = symbol2formatted(String(name))
-    index = length(param_info.custom_ctype) + 1
+function c_abstract_exists(param_info::ParameterInfo, name::Union{Symbol, String})::Bool 
+    sym_name = Symbol(name)
+    for (i, abstract_def) in enumerate(param_info.abstract_definitions)
+        if abstract_def.symbol == sym_name 
+            return true 
+        end
+    end
+    return false 
+end
+
+function list_ctypes(param_info::ParameterInfo)
+    return param_info.custom_ctype
+end
+function define_ctype(param_info::ParameterInfo, name::Union{Symbol,String}, fun::CFunction)::CTypeDefinition
+    CName, Name, base = variants_C(name)
+    name_sym = Symbol(base)
+    plain, latex = symbol2formatted(String(base))
+
+    index   = length(param_info.custom_ctype) + 1
     sortkey = index + 10^6
-    abstract_parameters = contains_which_abstract(fun)
-    has_abstract = !isempty(abstract_parameters)
-    c_type_def = CTypeDefinition(Symbol(name), name_str, name_latex, index, sortkey, fun, has_abstract, abstract_parameters, param_info)
+
+    abstract_parameters = abstract_from_abstractdef.(contains_which_abstracts(fun))                # defined below
+    abstract_indexes    = [c.index for c in abstract_parameters]
+    index_map = isempty(abstract_indexes) ? Int[] : begin
+        m = maximum(abstract_indexes)
+        im = zeros(Int, m)
+        for (j, ind) in enumerate(abstract_indexes)
+            im[ind] = j
+        end
+        im
+    end
+    has_abstract  = !isempty(abstract_parameters)
+    if has_abstract && has_indexes(fun)
+        error("CCustomType functions either require no arguments (i.e. are deifned free of CAbstracts) or have no indexes or time dependences in their definition.")
+    end
+    type_symbols  = (Symbol(CName), Symbol(Name), Symbol(base), :Any, :any)
+    c_type_def = CTypeDefinition(name_sym, type_symbols, plain, latex, index, sortkey, fun, has_abstract, abstract_parameters, index_map, param_info)
     push!(param_info.custom_ctype, c_type_def)
     return c_type_def
 end
 
 
-""" 
+
+# =====================================================> CFunction Types <=====================================================================================================
+"""
     CAbstract
+
+Abstract symbol instance (optionally daggered and/or with an integer/rational power)
+with a complex-rational coefficient:
+
+    coeff * A_index^(exponent)  (daggered if dag=true)
+
+Fields
+- `param_info` : ParameterInfo
+- `coeff`      : ComplexRational
+- `index`      : Int (1-based index into `param_info.abstract_definitions`)
+- `exponent`   : Rational{Int} (use `n//1` for integer n)
+- `dag`        : Bool
+- `abstract_def` : CAbstractDefinition (back-reference convenience)
 """
 struct CAbstract <: AbstractCAbstract
     param_info::ParameterInfo
-    index::Int 
+    coeff::ComplexRational
+    index::Int
+    exponent::Rational{Int}
+    dag::Bool
     abstract_def::CAbstractDefinition
-end
-repartition(f::CAbstract, var_tuples::Vector{Tuple{Int, Int}}) = error("You should not repartition abstract parameters! Remove them from your main equations before repartitioning.")
 
+    # Core inner constructors
+    function CAbstract(param_info::ParameterInfo, coeff::ComplexRational, index::Int, exponent::Rational{Int}=1//1, dag::Bool=false)
+        return new(param_info, coeff, index, exponent, dag, param_info.abstract_definitions[index])
+    end
+end
+coeff(a::CAbstract) = [a.coeff]
+exponent(a::CAbstract) = a.exponent
+isdag(a::CAbstract) = a.dag
+modify_coeff(a::CAbstract, c::ComplexRational) = CAbstract(a.param_info, c, a.index, a.exponent, a.dag)
+modify_exponent(a::CAbstract, q::Rational{Int}) = CAbstract(a.param_info, a.coeff, a.index, q, a.dag)
+modify_exponent(a::CAbstract, n::Integer) = modify_exponent(a, n//1)
+modify_dag(a::CAbstract, d::Bool=true) = CAbstract(a.param_info, a.coeff, a.index, a.exponent, d)
+toggle_dag(a::CAbstract) = modify_dag(a, !a.dag)
+repartition(::CAbstract, ::Vector{Tuple{Int,Int}}) = error("You should not repartition abstract parameters! Remove them before repartitioning.")
 
 """
     CCustomType(param_info, def_id, coeff, x)
@@ -172,8 +259,9 @@ struct CCustomType <: CFunction
     expr::Vector{CFunction}
     ctype_def::CTypeDefinition
 end
+
 function repartition(f::CCustomType, var_tuples::Vector{Tuple{Int, Int}})::CCustomType
-    new_parameters = repartition.(expr, Ref(var_tuples))
+    new_parameters = repartition.(f.expr, Ref(var_tuples))
     return CCustomType(f.param_info, f.coeff, new_parameters, f.ctype_def)
 end
 function modify_expr(f::CCustomType, new_expr::Vector{CFunction})
@@ -196,7 +284,7 @@ A single term with a complex‐rational coefficient and integer exponents for ea
 - The `Int` and `Rational` constructors wrap the coefficient into a `ComplexRational`.
 - `var_exponents[j]` is the exponent of variable _j_.
 """
-struct CAtom <: CFunction
+struct CAtom <: CAtomic
     param_info::ParameterInfo
     coeff::ComplexRational
     var_exponents::Vector{Int}
@@ -361,10 +449,10 @@ end
 function CLog(param_info::ParameterInfo, expr::CFunction)
     CLog(param_info, ComplexRational(1,0,1), expr)
 end
-function log(param_info::ParameterInfo, x::CFunction)
+function log(param_info::ParameterInfo, expr::CFunction)
     return CLog(param_info, expr) 
 end
-function log(x::CFunction)
+function log(expr::CFunction)
     return CLog(expr.param_info, expr) 
 end
 function modify_expr(f::CLog, new_expr::Vector{CFunction})
@@ -391,7 +479,7 @@ struct CPower <: CComposite
     # inner :nosimp constructor that *only* wraps
     function CPower(param_info::ParameterInfo, coeff::ComplexRational, expr::T, exponent::Rational{Int}, ::Val{:nosimp}) where {T<:CFunction}
         new(param_info, coeff, expr, exponent)
-    end
+    end    
 end
 
 # thin outer constructors that delegate to simplify
@@ -419,20 +507,18 @@ An oriented vector of `CFunction`s.
 struct CVector <: CFunction
     param_info::ParameterInfo
     coeff::ComplexRational
-    exprs::Vector{CFunction}
+    expr::Vector{CFunction}
     row::Bool  # false => n×1 (column), true => 1×n (row)
 end
-CVector(param_info::ParameterInfo, entries::AbstractVector{<:CFunction}; row::Bool=false) = CVector(param_info, ComplexRational(1,0,1), collect(entries), row)
-CVector(param_info::ParameterInfo, coeff::ComplexRational, entries::AbstractVector{<:CFunction}; row::Bool=false) = CVector(param_info, coeff, collect(entries), row)
-function modify_exprs(f::CVector, new_expr::Vector{CFunction})
-    return CVector(f.param_info, f.coeff, new_expr; row=f.row)
-end
+CVector(param_info::ParameterInfo, expr::AbstractVector{<:CFunction}; row::Bool=false) = CVector(param_info, ComplexRational(1,0,1), collect(expr), row)
+CVector(param_info::ParameterInfo, coeff::ComplexRational, expr::AbstractVector{<:CFunction}; row::Bool=false) = CVector(param_info, coeff, collect(expr), row)
+modify_exprs(f::CVector, new_expr::Vector{CFunction}) = CVector(f.param_info, f.coeff, new_expr; row=f.row)
 coeff(v::CVector) = isempty(v.expr) ? ComplexRational[] : vcat(coeff.(v.expr)...)
 length(v::CVector) = length(v.expr)
 size(v::CVector) = v.row ? (1, length(v.expr)) : (length(v.expr), 1)
 getindex(v::CVector, i::Int) = v.expr[i]
 iterate(v::CVector, st::Int=1) = st > length(v.expr) ? nothing : (v.expr[st], st+1)
-repartition(M::CVector, var_tuples::Vector{Tuple{Int,Int}}) = CVector(reshape(repartition.(M.expr[:], Ref(var_tuples)), size(M.expr)))
+repartition(v::CVector, var_tuples::Vector{Tuple{Int,Int}}) = CVector(v.param_info, v.coeff, repartition.(v.expr, Ref(var_tuples)); row=v.row)
 
 """
     CMatrix(entries::AbstractMatrix{<:CFunction})
@@ -443,19 +529,16 @@ A matrix of `CFunction`s.
 struct CMatrix <: CFunction
     param_info::ParameterInfo
     coeff::ComplexRational
-    entries::Matrix{CFunction}
+    expr::Matrix{CFunction}
 end
-CMatrix(param_info::ParameterInfo, entries::AbstractMatrix{<:CFunction}) = CMatrix(param_info, ComplexRational(1,0,1), Matrix{CFunction}(entries))
-CMatrix(param_info::ParameterInfo, coeff::ComplexRational, entries::AbstractMatrix{<:CFunction}) = CMatrix(param_info, coeff, Matrix{CFunction}(entries))
-function modify_exprs(f::CMatrix, new_expr::Matrix{CFunction})
-    return CMatrix(f.param_info, f.coeff, new_expr)
-end
+CMatrix(param_info::ParameterInfo, expr::AbstractMatrix{<:CFunction}) = CMatrix(param_info, ComplexRational(1,0,1), Matrix{CFunction}(expr))
+CMatrix(param_info::ParameterInfo, coeff::ComplexRational, expr::AbstractMatrix{<:CFunction}) = CMatrix(param_info, coeff, Matrix{CFunction}(expr))
+modify_exprs(f::CMatrix, new_expr::Matrix{CFunction}) = CMatrix(f.param_info, f.coeff, new_expr)
 coeff(M::CMatrix) = [M.coeff]
 length(M::CMatrix) = length(M.expr)         # number of elements (m*n)
 size(M::CMatrix) = size(M.expr)
 getindex(M::CMatrix, i::Int, j::Int) = M.expr[i, j]
-repartition(M::CMatrix, var_tuples::Vector{Tuple{Int,Int}}, perm_moves::Vector{Tuple{Int, Int}}) = CMatrix(reshape(repartition.(M.expr[:], Ref(var_tuples), Ref(perm_moves)), size(M.expr)))
-
+repartition(M::CMatrix, var_tuples::Vector{Tuple{Int,Int}}) = CMatrix(M.param_info, M.coeff, reshape(repartition.(M.expr[:], Ref(var_tuples)), size(M.expr)))
 
 #### Some basic functions ##############################################################################################
 
@@ -463,7 +546,6 @@ repartition(M::CMatrix, var_tuples::Vector{Tuple{Int,Int}}, perm_moves::Vector{T
 
 import Base: length, getindex, iterate, deleteat!, reverse
 length(p::CFunction)::Int = 1
-
 
 getindex(p::CSum, i::Int) = p.expr[i]
 iterate(p::CSum, state=1) = state > length(p.expr) ? nothing : (p.expr[state], state + 1)

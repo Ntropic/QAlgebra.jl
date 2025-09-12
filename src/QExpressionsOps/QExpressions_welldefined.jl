@@ -1,19 +1,6 @@
-export which_ensemble_acting, are_indexes_defined
+export are_indexes_defined
 
 
-function vecvec_or(A::Vector{Vector{Bool}}, B::Vector{Vector{Bool}})
-    # Assume they are equally shaped. 
-    return broadcast.(|, A, B)
-end
-function vecvec_or!(A::Vector{<:AbstractVector{Bool}}, B::Vector{<:AbstractVector{Bool}})
-    # length(A) == length(B) || throw(DimensionMismatch("outer lengths differ ($(length(A)) vs $(length(B)))"))
-    @inbounds for i in eachindex(A, B)
-        ai, bi = A[i], B[i]
-        #length(ai) == length(bi) || throw(DimensionMismatch("inner lengths differ at i=$i ($(length(ai)) vs $(length(bi)))"))
-        ai .|= bi                # elementwise OR, in place
-    end
-    return A
-end
 cnimp(a::Bool, b::Bool) = b && !a
 function converse_nonimplication(A::Vector{Vector{Bool}}, B::Vector{Vector{Bool}})
     # Assume they are equally shaped. 
@@ -21,6 +8,8 @@ function converse_nonimplication(A::Vector{Vector{Bool}}, B::Vector{Vector{Bool}
 end
 
 # CFunctions
+
+import ..CFunctions: which_ensemble_acting
 """ 
     which_ensemble_acting(q::QObj)::Vector{Vector{Bool}}
 
@@ -28,24 +17,6 @@ Returns a vector of vectors of booleans. Each inner vetor specifies which of its
 This includes actions from CFunctions. Th function should only be applied after substituting all QAbstract terms. 
 Their present can be checked via `contains_abstract(q)`.
 """
-function which_ensemble_acting(f::CAtom, param_info::ParameterInfo, subspace_info::SubSpaceInfo)
-    where_non_trivial::Vector{Vector{Bool}} = [zeros(Bool, n) for n in subspace_info.how_many_by_ensemble]
-    for (param_ind, where_acting) in zip(param_info.indexed_parameter_indexes, param_info.where_acting_by_parameter)
-        if f.var_exponents[param_ind] != 0
-            vecvec_or!(where_non_trivial, where_acting)
-        end 
-    end
-    return where_non_trivial
-end
-function which_ensemble_acting(f::CSum, param_info::ParameterInfo, subspace_info::SubSpaceInfo)::Vector{Vector{Bool}}
-    # or of the individual terms 
-    return reduce(vecvec_or, [which_ensemble_acting(t, param_info, subspace_info) for t in f.terms])
-end
-function which_ensemble_acting(f::CRational, param_info::ParameterInfo, subspace_info::SubSpaceInfo)::Vector{Vector{Bool}}
-    return vecvec_or(which_ensemble_acting(f.numer, param_info, subspace_info), which_ensemble_acting(f.denom, param_info, subspace_info))
-end
-
-# QObjs
 function which_ensemble_acting(q::QAtom, subspace_info::SubSpaceInfo, neutral_ensembles_op::Vector{Vector{Is}}; do_abstract::Bool=false)::Vector{Vector{Bool}}
     my_ensembles::Vector{Vector{Bool}} = []
     for (inds, neutral) in zip(subspace_info.ensemble_indexes, neutral_ensembles_op)
@@ -63,7 +34,8 @@ end
 function which_ensemble_acting(q::QAtomProduct; do_abstract::Bool=false)::Vector{Vector{Bool}}
     # xor between vectors of vector of bool 
     qspace = q.statespace
-    return vecvec_or(reduce(vecvec_or, [which_ensemble_acting(t, qspace.subspace_info, qspace.I_ensemble_op; do_abstract=do_abstract) for t in q.expr]), which_ensemble_acting(q.coeff_fun, qspace.param_info, qspace.subspace_info))
+    return vecvec_or(reduce(vecvec_or, [which_ensemble_acting(t, qspace.subspace_info, qspace.I_ensemble_op; do_abstract=do_abstract) for t in q.expr]), 
+                    which_ensemble_acting(q.coeff_fun))
 end
 
 function which_ensemble_acting(q::QExpr; do_abstract::Bool=false)::Vector{Vector{Bool}}
@@ -72,18 +44,20 @@ end
 function which_ensemble_acting(q::QSum; do_abstract::Bool=false)::Vector{Vector{Bool}}
     which_ensembles = which_ensemble_acting(q.expr, do_abstract=do_abstract)
     @inbounds @simd for index in q.indexes 
-        which_ensembles[index.outer][Index2Ensemble(index, q.statespace.subspace_info)] = true
+        which_ensembles[index.outer][Index2Ensemble(index)] = true
     end
     return which_ensembles
 end
 
 function which_ensemble_acting(q::QComposite; do_abstract::Bool=false)::Vector{Vector{Bool}}
     qspace = q.statespace
-    return vecvec_or(which_ensemble_acting(q.expr, do_abstract=do_abstract), which_ensemble_acting(q.coeff_fun, qspace.param_info, qspace.subspace_info))
+    return vecvec_or(which_ensemble_acting(q.expr, do_abstract=do_abstract), 
+                    which_ensemble_acting(q.coeff_fun))
 end
 function which_ensemble_acting(q::QMultiComposite; do_abstract::Bool=false)::Vector{Vector{Bool}}
     qspace = q.statespace
-    return vecvec_or(reduce(vecvec_or, [which_ensemble(x, do_abstract=do_abstract) for x in q.expr]), which_ensemble_acting(q.coeff_fun, qspace.param_info, qspace.subspace_info))
+    return vecvec_or(reduce(vecvec_or, [which_ensemble_acting(x, do_abstract=do_abstract) for x in q.expr]), 
+                    which_ensemble_acting(q.coeff_fun))
 end
 
 

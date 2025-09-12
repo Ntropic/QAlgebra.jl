@@ -1,3 +1,16 @@
+# tree_iter_sub iterates for a CCustomtype exclusively 
+_tree_iter_sub(n::CAtom,      ::CCustomType) =  (n,)
+function _tree_iter_sub(n::CAbstract,  c::CCustomType)
+    argpos = c.ctype_def.index_map[n.index]
+    return tree_iter(c.expr[argpos])
+end
+_tree_iter_sub(n::CComposite, c::CCustomType) = Iterators.flatten(((n,), _tree_iter_sub(n.expr, c)))
+_tree_iter_sub(n::CMultiComposite, c::CCustomType) = Iterators.flatten(((n,), (_tree_iter_sub(ch, c) for ch in n.expr)))
+_tree_iter_sub(n::CRational,  c::CCustomType) = Iterators.flatten(((n,), _tree_iter_sub(n.numer, c), _tree_iter_sub(n.denom, c)))
+_tree_iter_sub(v::CVector,    c::CCustomType) = Iterators.flatten(((v,), (_tree_iter_sub(ch, c) for ch in v.expr)))
+_tree_iter_sub(M::CMatrix,    c::CCustomType) = Iterators.flatten(((M,), (_tree_iter_sub(ch, c) for ch in M.entries[:])))
+
+
 """
     tree_iter(f::CFunction)
 
@@ -10,23 +23,163 @@ tree_iter(f::CComposite) = Iterators.flatten(((f,), tree_iter(f.expr)))
 tree_iter(f::CMultiComposite) = Iterators.flatten(((f,), (tree_iter(ch) for ch in f.expr)))
 tree_iter(r::CRational) = Iterators.flatten(((r,), tree_iter(r.numer), tree_iter(r.denom)))
 tree_iter(M::CMatrix) = Iterators.flatten(((M,), (tree_iter(ch) for ch in M.expr[:])))
+function tree_iter(c::CCustomType) 
+    if c.ctype_def.has_abstract 
+        return Iterators.flatten(((c,), _tree_iter_sub(c.ctype_def.fun, c))) 
+    else
+        return Iterators.flatten(((c,), (tree_iter(ch) for ch in c.expr)))
+    end
+end
+
+_leaf_iter_sub(n::CAtom,      ::CCustomType) = (n,)
+function _leaf_iter_sub(n::CAbstract,  c::CCustomType)
+    argpos = c.ctype_def.index_map[n.index]
+    leaf_iter(c.expr[argpos])
+end
+_leaf_iter_sub(n::CComposite, c::CCustomType) = _leaf_iter_sub(n.expr, c)
+_leaf_iter_sub(n::CMultiComposite, c::CCustomType) = Iterators.flatten((_leaf_iter_sub(ch, c) for ch in n.expr))
+_leaf_iter_sub(n::CRational,  c::CCustomType) = Iterators.flatten((_leaf_iter_sub(n.numer, c), _leaf_iter_sub(n.denom, c)))
+_leaf_iter_sub(v::CVector,    c::CCustomType) = Iterators.flatten((_leaf_iter_sub(ch, c) for ch in v.expr))
+_leaf_iter_sub(M::CMatrix,    c::CCustomType) = Iterators.flatten((_leaf_iter_sub(ch, c) for ch in M.entries[:]))
+
+"""
+    leaf_iter(f::CFunction)
+
+Iterator over the leaves of an expression tree (depth-first).
+A "leaf" is either a `CAtom` or a `CAbstract`.
+All composite/container nodes are skipped.
+"""
+leaf_iter(a::CAtom)     = (a,)       # leaf
+leaf_iter(a::CAbstract) = (a,)       # leaf
+leaf_iter(f::CComposite) = leaf_iter(f.expr)
+leaf_iter(f::CMultiComposite) = Iterators.flatten((leaf_iter(ch) for ch in f.expr))
+leaf_iter(r::CRational) = Iterators.flatten((leaf_iter(r.numer), leaf_iter(r.denom)))
+leaf_iter(v::CVector) = Iterators.flatten((leaf_iter(ch) for ch in v.expr))
+leaf_iter(M::CMatrix) = Iterators.flatten((leaf_iter(ch) for ch in M.entries[:]))
+function leaf_iter(c::CCustomType)
+    if c.ctype_def.has_abstract 
+        return _leaf_iter_sub(c.ctype_def.fun, c) 
+    else
+        return Iterators.flatten((leaf_iter(ch) for ch in c.expr))
+    end
+end
+
+import ..QAlgebra: unique_sorted!
+"""
+    contains_which_abstracts(f::CFunction)::Vector{CAbstract}
+
+Returns a Vector with unique and sorted CAbstracts present in the expression tree. 
+"""
+function contains_which_abstracts(f::CFunction)::Vector{CAbstractDefinition}
+    indexes = contains_which_abstract_indexes(f)
+    return [f.param_info.abstract_definitions[i] for i in indexes]
+end
+function contains_which_abstract_indexes(f::CFunction)::Vector{Int}
+    all_indexes::Vector{Int} = []
+    for leaf in leaf_iter(f) 
+        if isa(leaf, CAbstract)
+            push!(all_indexes, leaf.index)
+        end
+    end
+    unique_sorted!(all_indexes)
+    return all_indexes
+end
+function abstract_from_abstractdef(defs::CAbstractDefinition)::CAbstract
+    return CAbstract(defs.param_info, ComplexRational(1,0,1), defs.index)
+end
+
+""" 
+    which_ensemble_acting(f::CFunction)::Vector{Vector{Bool}}
+
+Returns a vector of vectors of booleans. Each inner vector specifies which of its subsystem indexes are acted upon by the QObj. 
+This includes actions from CFunctions. Th function should only be applied after substituting all QAbstract terms. 
+Their present can be checked via `contains_abstract(q)`.
+"""
+function which_ensemble_acting(f::CFunction)::Vector{Vector{Bool}}
+    where_non_trivial::Vector{Vector{Bool}} = [zeros(Bool, n) for n in f.param_info.how_many_by_ensemble]
+    return which_ensemble_acting(f, where_non_trivial)
+end
+function which_ensemble_acting(f::CFunction, where_non_trivial::Vector{Vector{Bool}})::Vector{Vector{Bool}}
+    for leaf in leaf_iter(f) 
+        which_ensemble_acting_atom!(leaf, where_non_trivial)
+    end
+    return where_non_trivial
+end
+which_ensemble_acting_atom!(f::CAbstract, where_non_trivial::Vector{Vector{Bool}}) = error("Cannot determine the acting ensembles for a CAbstract. Use abstracts only in CType definitions.") 
+function which_ensemble_acting_atom!(f::CAtom, where_non_trivial::Vector{Vector{Bool}})::Vector{Vector{Bool}}
+    for (param_ind, where_acting) in zip(f.param_info.indexed_parameter_indexes, f.param_info.where_acting_by_parameter)
+        if any(!=(0), f.var_exponents[param_ind])
+            vecvec_or!(where_non_trivial, where_acting)
+        end
+    end
+    return where_non_trivial
+end
+
+""" 
+    where_acting(f::CFunction)::Vector{Bool}
+
+Returns a vector of booleans specifying if the associated parameter is present in the expression.
+"""
+function where_acting(f::CFunction)::Vector{Bool}
+    acting::Vector{Bool} = zeros(Bool, dims(f))
+    where_acting!(f, acting)
+    return acting
+end
+function where_acting!(f::CFunction, acting::Vector{Bool} )::Vector{Bool}
+    for leaf in leaf_iter(f) 
+        where_acting_atom!(leaf, acting)
+    end
+    return acting
+end
+where_acting_atom!(f::CAbstract, acting::Vector{Bool} =[]) = error("Cannot determine where acting for a CAbstract. Use abstracts only in CType definitions. ")
+function where_acting_atom!(f::CAtom, acting::Vector{Bool})::Vector{Bool}
+    # or operation between acting and f.var_exponents being overwritten on acting 
+    acting .|= (f.var_exponents .!= 0)
+    return acting
+end
+
+# Returns index strings, and time strings
+function where_acting_to_index_strings(param_indexes::ParameterIndexes, acting::Vector{Bool}; do_latex::Bool=false)::Tuple{Vector{String}, Vector{String}}
+    current_indexes::Vector{String} = []
+    for (str, inds) in zip(param_indexes.labels, param_indexes.label_parameter_indexes)
+        if any(acting[inds])
+            push!(current_indexes, str)
+        end
+    end
+    current_t_indexes::Vector{String} = []
+    t_str_elements = do_latex ? param_indexes.t_labels_latex : param_indexes.t_labels 
+    for (str, inds) in zip(t_str_elements, param_indexes.label_parameter_t_indexes)
+        if any(acting[inds])
+            push!(current_t_indexes, str)
+        end
+    end
+    return current_indexes , current_t_indexes
+end
+where_acting_to_index_strings(f::CFunction; do_latex::Bool=false)::Tuple{Vector{String}, Vector{String}} = where_acting_to_index_strings(f.param_info.param_indexes, where_acting(f), do_latex=do_latex)
+
+has_indexes(param_indexes::ParameterIndexes, acting::Vector{Bool})::Bool = any(acting[param_indexes.all_indexes])
+has_indexes(f::CFunction) = contains_c_indexes(f, f.param_info.param_indexes.all_indexes)
 
 
-var_exponents_iter(a::CAtom) = (a.var_exponents,)  # 1-tuple, no alloc beyond the tuple
-var_exponents_iter(q::CAbstract) = ((zeros(Int, dims(q))),)  # if you want to treat them as zero-terms
-var_exponents_iter(f::CComposite) = var_exponents_iter(f.expr)
-var_exponents_iter(f::CMultiComposite) = Iterators.flatten(var_exponents_iter.(f.expr))
-var_exponents_iter(r::CRational) = Iterators.flatten((var_exponents_iter(r.numer), var_exponents_iter(r.denom)))
-var_exponents_iter(q::CCustomType) = Iterators.flatten((Iterators.flatten(var_exponents_iter.(q.expr)),var_exponents_iter(q.ctype_def.fun)))
-var_exponents_iter(v::CVector) = Iterators.flatten(var_exponents_iter.(v.expr))
-var_exponents_iter(M::CMatrix) = Iterators.flatten(var_exponents_iter.(M.expr[:]))
+"""
+    var_exponents_iter(f::CFunction)
+
+Iterates over the `var_exponents` vectors of all leaves in the expression tree.
+- For `CAtom` leaves: yields the actual `var_exponents`.
+- For `CAbstract` leaves: yields a zero vector (same length as number of dims).
+"""
+function var_exponents_iter(f::CFunction)
+    Iterators.map(_leaf2exps, leaf_iter(f))
+end
+_leaf2exps(a::CAtom)     = a.var_exponents
+_leaf2exps(a::CAbstract) = zeros(Int, dims(a))
 
 """
     var_exponents_iter_simple(f::CFunction)
 
 Like `var_exponents_iter`, but only includes exponents from
 `CAtom`, `CSum`, and `CProd`.
-Other function types contribute nothing.
+Other function types contribute trivial exponents.
 """
 var_exponents_iter_simple(a::CAtom) = (a.var_exponents,)
 var_exponents_iter_simple(s::CSum)  = Iterators.flatten(var_exponents_iter_simple.(s.expr))
@@ -38,7 +191,9 @@ var_exponents_iter_simple(f::CFunction) = (zeros(Int, dims(f)),)
 
 True if all exponents in all terms are zero.
 """
-isnumeric(f::CFunction) = all(exps -> all(==(0), exps), var_exponents_iter(f))
+isnumeric(f::CAtom) = iszero(f.coeff) || all(==(0), f.var_exponents)
+isnumeric(f::CAbstract) = false
+isnumeric(f::CFunction) = all(leaf -> isnumeric(leaf) , leaf_iter(f))
 
 import Base: iszero, isempty, isone
 
@@ -49,7 +204,7 @@ import Base: iszero, isempty, isone
 
 Returns `true` if the expression is identically zero:
 """
-iszero(a::CAtom)        = iszero(a.coeff)
+iszero(a::CAtomic)        = iszero(a.coeff)
 iszero(s::CSum)         = all(iszero, s.expr)
 iszero(p::CComposite)        = iszero(p.coeff) || iszero(p.expr)
 iszero(p::CMultiComposite)        = iszero(p.coeff) || any(iszero, p.expr)
@@ -68,12 +223,12 @@ isempty(s::CMultiComposite)        = isempty(s.expr)
 isone(c::CFunction) = false 
 isone(a::CAtom)     = isnumeric(a) && isone(a.coeff)
 
+# only used for printing the signs! doesn't mean evaluated function is negative! 
 allnegative(a::CAtom) = is_negative(a.coeff)
 allnegative(s::CSum)  = !isempty(s.expr) && all(allnegative, s.expr)
 allnegative(p::CProd) = is_negative(p.coeff)
 allnegative(r::CRational) = allnegative(r.numer)
-allnegative(x::CExp)  = false
-allnegative(x::CLog)  = false
+allnegative(x::CFunction)  = is_negative(a.coeff)
 
 """
     min_exponents(f::CFunction) -> Vector{Int}
@@ -84,8 +239,7 @@ If `f` contains no atoms (e.g. empty containers), returns `Int[]`.
 Relies on `var_exponents_iter(::CFunction)`.
 """
 function min_exponents(f::CFunction)::Vector{Int}
-    n = dims(f)                    # number of polynomial variables
-    mins = zeros(Int, n)           # start with all zeros
+    mins = zeros(Int, dims(f))           # start with all zeros
     for exps in var_exponents_iter_simple(f)
         mins = min.(mins, exps)
     end
@@ -109,34 +263,25 @@ function contains_c_indexes(f::CFunction, idxs::Vector{Int})
 end
 
 
-# Helper: does this expression contain any CVector or CMatrix?
-contains_vec_or_mat(::CFunction) = false
-contains_vec_or_mat(q::CCustomType) = any(contains_vec_or_mat, q.expr) || contains_vec_or_mat(q.ctype_def.fun)
-contains_vec_or_mat(e::CComposite) = contains_vec_or_mat(e.expr)
-contains_vec_or_mat(s::CMultiComposite) = any(contains_vec_or_mat, s.expr)
-contains_vec_or_mat(r::CRational) = contains_vec_or_mat(r.numer) || contains_vec_or_mat(r.denom)
-contains_vec_or_mat(::CVector) = true
-contains_vec_or_mat(::CMatrix) = true
+contains_vec_or_mat(c::CFunction) = any(element -> isa(element, Union{CMatrix, CVector}), tree_iter(c))
 
 # --- numeric printing gate (specify if the coefficient is needed) -----------------------------------------------------
 """
     printnumeric(f::CFunction) -> Bool
 
-Should `f` be printed in numeric form?
-Default: true.
+Decides if a numeric coefficient should be printed for `f`.
 """
-printnumeric(::CFunction) = true
-
-function printnumeric(f::CAtom)::Bool
-    # Don’t print if numeric with coeff == 1
-    isnumeric(f) && isonelike(f.coeff) ? false : true
+function printnumeric(f::CFunction)::Bool
+    if f isa CRational
+        return true
+    elseif isnumeric(f) && isonelike(coeff(f)[1])
+        return false
+    elseif f isa CMultiComposite && length(f.expr) == 1
+        return printnumeric(f.expr[1])
+    else
+        return true
+    end
 end
-function printnumeric(f::CMultiComposite)::Bool
-    # If it’s a singleton, delegate to the single child
-    length(f.expr) == 1 ? printnumeric(f.expr[1]) : true
-end
-printnumeric(::CRational) = true  # Rational: always print
-printnumeric(v::CComposite) = !(isnumeric(v) && isonelike(v.coeff))
 
 
 
@@ -152,7 +297,7 @@ end
 
 function has_common_multiple(v::Vector{ComplexRational})::Bool
     for i in 2:length(v) 
-        if !is_axis_multiple(v[1], v[i])[1]'
+        if !is_axis_multiple(v[1], v[i])[1]
             return false
         end
     end
@@ -199,11 +344,6 @@ function common_denominator_form(v::Vector{ComplexRational})::Tuple{ComplexRatio
     return base, multiples
 end
 
-function get_coeffs_ops(f::CSum)::Tuple{Vector{ComplexRational}, Vector{Vector{Int}}}
-    return vcat(coeff.(f.terms)...), vcat(var_exponents.(f.terms)...)
-    #return [coeff(term) for term in f.terms], [term.var_exponents for term in f.terms]
-end
-
 function common_exponent_offset(exponents::Vector{Vector{Int}})::Vector{Int}
     @assert !isempty(exponents)
     n = length(exponents[1])
@@ -227,7 +367,7 @@ function isonelike(f::CAtom)::Bool
     return isonelike(f.coeff) && isnumeric(f)
 end
 function simple_CSum(f::CSum)::Bool
-    return !any(term -> typeof(term)==CAtom, f.terms)
+    return !any(term -> typeof(term)==CAtom, f.expr)
 end
 function simple_CSum(f::CAtom)::Bool
     return true 
@@ -236,75 +376,85 @@ function simple_CSum(f::CFunction)::Bool
     return false 
 end
 
-function separate_CSum(f::CSum )::Tuple{Bool, Union{CAtom, Nothing}, CSum}
-    if simple_CSum(f) 
-        coeffs, vs = get_coeffs_ops(f)
-        if has_common_multiple(coeffs) 
+# factor a simple sum into:  (pre_F) * (new_f)
+# Only runs when the sum is of "monomial-like" terms (e.g., atoms) so we can safely
+# factor a common scalar and a common exponent offset.
+function separate_CSum(f::CSum)::Tuple{Bool, Union{CAtom,Nothing}, CSum}
+    # treat as "simple" if every summand is a monomial-like term (e.g. CAtom)
+    # (adjust this predicate if you later support more term kinds)
+    if all(t -> t isa CAtom, f.expr)
+        # scalar coeffs of each term
+        coeffs = ComplexRational[first(coeff(t)) for t in f.expr]
+
+        if has_common_multiple(coeffs)
             base, multiples = common_denominator_form(coeffs)
-            # get exponent offsets 
+
+            # exponent vectors of each term
+            vs = var_exponents.(f.expr)
             offset = common_exponent_offset(vs)
-            new_f = _CSum([CAtom(m, v.-offset) for (m, v) in zip(multiples, vs)])
-            pre_f = CAtom(base, offset)
-            return true, pre_f, new_f 
+
+            # rebuild normalized terms with adjusted coeffs/exponents
+            new_terms = [CAtom(f.param_info, m, v .- offset) for (m, v) in zip(multiples, vs)]
+
+            # shared factor in front
+            pre_f = CAtom(f.param_info, base, offset)
+
+            # always return a CSum (avoid _CSum so we don't collapse to a single term)
+            return true, pre_f, CSum(f.param_info, new_terms)
         end
     end
     return false, nothing, f
 end
 
-function simple_combinable_F(t1::T1, t2::T2)::Tuple{Bool, ComplexRational} where {T1 <: CFunction, T2 <: CFunction}
-    # Transform CAtom's to CSums 
-    if !isa(t1, CSum)
-        t1 = [t1]
-    else 
-        t1 = t1.terms
-    end
-    if !isa(t2, CSum)
-        t2 = [t2]
-    else
-        t2 = t2.terms
+
+function simple_combinable_F(t1::T1, t2::T2)::Tuple{Bool, ComplexRational} where {T1<:CFunction, T2<:CFunction}
+    v1 = t1 isa CSum ? t1.expr : [t1]
+    v2 = t2 isa CSum ? t2.expr : [t2]
+
+    if length(v1) != length(v2)
+        return false, ComplexRational(0,0,1)
     end
 
-    #@assert length(t1) == length(t2) "Cannot separate pair terms with different lengths."
-    if length(t1) != length(t2)
-        return false, ComplexRational(0, 0, 1)
+    # if all terms in v1 are constant in the polynomial variables, skip
+    if all(x -> all(e == 0 for e in var_exponents(x)), v1)
+        return false, ComplexRational(0,0,1)
     end
 
-    if all(a -> all(e == 0 for e in a.var_exponents), t1)
-        return false, ComplexRational(0, 0, 1)
+    # exponent pattern must match up to a constant offset across corresponding terms
+    exponents_diff = var_exponents(v1[1]) .- var_exponents(v2[1])
+    if any(!=(0), exponents_diff)
+        return false, ComplexRational(0,0,1)
     end
-    
-    # check if corresponding terms have the similar exponents (i.e. the difference of exponents has to be the same for each term in CSum)
-    exponents_diff = t1[1].var_exponents .- t2[1].var_exponents
-    if !all([diff == 0 for diff in exponents_diff])
-        return false, ComplexRational(0, 0, 1)
-    end
-    for (a1, a2) in zip(t1[2:end], t2[2:end])
-        if a1.var_exponents .- a2.var_exponents != exponents_diff
-            return false, ComplexRational(0, 0, 1)
+    for (a1, a2) in zip(v1[2:end], v2[2:end])
+        if var_exponents(a1) .- var_exponents(a2) != exponents_diff
+            return false, ComplexRational(0,0,1)
         end
     end
-    
-    # check if the terms have a constant ratio in the coefficients 
-    ratio = t1[1].coeff / t2[1].coeff
+
+    # constant scalar ratio of the coefficients across corresponding terms
+    ratio = first(coeff(v1[1])) / first(coeff(v2[1]))
+    # keep your original requirement that the ratio is purely real or purely imaginary
     if !(ratio.b == 0 || ratio.a == 0)
         return false, ratio
     end
-    for (a1, a2) in zip(t1[2:end], t2[2:end])
-        if a1.coeff / a2.coeff != ratio
+    for (a1, a2) in zip(v1[2:end], v2[2:end])
+        if first(coeff(a1)) / first(coeff(a2)) != ratio
             return false, ratio
         end
     end
     return true, ratio
 end
-# check for multiple elements in a Vector of CSum 
-function simple_combinable_Fs(ts::AbstractVector{<:CFunction})::Tuple{Vector{Vector{<:CFunction}}, Vector{Vector{Int}}}
-    groups = Vector{Vector{Union{CAtom,CSum}}}()
+
+
+# group inputs into buckets of pairwise-combinable terms
+function simple_combinable_Fs(ts::AbstractVector{<:CFunction})
+    groups  = Vector{Vector{CFunction}}()
     indexes = Vector{Vector{Int}}()
     for (i, t) in enumerate(ts)
         placed = false
         for (inds, grp) in zip(indexes, groups)
-            ok,_ = simple_combinable_F(grp[1], t)
-            if ok 
+            ok, _ = simple_combinable_F(grp[1], t)
+            if ok
                 push!(grp, t)
                 push!(inds, i)
                 placed = true
@@ -319,59 +469,70 @@ function simple_combinable_Fs(ts::AbstractVector{<:CFunction})::Tuple{Vector{Vec
     return groups, indexes
 end
 
-function ratios_Fs(ts::AbstractVector{Union{CAtom,CSum}})::Vector{ComplexRational}
-    if ts[1] isa CAtom 
-        c1 = ts[1].coeff
-    else 
-        c1 = ts[1].terms[1].coeff
-    end
+
+# ratios between the leading coefficients of each element in a group
+function ratios_Fs(ts::AbstractVector{<:CFunction})::Vector{ComplexRational}
+    # take the first summand if it's a CSum; otherwise the term itself
+    first_term = ts[1] isa CSum ? ts[1].expr[1] : ts[1]
+    c1 = first(coeff(first_term))
+
     ratios = ComplexRational[ComplexRational(1,0,1)]
-    for t in ts[2:end] 
-        if t isa CAtom 
-            c2 = t.coeff
-        else 
-            c2 = t.terms[1].coeff
-        end
-        push!(ratios, c1/c2)
+    for t in ts[2:end]
+        inner = t isa CSum ? t.expr[1] : t
+        c2 = first(coeff(inner))
+        push!(ratios, c1 / c2)
     end
     return ratios
 end
-function group_Fs(ts::AbstractVector{Union{CAtom,CSum}})::Union{CAtom, CSum, Tuple{Union{CAtom, CSum}, AbstractVector{Union{CAtom, CSum}}}}
-    # find the correct way to group a group of Fs (they must be groupable, create the input vector with simple_combinable_Fs)
+
+
+"""
+    group_Fs(ts)
+
+Given a combinable group `ts`, decide how to express it as either:
+  - a single `CFunction`, or
+  - a tuple `(F1, Fs)` meaning `F1 * (Fs[1] + ... + Fs[n])`.
+
+`Fs[i]` are returned as scalar monomials (atoms with zero exponents) so that
+they act purely as numeric multipliers in the grouped sum.
+"""
+function group_Fs(ts::AbstractVector{<:CFunction})::Union{CFunction, Tuple{CFunction, Vector{CFunction}}}
     if length(ts) == 1
         return ts[1]
-    elseif length(ts) > 1
-        # we need to find the best common ratio 
+    else
         ratios = ratios_Fs(ts)
         base, multiples = common_denominator_form(ratios)
-        pre_F = ts[1]*base 
 
-        if isa(pre_F, CAtom)
-            curr_var_exponents = zeros(Int, length(ts[1].var_exponents))
-        else
-            curr_var_exponents = zeros(Int, length(ts[1].terms[1].var_exponents))
-        end
-        post_Fs = Union{CAtom, CSum}[ CAtom(m, curr_var_exponents) for m in multiples ]
+        # pre-factor: first element scaled by the 'base' ratio
+        pre_F = ts[1] * base
+
+        # zero-exponent vector for creating pure scalar atoms
+        # use the first representative's exponent length as dimension
+        rep = ts[1] isa CSum ? ts[1].expr[1] : ts[1]
+        dim = length(var_exponents(rep))
+        zexp = zeros(Int, dim)
+
+        post_Fs = CFunction[ CAtom(rep.param_info, m, zexp) for m in multiples ]
         return (pre_F, post_Fs)
     end
 end
 
-"""
-    how_to_combine_Fs(ts::Vector{Union{CAtom, CSum}}) :: Tuple{Vector{Union{CAtom, CSum, Tuple{CAtom, Vector{Union{CAtom, CSum}}}}}, Vector{Vector{Int}}}
 
-Groups and combines `CAtom` and `CSum` objects in the input vector `ts` into composite structures that can be processed together. 
-Returns a tuple containing both the groups as (CFunction) elements of a Vector and the indexs corresponding to the elements in the groups. 
-The (CFunction) grouping is given either by a single CFunction element (either a single `CAtom` or a `CSum`) or by a tuple of an `CAtom` (F1) containing the shared factors, and a vector of CFunction elements (F2_i), so that 
-together they represent a term of the form: F1 * (F2_1 + ... + F2_n). 
 """
-function how_to_combine_Fs(ts::Vector{Union{CAtom,CSum}}) #::Tuple{Vector{Union{CAtom,CSum, Tuple{CAtom, Vector{Union{CAtom, CSum}}}}}, Vector{Vector{Int}}}
-    if length(ts) == 1
+    how_to_combine_Fs(ts::Vector{CFunction})
+
+Returns:
+  - `groups_as_functions::Vector{Union{CFunction, Tuple{CFunction, Vector{CFunction}}}}`
+  - `indexes::Vector{Vector{Int}}` (original positions per group)
+"""
+function how_to_combine_Fs(ts::Vector{CFunction})
+    if isempty(ts)
+        return CFunction[], Vector{Vector{Int}}()
+    elseif length(ts) == 1
         return [ts[1]], [[1]]
-    elseif length(ts) > 1 
+    else
         groups, indexes = simple_combinable_Fs(ts)
         return [group_Fs(grp) for grp in groups], indexes
-    else
-        return [], []
     end
 end
 
@@ -389,51 +550,51 @@ function term_equal_indexes(atom::CAtom, coeff_ind_order::Vector{Tuple{Int, Int}
         new_exponents[i] += ei
         new_exponents[j] = 0
     end
-    return changed_any, CAtom(atom.coeff, new_exponents)
+    return changed_any, CAtom(atom.param_info, atom.coeff, new_exponents)
 end
 
 function term_equal_indexes(fsum::CSum, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CSum}
     changed_any = false
-    new_terms = Vector{CFunction}(undef, length(fsum.terms))
-    @inbounds for k in eachindex(fsum.terms)
-        changed, new_term = term_equal_indexes(fsum.terms[k], coeff_ind_order)
+    new_terms = Vector{CFunction}(undef, length(fsum.expr))
+    @inbounds for k in eachindex(fsum.expr)
+        changed, new_term = term_equal_indexes(fsum.expr[k], coeff_ind_order)
         changed_any |= changed
         new_terms[k] = new_term
     end
     return changed_any, _CSum(new_terms)
 end
 
-function term_equal_indexes(frational::CRational, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CRational}
-    changed_num, new_num = term_equal_indexes(frational.numer, coeff_ind_order)
-    changed_den, new_den = term_equal_indexes(frational.denom, coeff_ind_order)
-    return (changed_num || changed_den), CRational(new_num, new_den, Val(:nosimp))
+function term_equal_indexes(fractional::CRational, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CRational}
+    changed_num, new_num = term_equal_indexes(fractional.numer, coeff_ind_order)
+    changed_den, new_den = term_equal_indexes(fractional.denom, coeff_ind_order)
+    return (changed_num || changed_den), CRational(fractional.param_info, new_num, new_den, Val(:nosimp))
 end
 
 # NEW
 function term_equal_indexes(fprod::CProd, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CFunction}
     changed_any = false
-    new_terms = Vector{CFunction}(undef, length(fprod.terms))
-    @inbounds for k in eachindex(fprod.terms)
-        changed, new_term = term_equal_indexes(fprod.terms[k], coeff_ind_order)
+    new_terms = Vector{CFunction}(undef, length(fprod.expr))
+    @inbounds for k in eachindex(fprod.expr)
+        changed, new_term = term_equal_indexes(fprod.expr[k], coeff_ind_order)
         changed_any |= changed
         new_terms[k] = new_term
     end
-    return changed_any, CProd(fprod.coeff, new_terms, Val(:nosimp))
+    return changed_any, CProd(fprod.param_info, fprod.coeff, new_terms, Val(:nosimp))
 end
 
 function term_equal_indexes(fexp::CExp, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CFunction}
-    changed, nx = term_equal_indexes(fexp.x, coeff_ind_order)
-    return changed, CExp(fexp.coeff, nx, Val(:nosimp))
+    changed, nx = term_equal_indexes(fexp.expr, coeff_ind_order)
+    return changed, CExp(fexp.param_info, fexp.coeff, nx, Val(:nosimp))
 end
 
 function term_equal_indexes(flog::CLog, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CFunction}
-    changed, nx = term_equal_indexes(flog.x, coeff_ind_order)
-    return changed, CLog(flog.coeff, nx, Val(:nosimp))
+    changed, nx = term_equal_indexes(flog.expr, coeff_ind_order)
+    return changed, CLog(flog.param_info, flog.coeff, nx, Val(:nosimp))
 end
 
 function term_equal_indexes(fpwr::CPower, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CFunction}
-    changed, nx = term_equal_indexes(fpwr.x, coeff_ind_order)
-    return changed, CPower(fpwr.coeff, nx, fpwr.exponent, Val(:nosimp))
+    changed, nx = term_equal_indexes(fpwr.expr, coeff_ind_order)
+    return changed, CPower(fpwr.param_info, fpwr.coeff, nx, fpwr.exponent, Val(:nosimp))
 end
 
 function term_equal_indexes(v::CVector, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CVector}
@@ -444,7 +605,7 @@ function term_equal_indexes(v::CVector, coeff_ind_order::Vector{Tuple{Int, Int}}
         changed_any |= changed
         new_entries[k] = e
     end
-    return changed_any, CVector(v.coeff, new_entries; row=v.row)
+    return changed_any, CVector(v.param_info, v.coeff, new_entries; row=v.row)
 end
 
 function term_equal_indexes(M::CMatrix, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CMatrix}
@@ -457,5 +618,20 @@ function term_equal_indexes(M::CMatrix, coeff_ind_order::Vector{Tuple{Int, Int}}
         new_flat[k] = e
     end
     new_mat = reshape(new_flat, size(M.expr))
-    return changed_any, CMatrix(M.coeff, new_mat)
+    return changed_any, CMatrix(M.param_info, M.coeff, new_mat)
+end
+
+function term_equal_indexes(A::CAbstract, coeff_ind_order::Vector{Tuple{Int, Int}}) 
+    error("Cannot substitute indexes in Abstract expressions. ")
+end
+
+function term_equal_indexes(C::CCustomType, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CCustomType}
+    changed_any = false
+    new_parameters::Vector{CFunction} = []
+    for x in C.expr
+        c, new_x = term_equal_indexes(x, var_tuples)
+        push!(new_parameters, new_x)
+        changed_any |= c
+    end
+    return changed_any, modify_expr(f, new_parameters)
 end

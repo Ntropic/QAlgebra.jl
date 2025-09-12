@@ -90,7 +90,7 @@ function isless_same(a::CPower, b::CPower)::Bool
     return isless(a.expr, b.expr)
 end
 function isless_same(a::T, b::T) where T <: CComposite
-    return isless(a.x, b.x)
+    return isless(a.expr, b.expr)
 end
 
 # CVector: orientation (col<row), then length, then entries pairwise
@@ -119,4 +119,9 @@ function isless(a::CFunction, b::CFunction)
     ta = cf_tag(a); tb = cf_tag(b)
     ta != tb && return ta < tb
     return isless_same(a, b)
+end
+
+function isless(a::CAbstract, b::CAbstract)
+    a.index == b.index && return a.dag < b.dag
+    return a.index < b.index
 end

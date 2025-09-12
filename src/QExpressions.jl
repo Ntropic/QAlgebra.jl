@@ -3,10 +3,11 @@ using ..QSpace
 using ..CFunctions
 using ..StringUtils
 using ComplexRationals
-import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, ^, product, iszero, copy
-using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
+import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, /, ^, product, iszero, copy
+using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED, vecvec_or, vecvec_or!
 using ..CFunctions: isnumeric
 export QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, diff_QEq, base_operators, d_dt #simplify
+export @define, QExpr2CFunction
 
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
@@ -265,5 +266,86 @@ include("QExpressionsOps/QExpressions_repartition.jl")
 
 include("QExpressionsOps/QExpressions_cumulants.jl")
 
+import ..CFunctions: define_cabstract, define_ctype, list_cabstracts, list_ctypes, c_abstract_exists
 
+function QExpr2CFunction(q::QExpr)::CFunction 
+    if is_numeric(q) 
+        if length(q.terms) < 1 
+            error("Cannot extract CFunction from empty QExpr.") 
+        end 
+        coeff = get_coeff(q.terms[1]) 
+        for r in q.terms[2:end] 
+            coeff += get_coeff(r) 
+        end 
+    return coeff 
+    else 
+        error("Requires numeric QExpr, no quantum operators present.") 
+    end 
+end 
+
+"""
+    @define statespace, name
+    @define statespace, name, fun
+
+Two forms:
+
+1) `@define ss name`
+   - Calls `define_cabstract(ss, name)` to register a new abstract and returns a `QExpr`.
+   - Binds a global `const name::QExpr` in the caller's module.
+
+2) `@define ss Name fun`
+   - Registers a custom ctype named `String(name)` using `fun` (a *numeric* `QExpr`)
+     converted via `QExpr2CFunction`.
+   - Defines constructors:
+       Name(args::CFunction...)
+       Name(coeff::ComplexRational, args::CFunction...)
+       Name(qs::QExpr...)
+       Name(coeff::ComplexRational, qs::QExpr...)
+"""
+macro define(statespace, name, fun=nothing)
+    # Normalize the binding name to a Symbol (for variables & method names)
+    n_sym = name isa Symbol ? name : Symbol(name)
+    n_str = String(n_sym)   # for registration APIs
+    ctype_sym = gensym(:ctype)  # internal const for ctype, not user-facing
+    CR1 = ComplexRational(1,0,1)
+
+    if fun === nothing
+        # 1) @define ss name
+        return esc(quote
+            # Register and build a QExpr for the new abstract
+            const $(n_sym)::QExpr = begin
+                define_cabstract($statespace.param_info, $n_str)
+                # Build the QExpr representing this abstract
+                let __ab__ = $statespace.param_info.abstract_definitions[end]
+                    QExpr($statespace, [
+                        QAtomProduct($statespace,
+                                     CAbstract($statespace.param_info,
+                                               $CR1,
+                                               __ab__.index))
+                    ])
+                end
+            end
+            $(n_sym)  # make the macro call evaluate to the QExpr
+        end)
+    else
+        # 2) @define ss Name fun
+        # fun is provided by the caller; don’t eval it in the macro. Convert at runtime.
+        return esc(quote
+            const $(ctype_sym) = define_ctype($statespace.param_info, $n_str, QExpr2CFunction($fun))
+            if $(ctype_sym).has_abstract
+                # Constructor 3: Name(qs::QExpr...)
+                function $(n_sym)(qs::QExpr...)
+                    c_exprs::Vector{CFunction} = QExpr2CFunction.(collect(qs))
+                    return QExpr($statespace, QAtomProduct($statespace, CCustomType($statespace.param_info, $CR1, c_exprs, $(ctype_sym)), QTerm[]))
+                end
+            else
+                $(n_sym)::QExpr = QExpr($statespace, QAtomProduct($statespace, CCustomType($statespace.param_info, $CR1, CFunction[$(ctype_sym).fun], $(ctype_sym)), QTerm[]))
+            end
+            $(n_sym)
+        end)
+    end
+end
+
+list_cabstracts(statespace::StateSpace) = list_cabstracts(statespace.param_info)
+list_ctypes(statespace::StateSpace) = list_ctypes(statespace.param_info)
 end

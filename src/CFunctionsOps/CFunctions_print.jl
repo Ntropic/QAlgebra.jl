@@ -1,4 +1,24 @@
+using LaTeXStrings
 export stringer, to_stringer, to_string
+
+# --- Small, inlined helpers used everywhere ---
+@inline connector(do_latex::Bool) = do_latex ? " " : ""
+
+@inline function with_coeff(c::ComplexRational, body::AbstractString; do_latex::Bool=false)
+    sig, c_str = sign_string(c, do_latex)
+    if is_abs_one(c)
+        # drop the visible "1" unless body is empty (pure ±1)
+        return sig, isempty(body) ? c_str : body
+    else
+        return sig, c_str * connector(do_latex) * body
+    end
+end
+
+# Use this when you've already accumulated signs from child terms
+@inline function with_coeff_xor(acc_sig::Bool, c::ComplexRational, body::AbstractString; do_latex::Bool=false)
+    sig, out = with_coeff(c, body; do_latex=do_latex)
+    return xor(acc_sig, sig), out
+end
 
 function sign_string(c::ComplexRational, do_latex::Bool=false)::Tuple{Bool, String}
     if is_negative(c)
@@ -32,9 +52,9 @@ _pow_sup_int(n::Int; do_latex::Bool=false) = do_latex ? "^{$n}" : str2sup(string
 _pow_sup_frac(p::Int, q::Int; do_latex::Bool=false) = do_latex ? "^\\{\\frac{$p}{$q}\\}" : "^(" * string(p) * "/" * string(q) * ")"
 
 @inline function get_params(a::CFunction; do_latex::Bool=false)::Vector{String}
-    do_latex && return a.param_info.params_str 
-    return a.param_info.params_latex
+    return do_latex ? a.param_info.params_latex : a.param_info.params_str
 end
+
 
 # --- Generic string constructor ---
 """
@@ -53,294 +73,205 @@ function stringer(a::CAtom; do_latex::Bool=false, do_frac::Bool=true, braced::Bo
     params = get_params(a, do_latex=do_latex)
     exps = a.var_exponents
     @assert length(params) == length(exps) "Number of symbols must match number of variables"
-    connector = do_latex ? " " : ""
+
+    c = a.coeff
     if isnumeric(a)
-        return sign_string(a.coeff) 
+        return sign_string(c, do_latex)
+    end
+
+    if !do_frac
+        param_str = join((int_exponent2str(b, x; do_latex=do_latex) for (b,x) in zip(params, exps)), "")
+        return with_coeff(c, param_str; do_latex=do_latex)
     else
-        # build the variable part
-        c = a.coeff
-        if !do_frac
-            varparts = String[]
-            for (i, e) in enumerate(exps)
-                if e == 0
-                    continue
-                elseif do_latex
-                    push!(varparts, e == 1 ? params[i] : "$(params[i])^{$e}")
-                else
-                    push!(varparts, e == 1 ? params[i] : "$(params[i])"*str2sup(string(e)))
-                end
-            end
-            param_str = isempty(varparts) ? "" : join(varparts, "")
-            sign, c_str = sign_string(c) 
-            if is_abs_one(c)
-                return sign, param_str
-            else
-                return sign, c_str * connector * param_str
-            end
+        # split into positive/negative exponents ⇒ build fraction
+        pos_inds = findall(>(0), exps)
+        neg_inds = findall(<(0), exps)
+
+        pos_str = join((int_exponent2str(b, x; do_latex=do_latex) for (b,x) in zip(params[pos_inds], exps[pos_inds])), "")
+        neg_str = join((int_exponent2str(b, abs(x); do_latex=do_latex) for (b,x) in zip(params[neg_inds], exps[neg_inds])), "")
+
+        if isempty(neg_inds)
+            return with_coeff(c, pos_str; do_latex=do_latex)
         else
-            # group terms with positive and negative exponents 
-            pos_inds::Vector{Int} = Int[]
-            neg_inds::Vector{Int} = Int[]
-            for (i, e) in enumerate(exps)
-                if e > 0
-                    push!(pos_inds, i)
-                elseif e < 0
-                    push!(neg_inds, i)
-                end
-            end
-            pos_parts = String[]
-            neg_parts = String[]
-            if do_latex
-                for (i, e) in zip(pos_inds, exps[pos_inds])
-                    push!(pos_parts, e == 1 ? params[i] : "$(params[i])^{$e}")
-                end
-                for (i, e) in zip(neg_inds, exps[neg_inds])
-                    push!(neg_parts, e == -1 ? params[i] : "$(params[i])^{$(-e)}")
-                end
+            # separate coefficient into num/den for a clean a/b form
+            c_num = ComplexRational(c.a, c.b, 1)
+            c_den = ComplexRational(c.c, 0, 1)
+
+            _, c_pos = sign_string(c_num, do_latex)
+            _, c_neg = sign_string(c_den, do_latex)
+
+            # apply spacing consistently
+            if !is_abs_one(c_num) || isempty(pos_inds)
+                c_pos *= connector(do_latex)
             else
-                for (i, e) in zip(pos_inds, exps[pos_inds])
-                    push!(pos_parts, e == 1 ? params[i] : "$(params[i])"*str2sup(string(e)))
-                end 
-                for (i, e) in zip(neg_inds, exps[neg_inds])
-                    push!(neg_parts, e == -1 ? params[i] : "$(params[i])"*str2sup(string(-e)))
-                end
+                c_pos = ""
             end
-            if length(neg_inds) == 0 
-                sign, c_str = sign_string(c) 
-                param_str = isempty(pos_parts) ? "" : join(pos_parts, "")
-                if is_abs_one(c)
-                    return sign, param_str
-                else
-                    if do_latex
-                        return sign, c_str*" "*param_str
-                    else
-                        return sign, c_str*param_str
-                    end
-                end
-            else 
-                c_num = ComplexRational(c.a, c.b, 1)
-                c_denom = ComplexRational(c.c, 0, 1)
-                sign, c_pos = sign_string(c_num)
-                c_pos *= connector 
-                if is_abs_one(c_num) && !isempty(pos_parts)
-                    c_pos = ""
-                end
-                _, c_neg = sign_string(c_denom) 
-                c_neg *= connector 
-    
-                if is_abs_one(c_denom)
-                    c_neg = ""
-                end
-                pos_str = isempty(pos_parts) ? "" : join(pos_parts, "")
-                neg_str = isempty(neg_parts) ? "" : join(neg_parts, "")
-                num_str = c_pos * pos_str
-                denom_str = c_neg * neg_str
-                if do_latex 
-                    return sign, raw"\frac{"*num_str*" }{"*denom_str*"}"
-                else
-                    return sign, num_str*"/("*denom_str*")"
-                end
+            if !is_abs_one(c_den)
+                c_neg *= connector(do_latex)
+            else
+                c_neg = ""
             end
+
+            num_str   = c_pos * pos_str
+            denom_str = c_neg * neg_str
+
+            sig, _ = sign_string(c, do_latex)
+            body = do_latex ? raw"\frac{" * num_str * "}{" * denom_str * "}" : num_str * "/(" * denom_str * ")"
+            return sig, body
         end
     end
 end
 
-function stringer(s::CSum; do_latex::Bool=false, braced::Bool=false, do_frac::Bool=true) # braced must be false by default for this to work! 
-    params = get_params(s, do_latex=do_latex)
-    terms = s.terms
-    if isempty(terms)
-        return false, "0"
+function stringer(C::CAbstract; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=false)
+    base = do_latex ? C.abstract_def.latex : C.abstract_def.name
+    base = exponentdag2str(base, C.exponent, C.dag; do_latex=do_latex)
+    return with_coeff(C.coeff, base; do_latex=do_latex)
+end
+
+function stringer(C::CCustomType; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=false)
+    base::String = if do_latex
+        latex_str = C.ctype_def.latex
+        startswith(latex_str, '\\') ? latex_str : (raw"\textrm{" * latex_str * "}")
+    else
+        C.ctype_def.plain
     end
-    if braced && (allnegative(s)|| (FLIP_IF_FIRST_TERM_NEGATIVE && allnegative(s[1])))
-        sig = true
-        _, body = stringer(-s, params; do_latex=do_latex, do_frac=do_frac)
-        return sig, body
+
+    if C.ctype_def.has_abstract
+        args = String[]
+        for x in C.expr
+            s, b = stringer(x; do_latex=do_latex, do_frac=do_frac, braced=braced)
+            push!(args, (s ? "-" : "") * b)
+        end
+        if !isempty(args); base *= "(" * join(args, ",") * ")"; end
+    else
+        indexes, times = where_acting_to_index_strings(C; do_latex=do_latex)   #.ctype_def.fun
+        base *= indexes2str(indexes; do_latex=do_latex)
+        if !isempty(times); base *= "(" * join(times, ",") * ")"; end
+    end
+
+    return with_coeff(C.coeff, base; do_latex=do_latex)
+end
+
+function stringer(s::CSum; do_latex::Bool=false, braced::Bool=false, do_frac::Bool=true)
+    exprs = s.expr
+    isempty(exprs) && return false, "0"
+
+    if braced && (allnegative(s) || (FLIP_IF_FIRST_TERM_NEGATIVE && allnegative(s[1])))
+        _, body = stringer(-s; do_latex=do_latex, do_frac=do_frac)
+        return true, body
     end
 
     parts = String[]
-    for (i, t) in enumerate(terms)
-        sig, body = stringer(t, params; do_latex=do_latex, do_frac=do_frac)
-        if i == 1
-            push!(parts, sig ? "-" * body : body)
-        else
-            push!(parts, sig ? "-" * body : "+" * body)
-        end
+    for (i, t) in enumerate(exprs)
+        sig, body = stringer(t; do_latex=do_latex, do_frac=do_frac)
+        push!(parts, (i == 1) ? (sig ? "-" * body : body) : (sig ? "-" * body : "+" * body))
     end
-
-    out = join(parts, "")
-    return false, out
+    return false, join(parts, "")
 end
 
-function stringer(r::CRational, params::Vector{String}; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=true)
-    n = r.numer
-    d = r.denom
-
-    n_sig, n_str = stringer(n, params; do_latex=do_latex, braced=braced, do_frac=false)
-    d_sig, d_str = stringer(d, params; do_latex=do_latex, braced=braced, do_frac=false)
-    if d_sig
-        @warn "Denominator is negative in rational expression. Not meant to be"
-        n_sig = xor(n_sig, d_sig)
-    end
+function stringer(r::CRational; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=true)
+    n_sig, n_str = stringer(r.numer; do_latex=do_latex, braced=braced, do_frac=false)
+    d_sig, d_str = stringer(r.denom; do_latex=do_latex, braced=braced, do_frac=false)
+    n_sig = xor(n_sig, d_sig)  # warn if denom negative?
     if do_latex
         return n_sig, "\\frac{ $n_str }{ $d_str }"
     else
-        n_wrapped = length(n) > 1 ? "($n_str)" : n_str 
-        d_wrapped = length(d) > 1 ? "($d_str)" : d_str
+        n_wrapped = length(r.numer) > 1 ? "($n_str)" : n_str
+        d_wrapped = length(r.denom) > 1 ? "($d_str)" : d_str
         return n_sig, "$n_wrapped/$d_wrapped"
     end
 end
 
 function stringer(r::CProd; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=false)
-    params = get_params(r, do_latex=do_latex)
-    c = r.coeff
-    sign, c_str = sign_string(c) 
-    var_strings = [stringer(x, params; do_latex=do_latex, do_frac=do_frac, braced=braced) for x in r.terms]
-    param_str = join(var_strings, "")
-    connector = do_latex ? " " : ""
-    if is_abs_one(c)
-        return sign, param_str
-    else
-        return sign, c_str * connector * param_str
+    sig_acc = false
+    parts = String[]
+    for x in r.expr
+        s, b = to_stringer(x; do_latex=do_latex, do_frac=do_frac, braced=braced, has_op=true)
+        if !isempty(b)
+            push!(parts, b)
+        end
+        sig_acc = xor(sig_acc, s)
     end
+    body = join(parts, "")
+    return with_coeff_xor(sig_acc, r.coeff, body; do_latex=do_latex)
 end
 
 function stringer(e::CLog; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=false)
-    params = get_params(e, do_latex=do_latex)
-    c = e.coeff
-    sign, c_str = sign_string(c) 
-    sign_x, x_str = stringer(e.x, params; do_latex=do_latex, do_frac=do_frac, braced=false)
-    x_str_signed = sign_x ? "-"*x_str : ""*x_str
-    connector = do_latex ? " " : ""
+    sx, x_str = stringer(e.expr; do_latex=do_latex, do_frac=do_frac, braced=false)
+    x_str_signed = sx ? "-" * x_str : x_str
     logger = do_latex ? "\\log " : "log"
-    if is_abs_one(c)
-        return sign, logger*brace(x_str_signed, do_latex=do_latex)
-    else
-        return sign, c_str * connector * logger*brace(x_str_signed, do_latex=do_latex)
-    end
+    body = logger * brace(x_str_signed; do_latex=do_latex)
+    return with_coeff(e.coeff, body; do_latex=do_latex)
 end
-# --- CExp (params) with conditional e^ vs \exp/exp ---
-function stringer(e::CExp; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=false)
-    params = get_params(e, do_latex=do_latex)
-    c = e.coeff
-    sign, c_str = sign_string(c, do_latex)
 
-    sx, x_str = stringer(e.x, params; do_latex=do_latex, do_frac=do_frac, braced=false)
+function stringer(e::CExp; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=false)
+    sx, x_str = stringer(e.expr; do_latex=do_latex, do_frac=do_frac, braced=false)
     x_str_signed = sx ? "-" * x_str : x_str
 
-    use_fn = contains_vec_or_mat(e.x)
-
-    connector = do_latex ? " " : ""
-
-    body =
-        if use_fn
-            logger = do_latex ? "\\exp " : "exp"
-            arg = brace(x_str_signed, do_latex=do_latex)
-            logger * arg
-        else
-            if do_latex
-                "e^{" * x_str_signed * "}"
-            else
-                "e^(" * x_str_signed * ")"
-            end
-        end
-
-    if is_abs_one(e.coeff)
-        return sign, body
+    use_fn = contains_vec_or_mat(e.expr)
+    body = if use_fn
+        (do_latex ? "\\exp " : "exp") * brace(x_str_signed; do_latex=do_latex)
     else
-        return sign, c_str * connector * body
+        do_latex ? " e^{" * x_str_signed * "}" : " e" * str2sup(x_str_signed)
     end
+
+    return with_coeff(e.coeff, body; do_latex=do_latex)
 end
 
-# --- CPower (params) ---
 function stringer(p::CPower; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=false)
-    params = get_params(p, do_latex=do_latex)
-    # external sign from coeff
-    sig, c_str = sign_string(p.coeff, do_latex)
-    sx, bx = stringer(p.x, params; do_latex=do_latex, do_frac=do_frac, braced=true)
+    sx, bx = stringer(p.expr; do_latex=do_latex, do_frac=do_frac, braced=true)
     base = (sx ? "-" : "") * bx
     k = numerator(p.exponent)
     m = denominator(p.exponent)
-    connector = do_latex ? " " : ""
 
-    body::String = ""
-    if m == 1 && k > 1
-        # positive integer power => braced base with ^k
-        base_b = brace(base, do_latex=do_latex)
-        pow = _pow_sup_int(k; do_latex=do_latex)
-        body = base_b * pow
+    body = if m == 1 && k > 1
+        brace(base; do_latex=do_latex) * _pow_sup_int(k; do_latex=do_latex)
     elseif k == 1 && m > 1 && do_latex
-        # 1/n exponent -> n-th root (LaTeX)
-        body = (m == 2) ? raw"\sqrt{" * base * "}" : raw"\sqrt[" * string(m) * "]{" * base * "}"
+        (m == 2) ? raw"\sqrt{" * base * "}" : raw"\sqrt[" * string(m) * "]{" * base * "}"
     else
-        # general rational or non-LaTeX root
-        base_b = brace(base, do_latex=do_latex)
-        if m == 1
-            pow = _pow_sup_int(k; do_latex=do_latex)
-        else
-            pow = _pow_sup_frac(k, m; do_latex=do_latex)
-        end
-        body = base_b * pow
+        pow = (m == 1) ? _pow_sup_int(k; do_latex=do_latex) : _pow_sup_frac(k, m; do_latex=do_latex)
+        brace(base; do_latex=do_latex) * pow
     end
 
-    if is_abs_one(p.coeff)
-        return sig, body
-    else
-        return sig, c_str * connector * body
-    end
+    return with_coeff(p.coeff, body; do_latex=do_latex)
 end
 
-# --- CVector (params) ---
 function stringer(v::CVector; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=false)
-    params = get_params(v, do_latex=do_latex)
-    sig, c_str = sign_string(v.coeff, do_latex)
     elems = Vector{String}(undef, length(v.expr))
     for i in eachindex(v.expr)
-        si, bi = stringer(v.expr[i], params; do_latex=do_latex, do_frac=do_frac, braced=false)
+        si, bi = stringer(v.expr[i]; do_latex=do_latex, do_frac=do_frac, braced=false)
         elems[i] = (si ? "-" : "") * bi
     end
 
-    body::String = ""
-    if do_latex
-        if v.row
-            body = raw"\begin{bmatrix} " * join(elems, " & ") * raw" \end{bmatrix}"
-        else
-            body = raw"\begin{bmatrix} " * join(elems, raw" \\ ") * raw" \end{bmatrix}"
-        end
+    body = if do_latex
+        v.row ? (raw"\begin{bmatrix} " * join(elems, " & ") * raw" \end{bmatrix}") :
+                (raw"\begin{bmatrix} " * join(elems, raw" \\ ") * raw" \end{bmatrix}")
     else
-        body = v.row ? "[ " * join(elems, ", ") * " ]" : "[ " * join(elems, " ; ") * " ]"
+        v.row ? "[ " * join(elems, ", ") * " ]" :
+                "[ " * join(elems, " ; ") * " ]"
     end
 
-    connector = do_latex ? " " : " "
-    if is_abs_one(v.coeff)
-        return sig, body
-    else
-        return sig, c_str * connector * body
-    end
+    return with_coeff(v.coeff, body; do_latex=do_latex)
 end
-# --- CMatrix (params) ---
-function stringer(M::CMatrix; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=false)
-    params = get_params(M, do_latex=do_latex)
-    sig, c_str = sign_string(M.coeff, do_latex)
-    m, n = size(M.expr)
 
-    body::String = ""
+function stringer(M::CMatrix; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=false)
+    m, n = size(M.expr)
+    rows = String[]
     if do_latex
-        rows = String[]
         for i in 1:m
             cols = String[]
             for j in 1:n
-                sij, bij = stringer(M.expr[i,j], params; do_latex=do_latex, do_frac=do_frac, braced=false)
+                sij, bij = stringer(M.expr[i,j]; do_latex=do_latex, do_frac=do_frac, braced=false)
                 push!(cols, (sij ? "-" : "") * bij)
             end
             push!(rows, join(cols, " & "))
         end
         body = raw"\begin{bmatrix} " * join(rows, raw" \\ ") * raw" \end{bmatrix}"
     else
-        rows = String[]
         for i in 1:m
             cols = String[]
             for j in 1:n
-                sij, bij = stringer(M.expr[i,j], params; do_latex=do_latex, do_frac=do_frac, braced=false)
+                sij, bij = stringer(M.expr[i,j]; do_latex=do_latex, do_frac=do_frac, braced=false)
                 push!(cols, (sij ? "-" : "") * bij)
             end
             push!(rows, "[ " * join(cols, ", ") * " ]")
@@ -348,58 +279,44 @@ function stringer(M::CMatrix; do_latex::Bool=false, do_frac::Bool=true, braced::
         body = "[" * join(rows, "; ") * "]"
     end
 
-    connector = do_latex ? " " : " "
-    if is_abs_one(M.coeff)
+    return with_coeff(M.coeff, body; do_latex=do_latex)
+end
+
+
+function to_stringer(f::CFunction; do_latex::Bool=false, braced::Bool=false, do_frac::Bool=true, has_op::Bool=false)::Tuple{Bool, String}
+    if braced && isa(f, CSum) && length(f) > 1
+        sig, body = stringer(f; do_latex=do_latex, braced=braced)
+        body = brace(body, do_latex=do_latex)
+        done, pre_f, new_f = separate_CSum(f)
+        if done
+            sig_new, body_new = stringer(new_f; do_latex=do_latex, braced=braced, do_frac=do_frac)
+            body_new = do_latex ? "\\left( $body_new \\right)" : "($body_new)"
+            sig_outer, prefactor_outer = stringer(pre_f; do_latex=do_latex, do_frac=do_frac)
+            sig_new = xor(sig_new, sig_outer)
+            if !isonelike(pre_f)
+                body_new = prefactor_outer * (do_latex ? " " : "") * body_new
+            end
+            if length(body_new) < length(body)
+                return sig_new, body_new
+            end
+        end
         return sig, body
     else
-        return sig, c_str * connector * body
+        sig, body = stringer(f; do_latex=do_latex, do_frac=do_frac)
+        if has_op && isnumeric(f)
+            # Drop pure unit scalars in a product/sum context (incl. CRational == 1)
+            if isonelike(f)
+                return sig, ""
+            end
+        end
+        return sig, body
     end
 end
 
-function to_stringer(f::CFunction; do_latex::Bool=false, braced::Bool=false, do_frac::Bool=true, has_op::Bool=false)::Tuple{Bool, String}
-    params = get_params(f, do_latex=do_latex)
-    if braced && isa(f, CSum) && length(f) > 1
-        sig, body = stringer(f, params; do_latex=do_latex, braced=braced)
-        # Apply braces if necessary
-        body = brace(body, do_latex=do_latex)
-        # braced attempt
-        done, pre_f, new_f = separate_CSum(f)
-        if done 
-            sig_new, body_new = stringer(new_f, params; do_latex=do_latex, braced=braced, do_frac=do_frac)
-            body_new = do_latex ? "\\left( $body_new \\right)" : "($body_new)"
-            # add prefactor (i.e. base) if it isn'T trivial (isonelike)
-            sig_outer, prefactor_outer = stringer(pre_f, params; do_latex=do_latex, do_frac=do_frac)
-            sig_new = sig_new || sig_outer
-            connector = do_latex ? " " : ""
-            if !isonelike(pre_f)
-                body_new = prefactor_outer*connector*body_new   # add an outer prefactor 
-            end 
-            if length(body_new) < length(body)
-                body = body_new
-                sig = sig_new
-            end
-        end
-    else
-        sig, body = stringer(f, params; do_latex=do_latex, do_frac=do_frac)
-        if has_op && isnumeric(f) && !isa(f, CRational) 
-            if isa(f, CAtom)
-                f_pre =  f.coeff
-            elseif isa(f, CSum)
-                f_pre = f[1].coeff
-            else 
-                error("Unsupported type for CFunction")
-            end
-            if isonelike(f_pre)  
-                return sig, "" 
-            end
-        end
-    end
-    return sig, body
-end
 
 
 """
-    to_string(f::CFunction, params::Vector{String};
+    to_string(f::CFunction;
               do_latex::Bool = false,
               braced::Bool = false,
               optional_sign::Bool = true) -> String
@@ -425,9 +342,9 @@ end
 import Base: show
 
 function show(io::IO, f::CFunction)
-    print(io, latexstring(to_string(f; do_latex=false)))
+    print(io, latexstring(to_string(f, do_latex=false)))
 end
 
 function show(io::IO, ::MIME"text/latex", f::CFunction)
-    print(io, latexstring(to_string(f; do_latex=true)))
+    print(io, latexstring(to_string(f, do_latex=true)))
 end

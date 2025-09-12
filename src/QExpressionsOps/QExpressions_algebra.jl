@@ -110,6 +110,17 @@ end
 (*(Q1::QExpr, Q2::T)::QExpr) where {T<:QComposite} = _mul(Q1, Q2)
 (*(Q1::T, Q2::QExpr)::QExpr) where {T<:QComposite} = _mul(Q1, Q2)
 
+(*(Q::T, C::CFunction)::QExpr) where {T<:QComposite} = QExpr(Q.statespace, modify_coeff(Q, C*get_coeff(Q)))
+(*(C::CFunction, Q::T)::QExpr) where {T<:QComposite} = Q*C 
+function *(X::QExpr, C::CFunction)::QExpr
+    new_terms = QComposite[]
+    for Q in X.terms 
+        push!(new_terms, modify_coeff(Q, C*get_coeff(Q)))
+    end
+    return QExpr(X.statespace, new_terms)
+end
+(*(C::CFunction, X::QExpr)::QExpr)  = X*C 
+
 # Number interactions: public APIs (no check)
 function *(num::Number, p1::QAtomProduct)::Vector{QComposite}
     if iszero(num)
@@ -221,6 +232,67 @@ end
     statespace_check_if(Val(C), p1, p2)
     return multiply_QCompositeProducts(p1.coeff_fun * p2.coeff_fun, p1.expr, p2.expr, Val(:nosimp))
 end
+
+
+#### Division (only when denominator is numeric) ########################
+
+# Expr ÷ Number
+function /(Q::QExpr, num::Number)::QExpr
+    if num == 0
+        error("Division by zero.")
+    end
+    return Q * (1 / num)
+end
+
+# Composite ÷ Number
+function /(Q::T, num::Number)::Vector{QComposite} where {T<:QComposite}
+    if num == 0
+        error("Division by zero.")
+    end
+    return Q * (1 / num)
+end
+
+# Number ÷ Expr (allowed only if numerator is numeric, denominator not numeric)
+function /(num::Number, Q::QExpr)::QExpr
+    if num == 0
+        return QExpr(Q.statespace, QComposite[])  # zero expression
+    end
+    if is_numeric(Q)
+        # If Q is purely numeric, collapse to scalar division
+        return (num / (sum(get_coeff(t) for t in Q2.terms))) * Identity(Q.statespace)
+    else
+        error("Division by non-numeric QExpr is not supported.")
+    end
+end
+
+# Number ÷ Composite
+function /(num::Number, Q::T) where {T<:QComposite}
+    if num == 0
+        return QExpr(Q.statespace, QComposite[])
+    end
+    if is_numeric(Q)
+        return modify_coeff(num/get_coeff(Q))
+    else
+        error("Division by non-numeric QComposite is not supported.")
+    end
+end
+
+function /(Q1::QExpr, Q2::QExpr)::QExpr
+    if is_numeric(Q2)
+        return Q1 * (1 / (sum(get_coeff(t) for t in Q2.terms)))
+    else
+        error("Division by non-numeric QExpr is not supported.")
+    end
+end
+
+function /(Q1::T1, Q2::T2) where {T1<:QComposite,T2<:QComposite}
+    if is_numeric(Q2)
+        return Q1 * (1 / get_coeff(Q2))
+    else
+        error("Division by non-numeric QComposite is not supported.")
+    end
+end
+
 
 # ==============================
 # Exponentiation

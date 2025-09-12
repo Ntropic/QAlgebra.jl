@@ -1,5 +1,5 @@
 using Combinatorics
-using ..CFunctions: ParameterInfo 
+using ..CFunctions: ParameterInfo, ParameterIndexes
 
 """ 
     Parameter(param_name::String, param_of_t::Bool, var_of_ensemble::Bool, var_ensemble_index::Int=0; param_values::Union{Nothing,Number,Vector{Number},Function}=nothing, var_suffix::String="")
@@ -61,6 +61,29 @@ function Base.show(io::IO, param_def::ParameterDefinitions)
     println(io, "ParameterDefinitions: [" * join(var_str_vec, ", ") * "]")
 end
 
+function ParameterIndexes(subspace_info::SubSpaceInfo, indexed_parameter_indexes::Vector{Int}, where_acting_by_parameter::Vector{Vector{Vector{Bool}}}, indexes_by_t_index::Vector{Vector{Int}})::ParameterIndexes
+    labels::Vector{String} = []
+    t_labels::Vector{String} = []
+    t_labels_latex::Vector{String} = []
+    for w in subspace_info.where_ensembles
+        inner = subspace_info.inner_labels[w]
+        append!(labels, inner) 
+    end
+    label_parameter_indexes::Vector{Vector{Int}} = [Int[] for _ in 1:length(labels)]
+    curr_indexes::Vector{Int} = []
+    for (i_param, param_acting) in zip(indexed_parameter_indexes, where_acting_by_parameter)
+        flattened_acting = vcat(param_acting...)
+        inds = findall(flattened_acting)
+        for ind in inds 
+            append!(label_parameter_indexes[ind], i_param) 
+        end
+    end
+    for (i, t_indexes) in enumerate(indexes_by_t_index)
+        push!(t_labels, t_suffix(i-1, do_latex=false))
+        push!(t_labels_latex, t_suffix(i-1, do_latex=true))
+    end
+    return ParameterIndexes(labels, t_labels, t_labels_latex, label_parameter_indexes, indexes_by_t_index)
+end
 
 function ParameterInfo(parameters::Vector{Parameter}, outer_labels_symbols::Vector{Symbol}, param_of_indexes::Vector{Bool},
                        ss_ensemble_indexes_by_group::Vector{Vector{Int}}, ss_ensemble_present_by_group::Vector{Vector{Bool}},
@@ -105,11 +128,12 @@ function ParameterInfo(parameters::Vector{Parameter}, outer_labels_symbols::Vect
             push!(where_acting_by_parameter, curr_bools)
         end
     end
+    param_indexes = ParameterIndexes(subspace_info, indexed_parameter_indexes, where_acting_by_parameter, indexes_by_t_index)
     return ParameterInfo(outer_labels_symbols, inner_labels_symbols_flat, outer_labels, param_names,
         param_strs, param_latex, param_of_indexes, outer_group_by_index,
         t_index_by_index, ss_ensemble_indexes_by_group, ss_ensemble_present_by_group, indexed_parameter_indexes,
         where_acting_by_parameter, subspace_index_maps, t_index_transform, indexes_by_t_index,
-        indexes_of_t, param_of_t, param_is_t, param_values)
+        indexes_of_t, ensemble_sizes, param_of_t, param_is_t, param_values, param_indexes)
 end
 
 
@@ -304,11 +328,18 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
 
             for t_ind in t_vals
                 is_t = (var_name_sym==:t)
-                t_suff        = (of_t && !is_t) ? "(" * t_suffix(t_ind) * ")" : ""
-                t_suff_latex  = (of_t && !is_t) ? "(" * t_suffix(t_ind, do_latex=true) * ")" : ""
-                
-                t_suff        = (t_ind > 0 && is_t) ? str2sub(string(t_ind))  : ""
-                t_suff_latex  = (t_ind > 0 && is_t) ? "_$t_ind" : ""
+                t_suff = ""
+                t_suff_latex = ""
+
+                if of_t && !is_t
+                    # e.g. beta(t)
+                    t_suff       = "(" * t_suffix(t_ind) * ")"
+                    t_suff_latex = "(" * t_suffix(t_ind, do_latex=true) * ")"
+                elseif is_t && t_ind > 0
+                    # the actual variable t_1, t_2, ...
+                    t_suff       = str2sub(string(t_ind))
+                    t_suff_latex = "_$t_ind"
+                end
                 push!(parameters, Parameter(Symbol(param_name), param_name*t_suff, var_name_str*t_suff,
                                             param_name, var_name_str, var_name_latex*t_suff_latex, Symbol[],
                                             nothing, of_t, is_t, t_ind, group_index, false, SubSpaceIndex[]))

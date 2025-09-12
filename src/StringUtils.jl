@@ -1,8 +1,8 @@
 module StringUtils
 
 export subscript_indexes, superscript_indexes, var_substitution, var_substitution_latex
-export str2sub, str2sup, indexes2str, term_pre_split, separate_terms, symbol2formatted, t_suffix, brace, braket, match_indexed_pattern, brace_separate, underscore_separate
-
+export str2sub, str2sup, indexes2str, symbol2formatted, t_suffix, brace, braket, brace_separate, underscore_separate
+export int_exponent2str, exponentdag2str
 """
     subscript_indexes::Dict{Char, String}
 
@@ -22,8 +22,8 @@ const superscript_indexes = Dict('a' => "ᵃ", 'b' => "ᵇ", 'c' => "ᶜ", 'd' =
     'g' => "ᵍ", 'h' => "ʰ", 'i' => "ⁱ", 'j' => "ʲ", 'k' => "ᵏ", 'l' => "ˡ", 'm' => "ᵐ", 'n' => "ⁿ",
     'o' => "ᵒ", 'p' => "ᵖ", 'q' => "ᵠ", 'r' => "ʳ", 's' => "ˢ", 't' => "ᵗ", 'u' => "ᵘ", 'v' => "ᵛ",
     'w' => "ʷ", 'x' => "ˣ", 'y' => "ʸ", 'z' => "ᶻ", '2' => "²", '3' => "³", '4' => "⁴", '5' => "⁵", 
-    '6' => "⁶", '7' => "⁷", '8' => "⁸", '9' => "⁹", '1' => "", '-' => "⁻", '=' => "⁼", "." => "·", 
-    '(' => "⁽", ')' => "⁾", '+' => "⁺", '0' => "⁰", 'I' => "ᴵ", 'J' => "ᴶ", 'K' => "ᴷ", 'L' => "ᴸ", ',' => "ʼ")
+    '6' => "⁶", '7' => "⁷", '8' => "⁸", '9' => "⁹", '1' => "¹", '-' => "⁻", '=' => "⁼", "." => "·", 
+    '(' => "⁽", ')' => "⁾", '+' => "⁺", '0' => "⁰", 'I' => "ᴵ", 'J' => "ᴶ", 'K' => "ᴷ", 'L' => "ᴸ", ',' => "ʼ", '/' => "𝄍")
 const var_substitution = Dict("alpha" => "α", "beta" => "β", "gamma" => "γ", "delta" => "δ", "epsilon" => "ε", "zeta" => "ζ", "eta" => "η", "theta" => "θ", "iota" => "ι", "kappa" => "κ", "lambda" => "λ", "mu" => "μ", "nu" => "ν", "xi" => "ξ", "rho" => "ρ", "sigma" => "σ", "tau" => "τ", "phi" => "φ", "chi" => "χ", "psi" => "ψ", "omega" => "ω", "pi" => "π")
 const var_substitution_latex = Dict("alpha" => raw"\alpha", "beta" => raw"\beta", "gamma" => raw"\gamma", "delta" => raw"\delta", "epsilon" => raw"\epsilon", "zeta" => raw"\zeta", "eta" => raw"\eta", "theta" => raw"\theta", "iota" => raw"\iota", "kappa" => raw"\kappa", "lambda" => raw"\lambda", "mu" => raw"\mu", "nu" => raw"\nu", "xi" => raw"\xi", "rho" => raw"\rho", "sigma" => raw"\sigma", "tau" => raw"\tau", "phi" => raw"\phi", "chi" => raw"\chi", "psi" => raw"\psi", "omega" => raw"\omega", "pi" => raw"\pi",
     "α" => raw"\alpha", "β" => raw"\beta", "γ" => raw"\gamma", "δ" => raw"\delta", "ε" => raw"\epsilon", "ζ" => raw"\zeta", "η" => raw"\eta", "θ" => raw"\theta", "ι" => raw"\iota", "κ" => raw"\kappa", "λ" => raw"\lambda", "μ" => raw"\mu", "ν" => raw"\nu", "ξ" => raw"\xi", "ρ" => raw"\rho", "σ" => raw"\sigma", "τ" => raw"\tau", "φ" => raw"\phi", "χ" => raw"\chi", "ψ" => raw"\psi", "ω" => raw"\omega", "π" => raw"\pi")
@@ -214,4 +214,70 @@ function underscore_separate(s::String)
         return s, String[]
     end
 end
+
+function int_exponent2str(base::String, exponent::Int, dag::Bool=false; do_latex::Bool=false)::String
+    if exponent == 0 
+        return ""
+    else
+        exponent_str = ""
+        if exponent != 1 
+            exponent_str *= do_latex ? string(exponent) : str2sup(string(exponent))
+        end
+        if dag 
+            exponent_str *= do_latex ? "*" : "'"
+        end
+        if do_latex && length(exponent_str) > 0
+            exponent_str = "^{$exponent_str}"
+        end
+        return base*exponent_str
+    end
+end
+function int_exponents2str(bases::Vector{String}, exponents::Vector{Int}, dag::Bool=false; do_latex::Bool=false)::String
+    return join([int_exponent2str(b, x, dag; do_latex=do_latex) for (b,x) in zip(bases, exponents)])
+end
+
+function exp2str(exponent_str::String; do_latex::Bool=false)::String 
+    if do_latex && length(exponent_str) > 0
+        exponent_str = "^{$exponent_str}"
+    end
+    return exponent_str
+end
+function exponentdag2str(base::String, exponent::Union{Int, Rational{Int}}, dag::Bool=false; do_latex::Bool=false)::String
+    q = exponent isa Int ? exponent//1 : exponent
+    num, den = numerator(q), denominator(q)
+    if num == 0 
+        return ""
+    else
+        exponent_str = ""
+        if dag 
+            exponent_str *= do_latex ? "*" : "'"
+        end
+        if num == 1 && den == 1   # 1 case
+            return base*exp2str(exponent_str, do_latex=do_latex)
+        end
+        if do_latex 
+            if num == 1   # n-root cases
+                if den == 2
+                    return raw"\sqrt{"*base*exp2str(exponent_str, do_latex=true)*"}"
+                else 
+                    return raw"\sqrt["*string(den)*"]{"*base*exp2str(exponent_str, do_latex=true)*"}"
+                end
+            elseif den == 1  # int case
+                exponent_str *= " "*string(num)
+                return base*exp2str(exponent_str, do_latex=true)
+            else  # rational case
+                exponent_str *= " "*raw"\tfrac{"*string(num)*"}{"*string(den)*"}"
+                return base*exp2str(exponent_str, do_latex=true)
+            end
+        else 
+            if den == 1 # int case 
+                exponent_str *= str2sup(string(num))
+            else
+                exponent_str *= str2sup(string(num)*"/"*string(den))
+            end
+            return base * exponent_str
+        end
+    end
+end                
+
 end
