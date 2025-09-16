@@ -181,6 +181,10 @@ end
 function define_ctype(param_info::ParameterInfo, name::Union{Symbol,String}, fun::CFunction)::CTypeDefinition
     CName, Name, base = variants_C(name)
     name_sym = Symbol(base)
+    # check if name_sym is already present in custom_ctype 
+    if any(x -> x.name == name_sym, param_info.custom_ctype) 
+        error("Cannot define $name_sym, because it already exists in ParameterInfo.")
+    end
     plain, latex = symbol2formatted(String(base))
 
     index   = length(param_info.custom_ctype) + 1

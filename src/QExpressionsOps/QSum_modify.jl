@@ -1,6 +1,6 @@
 #### Flatten 
 import Base.Iterators: flatten
-export neq
+export neq, flatten
 
 """
 flatten(qeq::QExpr) -> QExpr
@@ -52,7 +52,7 @@ end
 function flatten(q::T, in_sum::Bool = false, in_sum_comp::Bool = false) where T<:QComposite
     return [modify_expr(q, flatten(q.expr))]
 end
-function flatten(q::QMultiComposite, in_sum::Bool = false, in_sum_comp::Bool = false)
+function flatten(q::T, in_sum::Bool = false, in_sum_comp::Bool = false) where T<:QMultiComposite
     return [modify_expr(q, flatten.(q.expr))]
 end
 

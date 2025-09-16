@@ -81,12 +81,31 @@ Constructor of a `QSum` struct. Defines the indexes to sum over, the expressions
 function Sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=false)::QExpr
     statespace = expr.statespace
     subspace_indexes = SubSpaceIndex.(indexes, Ref(statespace.subspace_info))
-    outers = outer.(subspace_indexes)
-    for (outer, index) in zip(outers, indexes)
-        if iszero(statespace.subspace_info.ensemble_index_by_outer_index[outer])
-            error("Subsystem $index not among ensemble indexes.")
+    for (i, ind) in enumerate(subspace_indexes)
+        for ind2 in subspace_indexes[i+1:end]
+            if ind == ind2 
+                error("Cannot sum twice over $(indexes[i]).")
+            end
         end
     end
+    for (sub_ind, index) in zip(subspace_indexes, indexes)
+        curr_ensemble = statespace.subspace_info.ensemble_index_by_outer_index[outer(sub_ind)]
+        if iszero(curr_ensemble)
+            error("Subsystem $index not among ensemble indexes.")
+        end
+        how_many_non_sum = statespace.subspace_info.how_many_non_sum_by_ensemble[curr_ensemble]
+        if how_many_non_sum > inner(sub_ind)
+            curr_subspace = statespace.subspaces[outer(sub_ind)]
+            possible_keys = curr_subspace.keys[how_many_non_sum+1:end]
+            if length(possible_keys) > 0 
+                error("Please use a summation index of the ensemble. You used $index, the available summation indexes are $possible_keys.")
+            else
+                error("No summation indexes defined for this ensemble subspace. 
+                        Define in call to SubSpaceDefinitions via Tuple specifying non summation indexes, summation indexes and finally the OperatorSpace. ")
+            end
+        end
+    end
+    subspace_indexes = sort(subspace_indexes, by = expanded)
     return QExpr(statespace, [QSum(expr, subspace_indexes, neq)])
 end
 function Sum(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false)::QExpr

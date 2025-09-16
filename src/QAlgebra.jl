@@ -85,14 +85,13 @@ export Dag, Commutator, same_statespace
 export is_numeric, is_t_var, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, max_moment_of_terms, contains_which_t_indexes, where_acting
 export is_unitary, is_hermitian, substitution_properties_fulfilled
 export base_operators, QExprLookup 
-export repartition, neq
 export string, latex_string
 export term
-export @define, QExpr2CFunction
+export @define, @define_basics, QExpr2CFunction
 
-export contains_abstract, are_indexes_defined
+export contains_abstract, are_indexes_defined, which_summations_acting
 export substitute, Substitution, --> 
-export repartition!
+export repartition!,repartition, neq, flatten
 export QExpr2string   # remove later 
 end # module QAlgebra
 

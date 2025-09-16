@@ -1,4 +1,4 @@
-export are_indexes_defined
+export are_indexes_defined, which_summations_acting
 
 
 cnimp(a::Bool, b::Bool) = b && !a
@@ -34,32 +34,66 @@ end
 function which_ensemble_acting(q::QAtomProduct; do_abstract::Bool=false)::Vector{Vector{Bool}}
     # xor between vectors of vector of bool 
     qspace = q.statespace
-    return vecvec_or(reduce(vecvec_or, [which_ensemble_acting(t, qspace.subspace_info, qspace.I_ensemble_op; do_abstract=do_abstract) for t in q.expr]), 
+    return vecvec_or!(reduce(vecvec_or!, [which_ensemble_acting(t, qspace.subspace_info, qspace.I_ensemble_op; do_abstract=do_abstract) for t in q.expr]), 
                     which_ensemble_acting(q.coeff_fun))
 end
-
 function which_ensemble_acting(q::QExpr; do_abstract::Bool=false)::Vector{Vector{Bool}}
     return reduce(vecvec_or, [which_ensemble_acting(t, do_abstract=do_abstract) for t in q.terms])
 end
 function which_ensemble_acting(q::QSum; do_abstract::Bool=false)::Vector{Vector{Bool}}
     which_ensembles = which_ensemble_acting(q.expr, do_abstract=do_abstract)
     @inbounds @simd for index in q.indexes 
-        which_ensembles[index.outer][Index2Ensemble(index)] = true
+        which_ensembles[Index2Ensemble(index, q.statespace.subspace_info)][index.inner] = true
     end
     return which_ensembles
 end
-
 function which_ensemble_acting(q::QComposite; do_abstract::Bool=false)::Vector{Vector{Bool}}
-    qspace = q.statespace
-    return vecvec_or(which_ensemble_acting(q.expr, do_abstract=do_abstract), 
-                    which_ensemble_acting(q.coeff_fun))
+    return vecvec_or!(which_ensemble_acting(q.expr, do_abstract=do_abstract),  which_ensemble_acting(q.coeff_fun))
 end
 function which_ensemble_acting(q::QMultiComposite; do_abstract::Bool=false)::Vector{Vector{Bool}}
-    qspace = q.statespace
-    return vecvec_or(reduce(vecvec_or, [which_ensemble_acting(x, do_abstract=do_abstract) for x in q.expr]), 
-                    which_ensemble_acting(q.coeff_fun))
+    return vecvec_or!(reduce(vecvec_or!, [which_ensemble_acting(x, do_abstract=do_abstract) for x in q.expr]), which_ensemble_acting(q.coeff_fun))
 end
 
+""" 
+    which_summations_acting(q::QObj)::Vector{Vector{Bool}}
+
+Check, which Summation indexes are present. Returns a Boolean of 
+"""
+function which_summations_acting(q::QObj, subspace_info::SubSpaceInfo)::Vector{Vector{Bool}}
+    empty_vec::Vector{Vector{Bool}} = [zeros(Bool, s) for s in subspace_info.how_many_sum_by_ensemble]
+    which_summations_acting(q, empty_vec, subspace_info.summation_indexes)
+end
+function which_summations_acting(q::QAtom, where_acting::Vector{Vector{Bool}}, ::Vector{Vector{Int}})
+    error("Shouldn't call QAtom for which_summation_acting.")
+end
+function which_summations_acting(q::QAtomProduct, where_acting::Vector{Vector{Bool}}, which_indexes::Vector{Vector{Int}})
+    return Vector{Vector{Bool}}()
+end
+function which_summations_acting(q::QExpr, where_acting::Vector{Vector{Bool}}, which_indexes::Vector{Vector{Int}})::Vector{Vector{Bool}}
+    for t in q.terms
+        vecvec_or!(where_acting, which_summations_acting(t, where_acting, which_indexes))
+    end
+    return where_acting
+end
+function which_summations_acting(q::T, where_acting::Vector{Vector{Bool}}, which_indexes::Vector{Vector{Int}})::Vector{Vector{Bool}} where T <: QComposite 
+    return which_summations_acting(q.expr, where_acting, which_indexes)
+end
+function which_summations_acting(q::T, where_acting::Vector{Vector{Bool}}, which_indexes::Vector{Vector{Int}})::Vector{Vector{Bool}} where T <: QMultiComposite
+    for x in q.expr
+        vecvec_or!(where_acting, which_summations_acting(x,  where_acting, which_indexes))
+    end
+    return where_acting 
+end
+
+function which_summations_acting(q::QSum, where_acting::Vector{Vector{Bool}}, which_indexes::Vector{Vector{Int}})::Vector{Vector{Bool}}
+    which_summations_acting(q.expr, where_acting, which_indexes)
+    @inbounds @simd for index in q.indexes 
+        ensemble, summation = Index2Ensemble_and_Summation(index, q.statespace.subspace_info)
+        @assert where_acting[ensemble][summation] == false "Expecting a summation index to not be defined already within a stack! For $index."
+        where_acting[ensemble][summation] = true
+    end
+    return where_acting
+end
 
 
 """ 

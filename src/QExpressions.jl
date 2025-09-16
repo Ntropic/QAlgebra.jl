@@ -7,7 +7,7 @@ import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort,
 using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED, vecvec_or, vecvec_or!
 using ..CFunctions: isnumeric
 export QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, diff_QEq, base_operators, d_dt #simplify
-export @define, QExpr2CFunction
+export @define, @define_basics, QExpr2CFunction
 
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
@@ -344,6 +344,13 @@ macro define(statespace, name, fun=nothing)
             $(n_sym)
         end)
     end
+end
+macro define_basics(statespace)
+    return esc(quote
+        var0 = @define($statespace, "var0")
+        @define($statespace, sin, 1//(2*1im) * (exp(1im*var0) - exp(-1im*var0)))
+        @define($statespace, cos, 1//2 * (exp(1im*var0) + exp(-1im*var0)))
+    end)
 end
 
 list_cabstracts(statespace::StateSpace) = list_cabstracts(statespace.param_info)

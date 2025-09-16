@@ -1,17 +1,29 @@
-function vecvec_or(A::Vector{Vector{Bool}}, B::Vector{Vector{Bool}})
-    # Assume they are equally shaped. 
-    return broadcast.(|, A, B)
-end
-function vecvec_or!(A::Vector{<:AbstractVector{Bool}}, B::Vector{<:AbstractVector{Bool}})
-    # length(A) == length(B) || throw(DimensionMismatch("outer lengths differ ($(length(A)) vs $(length(B)))"))
-    @inbounds for i in eachindex(A, B)
-        ai, bi = A[i], B[i]
-        #length(ai) == length(bi) || throw(DimensionMismatch("inner lengths differ at i=$i ($(length(ai)) vs $(length(bi)))"))
-        ai .|= bi                # elementwise OR, in place
+function vecvec_or(A::AbstractVector{<:AbstractVector{Bool}}, B::AbstractVector{<:AbstractVector{Bool}})
+    out = Vector{Vector{Bool}}(undef, length(A))
+    @inbounds for i in eachindex(B)
+        ai = A[i]; bi = B[i]
+        n = length(bi)  # result has the same length as B[i]
+        outi = Vector{Bool}(undef, n)
+        @inbounds @simd for j in 1:n
+            outi[j] = ai[j] | bi[j]
+        end
+        out[i] = outi
     end
-    return A
+    @inbounds for i in length(B)+1:length(A)
+        out[i] = A[i]   
+    end
+    return out
 end
-
+function vecvec_or!(A::AbstractVector{<:AbstractVector{Bool}}, B::AbstractVector{<:AbstractVector{Bool}})
+    # length(A) >= length(B) || throw(DimensionMismatch("B is longer than A ($(length(B)) > $(length(A)))"))
+    @inbounds for i in eachindex(B)        # only iterate existing B[i]
+        ai = A[i]; bi = B[i]
+        @inbounds @simd for j in eachindex(ai, bi)  # up to length(bi)
+            bi[j] |= ai[j]
+        end
+    end
+    return B
+end
 
 
 function unique_sorted!(v::Vector{T}) where {T}
