@@ -89,7 +89,7 @@ export string, latex_string
 export term
 export @define, @define_basics, QExpr2CFunction
 
-export contains_abstract, are_indexes_defined, which_summations_acting
+export contains_abstract, are_indexes_defined, which_summations_acting, which_summations_to_root
 export substitute, Substitution, --> 
 export repartition!,repartition, neq, flatten
 export QExpr2string   # remove later 

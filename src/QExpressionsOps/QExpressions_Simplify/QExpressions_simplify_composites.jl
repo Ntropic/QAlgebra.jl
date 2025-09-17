@@ -62,10 +62,11 @@ function simplify_pair_composite(a::QSum, b::QSum, statespace::StateSpace)::Tupl
     end
     new_indexes = sort!(vcat(a.indexes, b.indexes))
     if hasdupes_sorted(new_indexes)
-        error("Two sums cannot have the same summation indexes and nbe multiplied with one another!")
+        error("Two sums cannot have the same summation indexes and be multiplied with one another!")
     end
     return [modify_expr_indexes(a, a.expr*b.expr, new_indexes, Val(:nosort))], true, false, false
 end
+
 function simplify_pair_composite(a::QSum, b::QAtomProduct, statespace::StateSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool}
     return [modify_expr(a, a.expr * b)], true, false, false
 end
@@ -163,10 +164,10 @@ end
 function multiply_QCompositeProducts(coeff::CFunction, p1::AbstractVector{<:QComposite}, p2::AbstractVector{<:QComposite})
     statespace = p1[1].statespace
     c, t = multiply_QCompositeProduct_terms(p1, p2)
-    return [ QCompositeProductCleanup(statespace, c * coeff , t)]
+    return [ QCompositeProduct(c * coeff , t)]
 end
 function multiply_QCompositeProducts(coeff::CFunction, p1::AbstractVector{<:QComposite}, p2::AbstractVector{<:QComposite}, ::Val{:nosimp})
     statespace = p1[1].statespace
     c, t = multiply_QCompositeProduct_terms(p1, p2)
-    return [ QCompositeProductCleanup(statespace, c * coeff , t, Val(:nosimp)) ]
+    return [ QCompositeProduct(c * coeff , t, Val(:nosimp)) ]
 end

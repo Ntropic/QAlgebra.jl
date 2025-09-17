@@ -96,12 +96,24 @@ isless_same(a::QComposite, b::QComposite) = isless(a.expr, b.expr)
 
 # QSum: subsystem_index, |element_indexes|, element_indexes, expr, neq
 function isless_same(a::QSum, b::QSum)
-    if length(a.indexes) != length(b.indexes)
-        return length(a.indexes) < length(b.indexes)
-    elseif a.indexes != b.indexes
-        return a.indexes < b.indexes 
-    elseif a.neq != b.neq 
-         return a.neq < b.neq 
+    # total number of indexes
+    na_ind, nb_ind = length(a.eq_indexes), length(b.eq_indexes)
+    if na_ind != nb_ind
+        return na_ind < nb_ind
+    end
+    na_ind, nb_ind = length(a.neq_blocks), length(b.neq_blocks)
+    if na_ind != nb_ind
+        return na_ind < nb_ind
+    end
+
+    for (blk_a, blk_b) in zip(a.neq_blocks, b.neq_blocks)
+        la, lb = length(blk_a), length(blk_b)
+        if la != lb
+            return la < lb
+        end
+        if blk_a != blk_b
+            return blk_a < blk_b
+        end
     end
     return a.expr < b.expr
 end

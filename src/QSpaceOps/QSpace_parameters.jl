@@ -61,7 +61,7 @@ function Base.show(io::IO, param_def::ParameterDefinitions)
     println(io, "ParameterDefinitions: [" * join(var_str_vec, ", ") * "]")
 end
 
-function ParameterIndexes(subspace_info::SubSpaceInfo, indexed_parameter_indexes::Vector{Int}, where_acting_by_parameter::Vector{Vector{Vector{Bool}}}, indexes_by_t_index::Vector{Vector{Int}})::ParameterIndexes
+function ParameterIndexes(subspace_info::SubSpaceInfo, indexed_parameter_indexes::Vector{Int}, where_acting_by_parameter::Vector{Vector{BitVector}}, indexes_by_t_index::Vector{Vector{Int}})::ParameterIndexes
     labels::Vector{String} = []
     t_labels::Vector{String} = []
     t_labels_latex::Vector{String} = []
@@ -85,16 +85,16 @@ function ParameterIndexes(subspace_info::SubSpaceInfo, indexed_parameter_indexes
     return ParameterIndexes(labels, t_labels, t_labels_latex, label_parameter_indexes, indexes_by_t_index)
 end
 
-function ParameterInfo(parameters::Vector{Parameter}, outer_labels_symbols::Vector{Symbol}, param_of_indexes::Vector{Bool},
-                       ss_ensemble_indexes_by_group::Vector{Vector{Int}}, ss_ensemble_present_by_group::Vector{Vector{Bool}},
+function ParameterInfo(parameters::Vector{Parameter}, outer_labels_symbols::Vector{Symbol}, param_of_indexes::BitVector,
+                       ss_ensemble_indexes_by_group::Vector{Vector{Int}}, ss_ensemble_present_by_group::Vector{BitVector},
                        subspace_index_maps::Vector{Array{Vector{Int},2}}, t_index_transform::Array{Vector{Int},2}, subspace_info::SubSpaceInfo)
     inner_labels_symbols_flat = [param.param_symbol for param in parameters]
     param_names  = [param.param_name  for param in parameters]
     param_strs   = [param.param_str   for param in parameters]
     param_latex  = [param.param_latex for param in parameters]
 
-    param_of_t   = [param.param_of_t for param in parameters]
-    param_is_t   = [param.is_t       for param in parameters]
+    param_of_t::BitVector = [param.param_of_t for param in parameters]
+    param_is_t::BitVector = [param.is_t       for param in parameters]
     param_values = [param.param_values for param in parameters]
 
     outer_labels = String.(outer_labels_symbols)
@@ -112,7 +112,7 @@ function ParameterInfo(parameters::Vector{Parameter}, outer_labels_symbols::Vect
     indexes_by_t_index = [findall(==(t_ind), t_index_by_index) for t_ind in 0:maximum(t_index_by_index)]
 
     indexed_parameter_indexes = Int[]
-    where_acting_by_parameter = Vector{Vector{Vector{Bool}}}()
+    where_acting_by_parameter = Vector{Vector{BitVector}}()
     ensemble_sizes = subspace_info.how_many_by_ensemble
 
     for (i, param) in enumerate(parameters)
@@ -249,8 +249,8 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
     ensemble_index_maps::Vector{Vector{Array{Int}}} = Vector{Vector{Array{Int}}}()
     t_index_maps::Vector{Vector{Int}} = Vector{Vector{Int}}()
     ss_ensemble_indexes_by_group::Vector{Vector{Int}} = Vector{Vector{Int}}()
-    ss_ensemble_present_by_group::Vector{Vector{Bool}} = Vector{Vector{Bool}}()
-    param_of_indexes::Vector{Bool} = Bool[]
+    ss_ensemble_present_by_group::Vector{BitVector} = Vector{BitVector}()
+    param_of_indexes::BitVector = Bool[]
 
     # ---- build variables + index maps per group ----
     for (group_index, (param_name, of_t, index_strs)) in enumerate(var_param)
@@ -293,7 +293,7 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
                               for (ensemble_len, block_len) in zip(ensemble_lengths, block_lengths)]
 
         push!(ss_ensemble_indexes_by_group, unique(outer_subsystem_inds))
-        ensemble_bool_vec::Vector{Bool} = in.(subspace_info.where_ensembles, Ref(unique(outer_subsystem_inds)))
+        ensemble_bool_vec::BitVector = in.(subspace_info.where_ensembles, Ref(unique(outer_subsystem_inds)))
         push!(ss_ensemble_present_by_group, ensemble_bool_vec)
 
         if !isempty(block_combinations)

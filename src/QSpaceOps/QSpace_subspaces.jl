@@ -116,7 +116,7 @@ struct SubSpaceInfo
     of_time::Bool
 end
 # Primary constructor from labels
-function SubSpaceInfo(outer_labels_symbols::Vector{Symbol}, inner_labels_symbols::Vector{Vector{Symbol}}, are_ensemble_ss::Vector{Bool}, 
+function SubSpaceInfo(outer_labels_symbols::Vector{Symbol}, inner_labels_symbols::Vector{Vector{Symbol}}, are_ensemble_ss::BitVector, 
                       num_operator_indexes::Vector{Int}, num_summation_indexes::Vector{Int}, of_time::Bool=false)
     inner_labels_symbols_flat = vcat(inner_labels_symbols...)
     outer_labels = map(string, outer_labels_symbols)
@@ -178,7 +178,7 @@ end
 function SubSpaceInfo(subspaces::Vector{SubSpace})
     outers  = [s.key_symbol        for s in subspaces]
     inners  = [copy(s.keys_symbols) for s in subspaces]   # for non-ensemble subspaces this is length 1
-    are_ensemble_ss = [s.is_ensemble_ss for s in subspaces] 
+    are_ensemble_ss::BitVector = [s.is_ensemble_ss for s in subspaces] 
     num_operator_indexes = [s.num_operator_indexes for s in subspaces]
     num_summation_indexes = [s.num_sum_indexes for s in subspaces]
     return SubSpaceInfo(outers, inners, are_ensemble_ss, num_operator_indexes, num_summation_indexes)
@@ -248,10 +248,14 @@ end
     @assert ensemble != 0 "index $i not an ensemble index" 
     return ensemble, i.inner - info.how_many_non_sum_by_ensemble[ensemble]
 end
+@inline function SummationIndex2SubSpaceIndex(outer_ind::Int, ensemble_ind::Int, summation_ind::Int, info::SubSpaceInfo)::SubSpaceIndex
+    inner_ind = summation_ind + info.how_many_non_sum_by_ensemble[ensemble_ind]
+    return SubSpaceInfo(outer_ind, inner_ind, outer_inner_2_expanded(info, outer_ind, inner_ind))
+end
 
-function Base.isless(a::SubSpaceIndex, b::SubSpaceIndex)::Bool
+@inline function Base.isless(a::SubSpaceIndex, b::SubSpaceIndex)::Bool
     return a.expanded < b.expanded
 end
-function Base.isequal(a::SubSpaceIndex, b::SubSpaceIndex)::Bool 
+@inline function Base.isequal(a::SubSpaceIndex, b::SubSpaceIndex)::Bool 
     return a.expanded == b.expanded  # is sufficient
 end

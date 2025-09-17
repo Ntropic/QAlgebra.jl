@@ -68,26 +68,31 @@ function qAtom2string(q::QAbstract, statespace::StateSpace; do_latex::Bool=false
 end 
 
 
+function sum_symbol_str(indexes::Vector{SubSpaceIndex}, neq::Bool, info::SubSpaceInfo; do_latex::Bool=false)
+    s_index_str = join(Index2String.(indexes, Ref(info)), do_latex ? "," : "")
+    n = length(indexes)
+
+    if n == 1  # for a single index neq doesn't matter, braces aren't required
+        return do_latex ? "\\sum_{$s_index_str}" : "∑" * str2sub( s_index_str )
+    end
+
+    if !neq
+        return do_latex ? "\\sum_{$s_index_str}^{=}" : "∑" * str2sub("(" * s_index_str * ")" ) * "⁼"
+    end
+
+    return do_latex ? "\\sum_{$s_index_str}^{\\neq}" : "∑" * str2sub("(" * s_index_str * ")")
+end
 function sum_symbol_str(s::QSum; do_latex::Bool=false)
-    info = s.statespace.subspace_info
-    s_index_str = join(Index2String.(s.indexes, Ref(info)), do_latex ? "," : "")
-    n = length(s.indexes)
-
-    if !s.neq
-        return do_latex ?
-            "\\sum_{$s_index_str}^{=}" :
-            "∑" * str2sub(s_index_str) * "⁼"
+    connector = do_latex ? " " : ""
+    info = s.statespace.subspace_info 
+    strings = []
+    if length(s.eq_indexes) > 0 
+        push!(strings, sum_symbol_str(s.eq_indexes, false, info; do_latex=do_latex))
+    end 
+    for block in s.neq_blocks
+        push!(strings, sum_symbol_str(block, true, info; do_latex=do_latex))
     end
-
-    if n == 1
-        return do_latex ?
-            "\\sum_{$s_index_str}^{\\neq}" :
-            "∑" * str2sub(s_index_str)
-    end
-
-    return do_latex ?
-        "\\sum_{($s_index_str)}^{\\neq}" :
-        "∑" * str2sub("(" * s_index_str * ")")
+    return join(strings)
 end
 
 

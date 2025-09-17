@@ -89,24 +89,24 @@ function abstract_from_abstractdef(defs::CAbstractDefinition)::CAbstract
 end
 
 """ 
-    which_ensemble_acting(f::CFunction)::Vector{Vector{Bool}}
+    which_ensemble_acting(f::CFunction)::Vector{BitVector}
 
 Returns a vector of vectors of booleans. Each inner vector specifies which of its subsystem indexes are acted upon by the QObj. 
 This includes actions from CFunctions. Th function should only be applied after substituting all QAbstract terms. 
 Their present can be checked via `contains_abstract(q)`.
 """
-function which_ensemble_acting(f::CFunction)::Vector{Vector{Bool}}
-    where_non_trivial::Vector{Vector{Bool}} = [zeros(Bool, n) for n in f.param_info.how_many_by_ensemble]
+function which_ensemble_acting(f::CFunction)::Vector{BitVector}
+    where_non_trivial::Vector{BitVector} = [zeros(Bool, n) for n in f.param_info.how_many_by_ensemble]
     return which_ensemble_acting(f, where_non_trivial)
 end
-function which_ensemble_acting(f::CFunction, where_non_trivial::Vector{Vector{Bool}})::Vector{Vector{Bool}}
+function which_ensemble_acting(f::CFunction, where_non_trivial::Vector{BitVector})::Vector{BitVector}
     for leaf in leaf_iter(f) 
         which_ensemble_acting_atom!(leaf, where_non_trivial)
     end
     return where_non_trivial
 end
-which_ensemble_acting_atom!(f::CAbstract, where_non_trivial::Vector{Vector{Bool}}) = error("Cannot determine the acting ensembles for a CAbstract. Use abstracts only in CType definitions.") 
-function which_ensemble_acting_atom!(f::CAtom, where_non_trivial::Vector{Vector{Bool}})::Vector{Vector{Bool}}
+which_ensemble_acting_atom!(f::CAbstract, where_non_trivial::Vector{BitVector}) = error("Cannot determine the acting ensembles for a CAbstract. Use abstracts only in CType definitions.") 
+function which_ensemble_acting_atom!(f::CAtom, where_non_trivial::Vector{BitVector})::Vector{BitVector}
     for (param_ind, where_acting) in zip(f.param_info.indexed_parameter_indexes, f.param_info.where_acting_by_parameter)
         if any(!=(0), f.var_exponents[param_ind])
             vecvec_or!(where_non_trivial, where_acting)
@@ -116,30 +116,30 @@ function which_ensemble_acting_atom!(f::CAtom, where_non_trivial::Vector{Vector{
 end
 
 """ 
-    where_acting(f::CFunction)::Vector{Bool}
+    where_acting(f::CFunction)::BitVector
 
 Returns a vector of booleans specifying if the associated parameter is present in the expression.
 """
-function where_acting(f::CFunction)::Vector{Bool}
-    acting::Vector{Bool} = zeros(Bool, dims(f))
+function where_acting(f::CFunction)::BitVector
+    acting::BitVector = zeros(Bool, dims(f))
     where_acting!(f, acting)
     return acting
 end
-function where_acting!(f::CFunction, acting::Vector{Bool} )::Vector{Bool}
+function where_acting!(f::CFunction, acting::BitVector )::BitVector
     for leaf in leaf_iter(f) 
         where_acting_atom!(leaf, acting)
     end
     return acting
 end
-where_acting_atom!(f::CAbstract, acting::Vector{Bool} =[]) = error("Cannot determine where acting for a CAbstract. Use abstracts only in CType definitions. ")
-function where_acting_atom!(f::CAtom, acting::Vector{Bool})::Vector{Bool}
+where_acting_atom!(f::CAbstract, acting::BitVector =[]) = error("Cannot determine where acting for a CAbstract. Use abstracts only in CType definitions. ")
+function where_acting_atom!(f::CAtom, acting::BitVector)::BitVector
     # or operation between acting and f.var_exponents being overwritten on acting 
     acting .|= (f.var_exponents .!= 0)
     return acting
 end
 
 # Returns index strings, and time strings
-function where_acting_to_index_strings(param_indexes::ParameterIndexes, acting::Vector{Bool}; do_latex::Bool=false)::Tuple{Vector{String}, Vector{String}}
+function where_acting_to_index_strings(param_indexes::ParameterIndexes, acting::BitVector; do_latex::Bool=false)::Tuple{Vector{String}, Vector{String}}
     current_indexes::Vector{String} = []
     for (str, inds) in zip(param_indexes.labels, param_indexes.label_parameter_indexes)
         if any(acting[inds])
@@ -157,7 +157,7 @@ function where_acting_to_index_strings(param_indexes::ParameterIndexes, acting::
 end
 where_acting_to_index_strings(f::CFunction; do_latex::Bool=false)::Tuple{Vector{String}, Vector{String}} = where_acting_to_index_strings(f.param_info.param_indexes, where_acting(f), do_latex=do_latex)
 
-has_indexes(param_indexes::ParameterIndexes, acting::Vector{Bool})::Bool = any(acting[param_indexes.all_indexes])
+has_indexes(param_indexes::ParameterIndexes, acting::BitVector)::Bool = any(acting[param_indexes.all_indexes])
 has_indexes(f::CFunction) = contains_c_indexes(f, f.param_info.param_indexes.all_indexes)
 
 

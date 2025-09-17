@@ -1,9 +1,9 @@
 function vecvec_or(A::AbstractVector{<:AbstractVector{Bool}}, B::AbstractVector{<:AbstractVector{Bool}})
-    out = Vector{Vector{Bool}}(undef, length(A))
+    out = Vector{BitVector}(undef, length(A))
     @inbounds for i in eachindex(B)
         ai = A[i]; bi = B[i]
         n = length(bi)  # result has the same length as B[i]
-        outi = Vector{Bool}(undef, n)
+        outi = BitVector(undef, n)
         @inbounds @simd for j in 1:n
             outi[j] = ai[j] | bi[j]
         end

@@ -182,13 +182,13 @@ Checks is the quantum object depends on time. Doesn't work for QAtoms!
     return contains_t_indexes(q, indexes)
 end
 """ 
-    contains_which_t_indexes(q::QObj) -> Vector{Bool} 
+    contains_which_t_indexes(q::QObj) -> BitVector 
 
 Returns a Boolean Vector of whether each time index is present in the QObj, 
 with time indexes starting at `t_index=0` and ending at `t_index=max_t_ind`  
 """
 contains_which_t_indexes(q::T) where T<:QAtom = error("Cannot get time indexes from QAtom. Try QComposites, QExpr, of diff_QEq instead. ")
-function contains_which_t_indexes(q::T)::Vector{Bool} where T <: QObj
+function contains_which_t_indexes(q::T)::BitVector where T <: QObj
     max_t_index = q.statespace.max_t_ind
     return [contains_t_indexes(q, get_t_indexes(q.statespace.param_info, t_ind)) for t_ind in 0:max_t_index] 
 end
@@ -245,19 +245,19 @@ iszero(q::T) where T<:QMultiComposite = iszero(q.coeff_fun) || any(iszero, q.exp
 
 ##################
 
-function where_neutral(q::QTerm, statespace::StateSpace)::Vector{Bool}
+function where_neutral(q::QTerm, statespace::StateSpace)::BitVector
     return [op == neut for (op, neut) in zip(q.op_indices, statespace.I_op)]
 end
-function where_neutral(q::QAbstract, statespace::StateSpace)::Vector{Bool}
+function where_neutral(q::QAbstract, statespace::StateSpace)::BitVector
     return q.operator_type.expanded_ss_acting   # should never be modified! copy would be safer, but slower
 end
-function where_acting(q::QTerm, statespace::StateSpace)::Vector{Bool}
+function where_acting(q::QTerm, statespace::StateSpace)::BitVector
     return [op != neut for (op, neut) in zip(q.op_indices, statespace.I_op)]
 end
-function where_acting(q::QAbstract, statespace::StateSpace)::Vector{Bool}
+function where_acting(q::QAbstract, statespace::StateSpace)::BitVector
     return .!q.operator_type.expanded_ss_acting  # should never be modified! copy would be safer, but slower
 end
-function where_acting(q::QAtomProduct)::Vector{Bool}
+function where_acting(q::QAtomProduct)::BitVector
     # combine the action of all of its constituents via OR
     statespace = q.statespace 
     if length(q.expr) == 0
@@ -266,17 +266,17 @@ function where_acting(q::QAtomProduct)::Vector{Bool}
         return mapreduce(expr -> where_acting(expr, statespace), .|, q.expr)
     end
 end
-where_acting(q::QExpr)::Vector{Bool} = mapreduce(t -> where_acting(t), .|, q.terms)
-function where_acting(q::T)::Vector{Bool} where {T<:QComposite}
+where_acting(q::QExpr)::BitVector = mapreduce(t -> where_acting(t), .|, q.terms)
+function where_acting(q::T)::BitVector where {T<:QComposite}
     return where_acting(q.expr)
 end
-function where_acting(q::T)::Vector{Bool} where {T<:QMultiComposite}
+function where_acting(q::T)::BitVector where {T<:QMultiComposite}
     return mapreduce(expr -> where_acting(expr, statespace), .|, q.expr)
 end
-function where_acting(q::QSum)::Vector{Bool}
+function where_acting(q::QSum)::BitVector
     acting = where_acting(q.expr)
-    for ind in q.indexes 
-        acting[expanded(ind)] = true 
+    for ind in iter_all_indexes(q)
+        acting[expanded(ind)] = true
     end
     return acting
 end
@@ -322,7 +322,7 @@ end
 @inline commutes_QAtom_inds(inds::Vector{Int}, q1::QTerm, q2::QAbstract, statespace::StateSpace) = length(inds) == 0
 @inline commutes_QAtom_inds(inds::Vector{Int}, q1::QAbstract, q2::QTerm, statespace::StateSpace) = length(inds) == 0
 
-function any_overlaps(multi_where_acting::Vector{Vector{Bool}})
+function any_overlaps(multi_where_acting::Vector{BitVector})
     n = length(multi_where_acting)
     if n ≤ 1
         return false, multi_where_acting[1]
@@ -416,17 +416,12 @@ function ==(a::QExpr, b::QExpr)
     return all([ai == bi for (ai, bi) in zip(a, b)])
 end
 function ==(a::QSum, b::QSum)
-    if a.indexes != b.indexes
-        return false
-    end
-    if a.neq != b.neq
-        return false
-    end
-    if a.statespace != b.statespace
-        return false
-    end
+    a.statespace == b.statespace || return false
+    a.eq_indexes == b.eq_indexes     || return false
+    a.neq_blocks == b.neq_blocks || return false
     return a.expr == b.expr
 end
+
 function ==(expr::QExpr, n::Number)
     if is_numeric(expr)
         if length(simple_expr.terms) == 0

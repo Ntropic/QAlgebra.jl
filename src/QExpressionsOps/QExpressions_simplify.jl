@@ -21,7 +21,7 @@ function same_term_type(t1::QAtomProduct, t2::QAtomProduct)::Bool  # different c
 end
 
 function same_term_type(s1::QSum, s2::QSum)::Bool
-    return s1.indexes == s2.indexes
+    return s1.eq_indexes == s2.eq_indexes && s1.neq_blocks == s2.neq_blocks
 end
 function same_term_type(e1::QExpr, e2::QExpr)::Bool
     return all(same_term_type.(e1.expr, e2.expr))
@@ -85,8 +85,8 @@ end
 
 #####################################################################################################################
 
-include("QExpressions_Symplify/QExpressions_simplify_atoms.jl")
-include("QExpressions_Symplify/QExpressions_simplify_composites.jl")
+include("QExpressions_Simplify/QExpressions_simplify_atoms.jl")
+include("QExpressions_Simplify/QExpressions_simplify_composites.jl")
 
 #####################################################################################################################
 function simplify_QExp(q::QExp)::Vector{QComposite}

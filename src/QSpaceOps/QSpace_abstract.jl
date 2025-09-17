@@ -1,5 +1,5 @@
 """ 
-    OperatorType(name::String, hermitian::Bool=false, unitary::Bool=false, acting_ss::Union{Nothing, Vector{Bool}}=nothing)
+    OperatorType(name::String, hermitian::Bool=false, unitary::Bool=false, acting_ss::Union{Nothing, BitVector}=nothing)
 
 
 Define an operator Type, by declaring its name and properties such as hermitian and unitary. 
@@ -11,8 +11,8 @@ struct OperatorType
     hermitian::Bool 
     unitary::Bool 
     of_time::Bool
-    acting_ss::Vector{Bool}   # formerly acting_ss
-    expanded_ss_acting::Vector{Bool} # indices of non-trivial components in the op_indices picture for bath subsystems
+    acting_ss::BitVector   # formerly acting_ss
+    expanded_ss_acting::BitVector # indices of non-trivial components in the op_indices picture for bath subsystems
 end
 
 struct OperatorDefinitions
@@ -95,7 +95,7 @@ function SingleOpDefinition2OperatorType(op_str::String, operator_index::Int, co
 
     of_time, unitary, hermitian = false, false, false 
     conditions_str::Vector{String} = []
-    contains_negation::Vector{Bool} = []
+    contains_negation::BitVector = []
     reduced_conditions_sym::Vector{Symbol} = []
     for condition_sym in conditions_sym
         if condition_sym == :t
@@ -128,14 +128,14 @@ function SingleOpDefinition2OperatorType(op_str::String, operator_index::Int, co
         error("Mixed negations in conditions are not allowed, got for $op_str the negation pattern $contains_negation.")
     end
     negation::Bool = isempty(contains_negation) ? false : contains_negation[1]
-    acting_ss::Vector{Bool} = [negation for _ in subspace_definitions.subspaces]
+    acting_ss::BitVector = [negation for _ in subspace_definitions.subspaces]
 
     for (i, key_symbol) in enumerate(key_symbols)  
         if key_symbol in reduced_conditions_sym 
             acting_ss[i] = !acting_ss[i]
         end
     end
-    expanded_ss_acting::Vector{Bool} = fill(false, length(subspace_definitions.I_op))
+    expanded_ss_acting::BitVector = fill(false, length(subspace_definitions.I_op))
     for (s_bool, subspace) in zip(acting_ss, subspace_definitions.subspaces)
         if s_bool == true
             for ind in subspace.ss_inner_ind

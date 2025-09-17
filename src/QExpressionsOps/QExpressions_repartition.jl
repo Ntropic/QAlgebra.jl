@@ -2,7 +2,7 @@ import ..CFunctions: repartition
 export repartition
 
 # Fix this function vor variables 
-function where_defined_to_index_order(statespace::StateSpace, where_defined::Vector{Vector{Bool}})::Tuple{Vector{Int}, Vector{Tuple{Int, Int}}}
+function where_defined_to_index_order(statespace::StateSpace, where_defined::Vector{BitVector})::Tuple{Vector{Int}, Vector{Tuple{Int, Int}}}
     # takes where_defined and the ensemble indexes to determine the new order for both operators and variables 
     # for each element of where_defined, we shift all the true elements to the left, and all false elements to the right, we want to get the indexes of the permutation that achieves that 
     function permutation_moves(p::Vector{Int})::Vector{Tuple{Int, Int}}  # helper to extract the moves 
@@ -45,7 +45,6 @@ function where_defined_to_index_order(statespace::StateSpace, where_defined::Vec
 end
 
 
-# QObj
 """
     repartition!(q::diff_QEq) -> diff_QEq
 
@@ -56,55 +55,67 @@ function repartition(q::QTerm, index_order::Vector{Int})::QTerm
     op_indices = q.op_indices[index_order]
     return QTerm(op_indices)
 end
-function repartition(q::QAtomProduct, add_at_sum::Bool,  where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_tuples::Vector{Tuple{Int, Int}})::QAtomProduct
+function repartition(q::QAtomProduct, add_at_sum::Bool,  where_defined::Vector{BitVector}, index_order::Vector{Int}, var_tuples::Vector{Tuple{Int, Int}})::QAtomProduct
     return modify_coeff_expr(q, repartition(q.coeff_fun, var_tuples), QAtom[repartition(x, index_order) for x in q.expr])
 end
-function repartition(q::QExpr, add_at_sum::Bool, where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_tuples::Vector{Tuple{Int, Int}})::QExpr
+function repartition(q::QExpr, add_at_sum::Bool, where_defined::Vector{BitVector}, index_order::Vector{Int}, var_tuples::Vector{Tuple{Int, Int}})::QExpr
     return QExpr(q.statespace, [repartition(qq, add_at_sum, where_defined, index_order, var_tuples) for qq in q.terms])
 end
-function repartition(q::T, add_at_sum::Bool, where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_tuples::Vector{Tuple{Int, Int}})::T where T <: QComposite
+function repartition(q::T, add_at_sum::Bool, where_defined::Vector{BitVector}, index_order::Vector{Int}, var_tuples::Vector{Tuple{Int, Int}})::T where T <: QComposite
     return modify_coeff_expr(q, repartition(q.coeff_fun, var_tuples), repartition(q.expr, add_at_sum, where_defined, index_order, var_tuples))
 end
-function repartition(q::T, add_at_sum::Bool, where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_tuples::Vector{Tuple{Int, Int}})::T where T <: QMultiComposite
+function repartition(q::T, add_at_sum::Bool, where_defined::Vector{BitVector}, index_order::Vector{Int}, var_tuples::Vector{Tuple{Int, Int}})::T where T <: QMultiComposite
     return modify_coeff_expr(q, repartition(q.coeff_fun, var_tuples), [repartition(qq, add_at_sum, where_defined, index_order, var_tuples) for qq in q.expr])
 end
-function repartition(q::QSum, add_at_sum::Bool, where_defined::Vector{Vector{Bool}}, index_order::Vector{Int}, var_tuples::Vector{Tuple{Int, Int}})::QSum
-    # define improved index_order and var_index_order
+function repartition(q::QSum, add_at_sum::Bool, where_defined::Vector{BitVector}, index_order::Vector{Int}, var_tuples::Vector{Tuple{Int, Int}})::QSum
     qspace = q.statespace
-    info =  qspace.subspace_info
+    info   = qspace.subspace_info
     if add_at_sum
-        indexes = q.indexes
-
+        # clone where_defined to mutate
         new_where_defined = copy.(where_defined)
-        for index in indexes 
+
+        # mark all indexes in all blocks as defined
+        for index in iter_all_indexes(q)
             ensemble = Index2Ensemble(index, info)
-            if new_where_defined[ensemble][index.inner] == true
+            if new_where_defined[ensemble][index.inner]
                 index_str = Index2String(index, info)
                 error("Summation index $index_str already defined, cannot sum over defined indexes!")
-            else
-                new_where_defined[ensemble][index.inner] = true 
             end
+            new_where_defined[ensemble][index.inner] = true
         end
-        op_ind, var_tuples_new = where_defined_to_index_order(qspace, new_where_defined) # permutation vectors 
+        op_ind, var_tuples_new = where_defined_to_index_order(qspace, new_where_defined)
 
-        # we need to change the other parameters of sum aswell determining what is summed over 
-        new_indexes::Vector{SubSpaceIndex} = []
-        for index in indexes
-            # find index in new order 
-            new_ind_expanded = findfirst(==(index.expanded), op_ind)  # theres probably a better way to do this than findfirst 
-            diff = new_ind_expanded - index.expanded 
-            new_inner = index.inner + diff 
-            if new_inner < 1 
+        # remap indexes in each block to the new order
+        new_indexes= SubSpaceIndex[]
+        for index in q.eq_indexes
+            new_expanded = findfirst(==(index.expanded), op_ind)
+            diff = new_expanded - index.expanded
+            new_inner = index.inner + diff
+            if new_inner < 1
                 error("New index no longer in the same ensemble subspace.")
-            end 
-            # find in subspace 
-            push!(new_indexes, SubSpaceIndex(index.outer, new_inner, new_ind_expanded))
+            end
+            push!(new_indexes, SubSpaceIndex(index.outer, new_inner, new_expanded))
         end
-        return modify_expr_indexes(q, repartition(q.expr, add_at_sum, new_where_defined, op_ind, var_tuples_new), new_indexes)
+        new_blocks = Vector{Vector{SubSpaceIndex}}()
+        for blk in q.blocks
+            new_blk = SubSpaceIndex[]
+            for index in blk
+                new_expanded = findfirst(==(index.expanded), op_ind)
+                diff = new_expanded - index.expanded
+                new_inner = index.inner + diff
+                if new_inner < 1
+                    error("New index no longer in the same ensemble subspace.")
+                end
+                push!(new_blk, SubSpaceIndex(index.outer, new_inner, new_expanded))
+            end
+            push!(new_blocks, new_blk)
+        end
+        return modify_expr_indexing( q, repartition(q.expr, add_at_sum, new_where_defined, op_ind, var_tuples_new), new_indexes, new_blocks )
     else
-        return modify_expr(q, repartition(q.expr, add_at_sum, where_defined, index_order, var_tuples))
+        return modify_expr( q, repartition(q.expr, add_at_sum, where_defined, index_order, var_tuples) )
     end
 end
+
 
 function repartition(q::diff_QEq)::diff_QEq
     # check index order on left side 

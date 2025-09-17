@@ -107,14 +107,14 @@ struct ParameterInfo <: AbstractParameterInfo
     params_str::Vector{String}
     params_latex::Vector{String}
 
-    param_of_indexes::Vector{Bool}   
+    param_of_indexes::BitVector   
     outer_group_by_index::Vector{Int}   
     t_index_by_index::Vector{Int}       # -1 for parameters that aren't of t. 
     ss_ensemble_indexes_by_group::Vector{Vector{Int}}    # which ss ensembles are used for indexing in each group. 
-    ss_ensemble_present_by_group::Vector{Vector{Bool}}   # which ss ensembles are present in each group.
+    ss_ensemble_present_by_group::Vector{BitVector}   # which ss ensembles are present in each group.
 
     indexed_parameter_indexes::Vector{Int}                  # which parameters have indexes?
-    where_acting_by_parameter::Vector{Vector{Vector{Bool}}}  # for each variable, where are they acting. 
+    where_acting_by_parameter::Vector{Vector{BitVector}}  # for each variable, where are they acting. 
 
     # Maps indexes for index transformation, once for switching subsystem indexes and once for time indexes
     subspace_index_maps::Vector{Array{Vector{Int},2}}
@@ -124,8 +124,8 @@ struct ParameterInfo <: AbstractParameterInfo
 
     how_many_by_ensemble::Vector{Int}
 
-    param_of_t::Vector{Bool}
-    param_is_t::Vector{Bool}
+    param_of_t::BitVector
+    param_is_t::BitVector
     param_values::Vector   # specifies for example values or functions or vectors for the parameters (vectors of the index values), functions of time ...
     
     param_indexes::ParameterIndexes
@@ -134,10 +134,10 @@ struct ParameterInfo <: AbstractParameterInfo
 
     function ParameterInfo(
         outer_labels_symbols::Vector{Symbol}, inner_labels_symbols_flat::Vector{Symbol}, outer_labels::Vector{String}, params_name::Vector{String},
-        params_str::Vector{String}, params_latex::Vector{String}, param_of_indexes::Vector{Bool}, outer_group_by_index::Vector{Int},
-        t_index_by_index::Vector{Int}, ss_ensemble_indexes_by_group::Vector{Vector{Int}}, ss_ensemble_present_by_group::Vector{Vector{Bool}}, indexed_parameter_indexes::Vector{Int},
-        where_acting_by_parameter::Vector{Vector{Vector{Bool}}}, subspace_index_maps::Vector{Array{Vector{Int},2}}, t_index_transform::Array{Vector{Int},2}, indexes_by_t_index::Vector{Vector{Int}},
-        indexes_of_t::Vector{Int}, how_many_by_ensemble::Vector{Int}, param_of_t::Vector{Bool}, param_is_t::Vector{Bool}, param_values::Vector, param_indexes::ParameterIndexes)
+        params_str::Vector{String}, params_latex::Vector{String}, param_of_indexes::BitVector, outer_group_by_index::Vector{Int},
+        t_index_by_index::Vector{Int}, ss_ensemble_indexes_by_group::Vector{Vector{Int}}, ss_ensemble_present_by_group::Vector{BitVector}, indexed_parameter_indexes::Vector{Int},
+        where_acting_by_parameter::Vector{Vector{BitVector}}, subspace_index_maps::Vector{Array{Vector{Int},2}}, t_index_transform::Array{Vector{Int},2}, indexes_by_t_index::Vector{Vector{Int}},
+        indexes_of_t::Vector{Int}, how_many_by_ensemble::Vector{Int}, param_of_t::BitVector, param_is_t::BitVector, param_values::Vector, param_indexes::ParameterIndexes)
         dims = length(inner_labels_symbols_flat)
         new(dims, outer_labels_symbols, inner_labels_symbols_flat, outer_labels,
             params_name, params_str, params_latex, param_of_indexes,

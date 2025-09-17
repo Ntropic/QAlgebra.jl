@@ -9,6 +9,13 @@
     - [x] print => to print `t_{time_index}`
 - [ ] Distinguish summation indexes from non-summation indexes
     - [x] `which_summation_acting` to track only summation indexes
+    - [x] Refactored QSum
+    - [x] Removed indexing
+        - [ ] remove `indexes` from `QExpressions_simplify_composites
+        - [ ] rewrite `QSum_modify` 
+        - [ ] rewrite `QSum_repartition`
+    - [x] add `parent` to QComposites and QExpr 
+        - [x] make parents get tracked automatically when optimizing. 
     - [ ] repartition among sum indexes. 
     - [ ] Shift/repartition within summation indexes 
     - [ ] Implement a repartition variants only for sum indexes!

@@ -194,6 +194,7 @@ end
 
 @inline function _mul(p1::T1, p2::T2, ::Val{C}) where {T1<:QComposite,T2<:QComposite,C}
     statespace_check_if(Val(C), p1, p2)
+
     ss = p1.statespace  # same after check
     if is_numeric(p1)
         return [modify_coeff(p2, get_coeff(p1) * get_coeff(p2))]
@@ -202,9 +203,21 @@ end
     p2_coeff, p2_new = separate_coeff_qcomposite(p2)
     coeff = p1_coeff * p2_coeff
     c, t = add_QComposite_to_QCompositeProduct([p1_new], p2_new, ss)
-    return [QCompositeProductCleanup(ss, c * coeff, t, Val(:nosimp))]
+    return [QCompositeProduct( c * coeff, t, Val(:nosimp))]
 end
 
+# sums eat other QComposites!!! Mjam Mjam Mjam
+@inline function _mul(p1::QSum, p2::QSum, ::Val{C})::Vector{QSum} where {T2<:QComposite,C} # immediately flatten! 
+    statespace_check_if(Val(C), p1, p2)
+    new_expr::Vector{QComposite} = []
+    # check indexes
+    # continuing here 
+    for t1 in p1.expr
+        for t2 in p2.expr
+        append!(new_expr, _mul(t1, t2, _NOCHK))
+    end
+    return [modify_expr(p1, QExpr(p1.statespace, new_expr))]
+end
 @inline function _mul(p1::QSum, p2::T2, ::Val{C})::Vector{QSum} where {T2<:QComposite,C}
     statespace_check_if(Val(C), p1, p2)
     new_expr::Vector{QComposite} = []
@@ -213,6 +226,7 @@ end
     end
     return [modify_expr(p1, QExpr(p1.statespace, new_expr))]
 end
+
 
 @inline function _mul(p1::QCompositeProduct, p2::T2, ::Val{C})::Vector{QComposite} where {T2<:QComposite,C}
     statespace_check_if(Val(C), p1, p2)

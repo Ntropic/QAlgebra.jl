@@ -8,16 +8,29 @@ flatten(qeq::QExpr) -> QExpr
 Flattens nested Sums in quantum Equations (QExpr).
 Does not support QSums within QComposites within QSums!
 """
-function flatten(s::QSum, in_sum::Bool = false, in_sum_comp::Bool = false)
-    # first, fully flatten the body
-    if in_sum_comp && in_sum
-        error("Unsupported: QSum found inside QComposite structure within an outer QSum.")
-    end
-    inner = flatten(s.expr, true, in_sum_comp)
+function flatten(q::QExpr)::QExpr 
+    subspace_info = q.statespace.subspace_info
+    where_acting::Vector{BitVector} = [zeros(Bool, s) for s in subspace_info.how_many_sum_by_ensemble]
+    return flatten(q, where_acting)
+end
 
-    # pull out bare terms vs. sums
-    base_terms::Vector{QComposite} = []
-    nested_sums::Vector{QComposite} = []
+function flatten(s::QSum, where_acting::Vector{BitVector})  # nested sums need distinct indexes -> no auto repartition is done currently
+    # modify where_acting 
+    outer_inds = all_indexes(s)  # materialize once for membership checks
+    info = s.statespace.subspace_info
+    @inbounds for index in outer_inds
+        ensemble, summation = Index2Ensemble_and_Summation(index, info)
+        if where_acting[ensemble][summation] 
+            rem_inds = findall(!, where_acting[ensemble]) .+ info.how_many_non_sum_by_ensemble[ens]
+            remaining indexes = [SubSpaceIndex(index.outer, rem_ind, info) for rem_ind in rem_inds]
+            error("Summation index $(Index2String(index, info)) already defined in stack! ")
+        end
+        where_acting[ensemble][summation] = true
+    end
+    inner = flatten(s.expr, where_acting)
+
+    base_terms  = QComposite[]
+    nested_sums = QSum[]
     for t in inner.terms
         if t isa QSum
             push!(nested_sums, t)
@@ -25,44 +38,45 @@ function flatten(s::QSum, in_sum::Bool = false, in_sum_comp::Bool = false)
             push!(base_terms, t)
         end
     end
-
     out_terms = QComposite[]
 
-    # if there were any base qTerms directly under `s`, keep a sum
+    # keep direct base terms under the same indexing
     if !isempty(base_terms)
-        push!(out_terms, QSum(QExpr(base_terms), s.indexes, s.neq))
+        push!(out_terms, QSum(s.statespace, QExpr(s.statespace, base_terms), s.eq_indexes, s.neq_blocks))
     end
-
-    # for each nested sum, merge its indexes onto `s`'s
     for n in nested_sums
-        dup = intersect(s.indexes, n.indexes)
-        if !isempty(dup)
-            error("Unsupported: duplicate summation indexes detected: $(dup)")
+        # merge eq indexes (sorted)
+        merged_eq  = sort!(vcat(s.eq_indexes, n.eq_indexes), by=expanded)
+        # merge neq blocks
+        merged_neq = vcat(s.neq_blocks, n.neq_blocks)
+        if !isempty(merged_neq)
+            perm = sortperm(merged_neq; by = blk -> expanded(first(blk)))
+            merged_neq = merged_neq[perm]
         end
-        merged_inds = vcat(s.indexes, n.indexes)
-        push!(out_terms, QSum(n.expr, merged_inds, s.neq))
+
+        push!(out_terms, QSum(n.statespace, n.expr, merged_eq, merged_neq))
     end
-
     return QExpr(inner.statespace, out_terms)
-end 
+end
 
-function flatten(q::QAtomProduct, in_sum::Bool = false, in_sum_comp::Bool = false)
+function flatten(q::QAtomProduct, where_acting::Vector{BitVector})
     return [q] 
 end
-function flatten(q::T, in_sum::Bool = false, in_sum_comp::Bool = false) where T<:QComposite
-    return [modify_expr(q, flatten(q.expr))]
+function flatten(q::T, where_acting::Vector{BitVector}) where T<:QComposite
+    return [modify_expr(q, flatten(q.expr, where_acting))]
 end
-function flatten(q::T, in_sum::Bool = false, in_sum_comp::Bool = false) where T<:QMultiComposite
-    return [modify_expr(q, flatten.(q.expr))]
+function flatten(q::T, where_acting::Vector{BitVector}) where T<:QMultiComposite
+    return [modify_expr(q, flatten.(q.expr, where_acting))]
 end
-
-function flatten(qeq::QExpr, in_sum::Bool = false, in_sum_comp::Bool = false)::QExpr
+function flatten(qeq::QExpr, where_acting::Vector{BitVector})::QExpr
     new_terms = QComposite[]
     for s in qeq.terms
-        append!(new_terms, flatten(s, in_sum, in_sum_comp))
+        append!(new_terms, flatten(s, where_acting))
     end
     return QExpr(qeq.statespace, new_terms)
 end
+
+
 
 #### first output is (changed), then vectors of terms and then of coefficients 
 # change from index1 to index2
@@ -209,12 +223,12 @@ function neq_qsum(s::QSum, do_abstract::Bool=false)
     where_defined = which_ensemble_acting(s, do_abstract=do_abstract) 
     return neq_qsum(s, 1, where_defined )
 end
-function neq_qsum(s::QSum, where_defined::Vector{Vector{Bool}})
+function neq_qsum(s::QSum, where_defined::Vector{BitVector})
     # determine where defined 
     where_defined = vecvec_or(which_ensemble_acting(s, do_abstract=true) , where_defined )
     return neq_qsum(s, 1, where_defined )
 end
-function neq_qsum(s::QSum, index::Int, where_defined::Vector{Vector{Bool}})::QExpr
+function neq_qsum(s::QSum, index::Int, where_defined::Vector{BitVector})::QExpr
     if s.neq
         return QExpr(s.expr.statespace, [s])   # skip
     end
@@ -300,7 +314,7 @@ function neq(qeq::QExpr, do_abstract::Bool=false)::QExpr
 end
 
 #### where defined variants 
-function neq(qeq::QExpr, where_defined::Vector{Vector{Bool}})::QExpr
+function neq(qeq::QExpr, where_defined::Vector{BitVector})::QExpr
     # flatten first 
     qeq = flatten(qeq)
     if length(qeq) == 0
@@ -321,16 +335,16 @@ function neq(qeq::QExpr, where_defined::Vector{Vector{Bool}})::QExpr
     end
     return out
 end
-function neq(q::QObj, where_defined::Vector{Vector{Bool}})::QObj
+function neq(q::QObj, where_defined::Vector{BitVector})::QObj
     return q
 end
-function neq(q::QAtomProduct, where_defined::Vector{Vector{Bool}})::QAtomProduct
+function neq(q::QAtomProduct, where_defined::Vector{BitVector})::QAtomProduct
     return q 
 end
-function neq(q::T, where_defined::Vector{Vector{Bool}})::T where {T<:QComposite}
+function neq(q::T, where_defined::Vector{BitVector})::T where {T<:QComposite}
     return modify_expr(q, neq(q.expr, where_defined))
 end
-function neq(q::T, where_defined::Vector{Vector{Bool}})::T where {T<:QMultiComposite}
+function neq(q::T, where_defined::Vector{BitVector})::T where {T<:QMultiComposite}
     return modify_expr(q, neq.(q.expr, where_defined))
 end
 

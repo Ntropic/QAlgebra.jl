@@ -49,6 +49,12 @@ Abstract type for composite expressions that contain a Vector of QExpr objects.
 """
 abstract type QMultiComposite <: QComposite end
 
+""" QParent
+
+An abstract type to store parents of other quantum types, such as `QEq`s and `diff_QEq`s.
+""" 
+abstract type QParent <: QObj end 
+
 """
     QTerm
 
@@ -56,9 +62,9 @@ A `QTerm` represents a single term in a quantum expression. It contains:
     - `op_indices`: A vector of indices representing the operators in the term, which are also defined in a StateSpace.
 """
 struct QTerm <: QAtom
-    op_indices::Vector{Vector{Int}}
+    op_indices::Vector{Is}
     time_index::Int 
-    function QTerm(op_indices::Vector{Vector{Int}}, time_index::Int=-1)
+    function QTerm(op_indices::Vector{Is}, time_index::Int=-1)
         return new(copy.(op_indices), time_index)
     end
 end 
@@ -109,48 +115,44 @@ modify_exp_dag(q::QAbstract, new_exp::Int, new_dag::Bool) = QAbstract(q.operator
 modify_time_index(q::QAbstract, new_time_index::Int) = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, q.dag, new_time_index, q.index_map)
 of_time(q::QAbstract) = q.operator_type.of_time
 
+#### Reference the AST upwards aswell #################################
+const ParentRef  = Union{Nothing, WeakRef}
+const ParentCell = Base.RefValue{ParentRef}
 """
     QExpr
 
 A `QExpr` represents a quantum equation, consisting of a Vector of quantum Expressions representing the additive terms of the equation.
 It also contains a reference to the state space in which the equation is defined.
 """
-struct QExpr <: QObj
+struct QExpr <: QParent
     statespace::StateSpace
-    terms::Vector{QComposite}              #AbstractVector{<:QComposite}    
-    function QExpr(statespace::StateSpace, terms::AbstractVector{<:QComposite})
+    terms::Vector{QComposite}              #AbstractVector{<:QComposite}   
+    parent::ParentCell 
+    function QExpr(statespace::StateSpace, terms::AbstractVector{<:QComposite}, parent::ParentCell=Ref{ParentRef}(nothing))
         if isempty(terms) 
             # add neotral zero term
             zero_term = QAtomProduct(statespace, statespace.c_zero, QAtom[])
             terms = [zero_term]
         end
-        return new(statespace, terms)
+        expr = new(statespace, terms, parent)
+        set_parent!.(expr.terms, Ref(expr))
+        return expr
     end
-    function QExpr(statespace::StateSpace, terms::AbstractVector{<:QComposite}, ::Val{:simp})
-        if isempty(terms) 
-            # add neotral zero term
-            zero_term = QAtomProduct(statespace, statespace.c_zero, QAtom[])
-            terms = [zero_term]
-        end
-        return new(statespace, simplify_QExpr(Vector{QComposite}(terms)))
+    function QExpr(statespace::StateSpace, prod::T, parent::ParentCell=Ref{ParentRef}(nothing)) where T<:QComposite
+        expr = new(statespace, QComposite[prod], parent)
+        set_parent!.(expr.terms, Ref(expr))
+        return expr
     end
-    function QExpr(terms::AbstractVector{<:QComposite})
-        return new(terms[1].statespace, copy(terms))
-    end
-    function QExpr(statespace::StateSpace, prod::T) where T<:QComposite
-        return new(statespace, QComposite[prod])
-    end
-    function QExpr(statespace::StateSpace, terms::QAtom)
-        return new(statespace, QComposite[QAtomProduct(statespace,terms)])
-    end
-    function QExpr(terms::AbstractVector{<:QComposite}, ::Val{:simp})
-        return new(terms[1].statespace, simplify_QExpr(Vector{QComposite}(terms)))
+    function QExpr(statespace::StateSpace, terms::QAtom, parent::ParentCell=Ref{ParentRef}(nothing))
+        expr = new(statespace, QComposite[QAtomProduct(statespace,terms)], parent)
+        set_parent!.(expr.terms, Ref(expr))
+        return expr
     end
 end
 length(q::QExpr) = length(q.terms)
 each_term(q::QExpr) = q.terms
 each_coeff(q::QExpr)::Vector{CFunction} = flatmap_to(each_coeff, each_term(q), CFunction)
-multiply_coeff(q::QExpr, coeff::CFunction) = QExpr(q.statespace, [multiply_coeff(s, coeff) for s in q.terms])
+multiply_coeff(q::QExpr, coeff::CFunction) = QExpr(q.statespace, [multiply_coeff(s, coeff) for s in q.terms], q.parent)
 
 include("QExpressionsOps/QExpressions_composites.jl")
 include("QExpressionsOps/QExpressions_helper.jl") 
@@ -170,7 +172,7 @@ It represents time derivative of an operator expectation value, and wraps the sy
 - `statespace::StateSpace`: The StateSpace in which the equation is defined.
 - `do_braket::Bool`: Whether to use do_braket notation ⟨⋯⟩ (default = `true`).
 """
-struct diff_QEq <: QObj
+struct diff_QEq <: QParent
     statespace::StateSpace
     left_hand_side::QAtomProduct
     expr::QExpr 
@@ -186,10 +188,13 @@ Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
 function diff_QEq(statespace::StateSpace, left_hand_side::QAtomProduct, expr::QExpr; do_braket::Bool=true)
     if !contains_abstract(left_hand_side) && !contains_abstract(expr)
-        return repartition(neq(diff_QEq(statespace, left_hand_side, expr, do_braket)))
+        diff = repartition(neq(diff_QEq(statespace, left_hand_side, expr, do_braket)))
+        set_parent!.(diff.expr, Ref(expr))
     else
-        return diff_QEq(statespace, left_hand_side, expr, do_braket)
+        diff = diff_QEq(statespace, left_hand_side, expr, do_braket)
+        set_parent!.(diff.expr, Ref(expr))
     end
+    return diff
 end
 function diff_QEq(statespace::StateSpace, left_hand_side::QAtomProduct, expr::QExpr, ::Val{:nosimp}; do_braket::Bool=true) # no optimization
     return diff_QEq(statespace, left_hand_side, expr, do_braket)
@@ -249,6 +254,29 @@ end
 function getindex(q::T, i::Int) where T <: QComposite
     q.expr[i]
 end
+
+function parent(x::T)::Union{Nothing, QParent, QComposite} where T <: Union{QComposite, QParent}
+    p = x.parent[]
+    p === nothing ? nothing : p.value
+end
+parent(x::diff_QEq)::Nothing = nothing # not supposed to be put inside another object 
+function set_parent!(target::S, p::T)::S where {S<:Union{QComposite,QExpr}, T<:Union{QComposite,QParent}}
+    target.parent[] = WeakRef(p)
+    return target 
+end
+function clear_parent!(target::T)::T where T <: Union{QComposite, QParent} 
+    target.parent[] = nothing
+    return target 
+end
+function attach_parent_to_children!(q::T)::T where {T <: QComposite}
+    set_parent!(q.expr, q)
+    return q 
+end
+function attach_parent_to_children!(q::T)::T where {T <: QMultiComposite}
+    set_parent!.(q.expr, Ref(q))
+    return q
+end
+
 
 include("QExpressionsOps/QExpressions_base_operators.jl")
 include("QExpressionsOps/QExpressions_sort.jl")
