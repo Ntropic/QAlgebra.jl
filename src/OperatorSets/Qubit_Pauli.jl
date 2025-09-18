@@ -2,24 +2,24 @@ export QubitPauli
 
 #### Cayley tables for Pauli Operators
 const PAULI_TRANSFORM_TABLE = [
-    4 3 2 1;
-    3 4 1 2;
-    2 1 4 3;
-    1 2 3 4]
+    1  2  3  4;
+    2  1  4  3;
+    3  4  1  2;
+    4  3  2  1 ]
 const PAULI_COEFF_TABLE = crationalize.([
-    1 im -im 1;
-    -im 1 im 1;
-    im -im 1 1;
-    1 1 1 1])
+    1    1    1    1;
+    1    1   im  -im;
+    1  -im    1   im;
+    1   im  -im    1 ])
 
 @doc raw"""
     QubitPauli() -> OperatorSet
 
-Creates the OperatorSet for a qubit using Pauli operators (``\sigma_x``, ``\sigma_y``, ``\sigma_z``, ``\sigma_I``).
+Creates the OperatorSet for a qubit using Pauli operators (``\sigma_I``, ``\sigma_x``, ``\sigma_y``, ``\sigma_z``).
 """
 function QubitPauli(symbol::String="")::OperatorSet
-    ops = ["x", "y", "z", "I"]
-    base_pauli = [[1], [2], [3]]
+    ops = ["I", "x", "y", "z"]
+    base_pauli = [[2], [3], [4]]
 
     symbol_str, symbol_latex = symbol2formatted(symbol, do_hat=true)
     do_symbol::Bool = length(symbol) > 0
@@ -82,9 +82,9 @@ function QubitPauli(symbol::String="")::OperatorSet
     end
     function paulicommutes(op1::Vector{Int}, op2::Vector{Int})::Bool
         # everything commutes with 4, otherwise must be the same
-        return (op1[1] == 4 || op2[1] == 4 || op1[1] == op2[1])
+        return (op1[1] == 1 || op2[1] == 1 || op1[1] == op2[1])
     end
-    return OperatorSet("Pauli Qubit", "Fermion", 1, [4], base_pauli, ops, pauli_product, pauli_dag, pauli2str, pauli2latex, paulicommutes)
+    return OperatorSet("Pauli Qubit", "Fermion", 1, [1], base_pauli, ops, pauli_product, pauli_dag, pauli2str, pauli2latex, paulicommutes)
 end
 ## Test 
 #q = QubitPauli()

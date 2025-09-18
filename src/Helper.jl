@@ -61,3 +61,16 @@ function variants_C(name::String)
 
     return (cname, name_cap, name_low)
 end
+
+# find first variant, that first searches to the right of a vector, and only if nothing is found searches to the left 
+function findfirstfreeafterbefore(x::Vector, start_index::Int)::Union{Int, Nothing}
+    n = length(x) 
+    @assert 1 <= start_index <= n "Starting index must be in bounds."
+    # Search to the right first, then left
+    @inbounds for i in Base.Iterators.flatten((start_index+1:n, 1:start_index-1)) 
+        if !x[i]
+            return i 
+        end
+    end
+    return nothing
+end

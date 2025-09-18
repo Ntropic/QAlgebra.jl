@@ -377,7 +377,7 @@ function string(eq::QExpr)::String
     return total_string
 end
 function string(eq::QAtomProduct)::String
-    # add default variables for do_Frac,, braced and so on. take care of this by writing a single function called by every string and latex string function 
+    # add default variables for do_Frac, braced and so on. take care of this by writing a single function called by every string and latex string function 
     sign, total_string = QComposite2string(eq; do_latex=false, braced=DO_BRACED)
     total_string = sign ? "-" * total_string : total_string
     return total_string

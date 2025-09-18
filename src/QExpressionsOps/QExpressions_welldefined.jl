@@ -26,7 +26,7 @@ function which_ensemble_acting(q::QAtom, subspace_info::SubSpaceInfo, neutral_en
 end
 function which_ensemble_acting(q::QAbstract, subspace_info::SubSpaceInfo, neutral_ensembles_op::Vector{Vector{Is}}; do_abstract::Bool=false)
     if do_abstract ## ==> Assume instead that it is among the defined operator types | This is hacky, and probably not the best solution long term!
-        return [zeros(Bool, n) for n in subspace_info.how_many_by_ensemble]
+        return [falses( n) for n in subspace_info.how_many_by_ensemble]
     else
         error("Which ensemble acting should be applied to abstractless expressions! ")
     end
@@ -62,7 +62,7 @@ end
 Check, which Summation indexes are present. Returns a Boolean of 
 """
 function which_summations_acting(q::QObj, subspace_info::SubSpaceInfo)::Vector{BitVector}
-    empty_vec::Vector{BitVector} = [zeros(Bool, s) for s in subspace_info.how_many_sum_by_ensemble]
+    empty_vec::Vector{BitVector} = [falses( s) for s in subspace_info.how_many_sum_by_ensemble]
     which_summations_acting(q, empty_vec, subspace_info.summation_indexes)
 end
 function which_summations_acting(q::QAtom, where_acting::Vector{BitVector}, ::Vector{Vector{Int}})
@@ -97,35 +97,6 @@ function which_summations_acting(q::QSum, where_acting::Vector{BitVector}, which
     return where_acting
 end
 
-
-"""
-    which_summations_to_root(from::Union{QComposite,QExpr}) -> Vector{BitVector}
-
-recursively navigate to the QObj root via `parent(x)`, collecting summation indices from any
-`QSum` encountered on that path. Returns one BitVector per ensemble.
-"""
-function which_summations_to_root(from::T)::Vector{BitVector} where T <: Union{QComposite, QExpr}
-    info = from.statespace.subspace_info
-    where_acting = [zeros(Bool, s) for s in info.how_many_sum_by_ensemble]
-    return which_summations_to_root(from, where_acting, info)
-end
-
-# Internal worker: keep walking parents; add indices when the current node is a QSum.
-function which_summations_to_root(cur::Union{QComposite,QExpr,QParent}, where_acting::Vector{BitVector}, info::SubSpaceInfo)
-    while true
-        if cur isa QSum
-            @inbounds for index in iter_all_indexes(cur)
-                ensemble, summation = Index2Ensemble_and_Summation(index, info)
-                @assert !where_acting[ensemble][summation] "Summation index already defined on path for $(Index2String(index, info))."
-                where_acting[ensemble][summation] = true
-            end
-        end
-        p = parent(cur)
-        p === nothing && break   # found the root 
-        cur = p
-    end
-    return where_acting
-end
 
 """ 
     are_indexes_defined(q::diff_QEq)::Bool
@@ -169,7 +140,7 @@ end
 
 function are_indexes_defined(q::QExpr)::Bool
     # check element wise if all indexes are defined
-    where_defined::Vector{BitVector} = [zeros(Bool, n) for n in q.statespace.subspace_info.how_many_by_ensemble]
+    where_defined::Vector{BitVector} = [falses( n) for n in q.statespace.subspace_info.how_many_by_ensemble]
     return all([are_indexes_defined(t, where_defined) for t in q.terms])
 end
 function are_indexes_defined(q::diff_QEq)::Bool

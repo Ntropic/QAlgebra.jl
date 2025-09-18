@@ -10,10 +10,11 @@ Does not support QSums within QComposites within QSums!
 """
 function flatten(q::QExpr)::QExpr 
     subspace_info = q.statespace.subspace_info
-    where_acting::Vector{BitVector} = [zeros(Bool, s) for s in subspace_info.how_many_sum_by_ensemble]
+    where_acting::Vector{BitVector} = [falses( s) for s in subspace_info.how_many_sum_by_ensemble]
     return flatten(q, where_acting)
 end
 
+# seems outdated now! 
 function flatten(s::QSum, where_acting::Vector{BitVector})  # nested sums need distinct indexes -> no auto repartition is done currently
     # modify where_acting 
     outer_inds = all_indexes(s)  # materialize once for membership checks
@@ -22,7 +23,7 @@ function flatten(s::QSum, where_acting::Vector{BitVector})  # nested sums need d
         ensemble, summation = Index2Ensemble_and_Summation(index, info)
         if where_acting[ensemble][summation] 
             rem_inds = findall(!, where_acting[ensemble]) .+ info.how_many_non_sum_by_ensemble[ens]
-            remaining indexes = [SubSpaceIndex(index.outer, rem_ind, info) for rem_ind in rem_inds]
+            remaining_indexes = [SubSpaceIndex(index.outer, rem_ind, info) for rem_ind in rem_inds]
             error("Summation index $(Index2String(index, info)) already defined in stack! ")
         end
         where_acting[ensemble][summation] = true
@@ -45,8 +46,10 @@ function flatten(s::QSum, where_acting::Vector{BitVector})  # nested sums need d
         push!(out_terms, QSum(s.statespace, QExpr(s.statespace, base_terms), s.eq_indexes, s.neq_blocks))
     end
     for n in nested_sums
+
         # merge eq indexes (sorted)
         merged_eq  = sort!(vcat(s.eq_indexes, n.eq_indexes), by=expanded)
+
         # merge neq blocks
         merged_neq = vcat(s.neq_blocks, n.neq_blocks)
         if !isempty(merged_neq)

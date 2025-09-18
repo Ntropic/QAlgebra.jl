@@ -1,111 +1,154 @@
+export decollision_QSum
 # Repartitioning for collision free QSum indexing: in a  QSum:
 # 0th initialize empty where_defined
 # 1st create subsitutions in case of collision of current indexes with where_defined
-# 2nd update where_defined 
+# 2nd update where_defined  -> copy where defined, op_tuples, and var_tuples everywhere
 # 3rd apply repartition to terms.
 
+struct QSumDecollisionInds 
+    init::Bool
+    where_acting::Vector{BitVector}  
+    op_tuples::Vector{Tuple{Int, Int}}
+    var_tuples::Vector{Tuple{Int, Int}}
+    var_inds::Vector{Int}
+    function QSumDecollisionInds(init::Bool, where_acting::Vector{BitVector}, op_tuples::Vector{Tuple{Int, Int}}, var_tuples::Vector{Tuple{Int, Int}}, var_inds::Vector{Int})
+        new(init, where_acting, op_tuples, var_tuples, var_inds) 
+    end
+    function QSumDecollisionInds(q::QSum)
+        statespace = q.statespace
+        subspace_info = statespace.subspace_info
+        where_acting::Vector{BitVector} = [falses(n) for n in subspace_info.how_many_sum_by_ensemble]
+        op_tuples = Vector{Tuple{Int, Int}}()
+        var_tuples = Vector{Tuple{Int, Int}}()
+        var_inds = Vector{Int}() #collect(1:length(statespace.params))
+        new(false, where_acting, op_tuples, var_tuples, var_inds) 
+    end
+end
 
 # Detect summation index collisions, and find the first ensemble index that is free, to switch to, returns collision::Bool, the (potentially) updated where_acting, and a potentially new summation index, 
 function collision_find_first_free(where_acting::Vector{BitVector}, subspace_ind::SubSpaceIndex, info::SubSpaceInfo)::Tuple{Bool, Vector{BitVector}, SubSpaceIndex}
     ensemble, summation = Index2Ensemble_and_Summation(subspace_ind, info)
     if where_acting[ensemble][summation] # found a collision 
         # find first free 
-        free_sum_ind = findfirst(!, where_acting[ensemble])
+        free_sum_ind = findfirstfreeafterbefore(!, where_acting[ensemble])
+        @assert !isnothing(free_sum_ind) "No free summation index left in ensemble. "
         where_acting[ensemble][free_sum_ind] = true # QSums need to copy this! to not everright each other 
         return true, where_acting, SummationIndex2SubSpaceIndex(subspace_ind.outer, ensemble, free_sum_ind, info)
-    else
+    else 
+        where_acting[ensemble][summation] = true 
         return false, where_acting, subspace_ind
     end
 end
 
-# Continue here ==> Rewrite the permutations to instead detect the collisions and change them. 
-function summation_collisions_to_index_order(statespace::StateSpace, where_defined::Vector{BitVector}, curr_indexes::Vector{SubSpaceIndex})::Tuple{Vector{Int}, Vector{Tuple{Int, Int}}}
-    # takes where_defined and the ensemble indexes to determine the new order for both operators and variables 
-    # for each element of where_defined, we shift all the true elements to the left, and all false elements to the right, we want to get the indexes of the permutation that achieves that 
-    function permutation_moves(p::Vector{Int})::Vector{Tuple{Int, Int}}  # helper to extract the moves 
-        swaps::Vector{Tuple{Int, Int}} = []
-        for (i, pi) in enumerate(p)
-            if pi > i   # only count once
-                push!(swaps, (i, pi))
-            end
-        end
-        return swaps
-    end
-    n_ops = length(statespace.I_op)
-    n_vars = length(statespace.params)
-    param_info = statespace.param_info 
-    subspace_info = statespace.subspace_info
-    op_inds = collect(1:n_ops)
-    var_inds = collect(1:n_vars)
+function update_QSumDecollisionInds(q::QSum, d::QSumDecollisionInds)
+    statespace = q.statespace
+    info = statespace.subspace_info
 
-    ensemble_indexes = subspace_info.ensemble_indexes
-    where_ensembles = subspace_info.where_ensembles
-    i = 0
-    for (outer, w, c)  in zip(where_ensembles, where_defined, ensemble_indexes) # iterate over ensemble subspaces
-        i += 1
-        w_order = sortperm(w, rev=true)
-        op_inds[c] = op_inds[c][w_order]
-        inner_perms = permutation_moves(w_order)
-        for inner_perm in inner_perms  
-            curr_perm_params = map_by_subspace(SummationIndex2SubSpaceIndex(outer, ensemble, inner_perm[1], subspace_info), SummationIndex2SubSpaceIndex(outer, ensemble, inner_perm[2], subspace_info), param_info)
-            var_inds = var_inds[curr_perm_params]
+    new_op_tuples = Tuple{Int,Int}[]
+    inds_tuples = Tuple{SubSpaceIndex,SubSpaceIndex}[]
+
+    new_where = copy.(d.where_acting)
+
+    @inbounds for (container, i, index) in iter_all_indexes_with_refs(q)
+        collision, new_where, new_index = collision_find_first_free(new_where, index, info)
+        if collision
+            push!(new_op_tuples, (index.expanded, new_index.expanded))
+            push!(inds_tuples, (index, new_index))
+            container[i] = new_index
         end
     end
-    var_tuples::Vector{Tuple{Int, Int}} = []
-    @inbounds for i in 1:n_vars 
-        if var_inds[i] != i 
-            push!(var_tuples, (i, var_inds[i]))
-        end
+
+    if isempty(new_op_tuples)
+        return QSumDecollisionInds(d.init, new_where, d.op_tuples, d.var_tuples, d.var_inds)
     end
-    return op_inds, var_tuples
+
+    var_inds = collect(1:length(statespace.params))
+    @inbounds for (index, new_index) in Base.Iterators.reverse(inds_tuples)
+        curr_perm_params = map_by_subspace(index, new_index, info)
+        var_inds = var_inds[curr_perm_params]
+    end
+    if d.init
+        var_inds = var_inds[d.var_inds]
+    end
+
+    var_tuples = [(i, var_inds[i]) for i in eachindex(var_inds) if var_inds[i] != i]
+
+    return QSumDecollisionInds(true, new_where, vcat(new_op_tuples, d.op_tuples), var_tuples, var_inds)
 end
 
-function decollision_QSum(q::QSum)::QSum 
-    where_defined::Vector{BitVector} = [zeros(Bool, s) for s in subspace_info.how_many_sum_by_ensemble]
-    return decollision_QSum(q, where_defined)
+
+
+function decollision_QSum(q::QSum)::Vector{QComposite} 
+    decollision = QSumDecollisionInds(q)
+    return decollision_QSum(q, decollision, Val(:noupdate))
 end
 
-function decollision_QSum(q::QSum, where_defined::Vector{BitVector})::QSum
-    qspace = q.statespace
-    info   = qspace.subspace_info
-    # clone where_defined to mutate
-    new_where_defined = copy.(where_defined)
+function decollision_QSum(q::QSum, decollision::QSumDecollisionInds, ::Val{:noupdate})::Vector{QComposite} #assume it is already updated 
+    statespace = q.statespace
+    base_terms  = QComposite[]
+    nested_sums = QSum[]
+    inner = decollision_QSum(q.expr, decollision)
+    for t in inner.terms
+        if t isa QSum
+            push!(nested_sums, t)
+        else
+            push!(base_terms, t)
+        end
+    end
+    out_terms = QComposite[]
+    if !isempty(base_terms)
+        push!(out_terms, QSum(statespace, QExpr(statespace, base_terms), q.eq_indexes, q.neq_blocks))
+    end
+    for n in nested_sums
+        # merge eq indexes (sorted)
+        merged_eq  = sort!(vcat(q.eq_indexes, n.eq_indexes), by=expanded)
 
-    # mark all indexes in all blocks as defined
-    for index in iter_all_indexes(q)
-        ensemble = Index2Ensemble(index, info)
-        if new_where_defined[ensemble][index.inner]
-            index_str = Index2String(index, info)
-            error("Summation index $index_str already defined, cannot sum over defined indexes!")
+        # merge neq blocks
+        merged_neq = vcat(q.neq_blocks, n.neq_blocks)
+        if !isempty(merged_neq)
+            perm = sortperm(merged_neq; by = blk -> expanded(first(blk)))
+            merged_neq = merged_neq[perm]
         end
-        new_where_defined[ensemble][index.inner] = true
+        push!(out_terms, QSum(statespace, n.expr, merged_eq, merged_neq))
     end
-    op_ind, var_tuples_new = where_defined_to_index_order(qspace, new_where_defined)
+    return out_terms
+end
 
-    # remap indexes in each block to the new order
-    new_indexes= SubSpaceIndex[]
-    for index in q.eq_indexes
-        new_expanded = findfirst(==(index.expanded), op_ind)
-        diff = new_expanded - index.expanded
-        new_inner = index.inner + diff
-        if new_inner < 1
-            error("New index no longer in the same ensemble subspace.")
-        end
-        push!(new_indexes, SubSpaceIndex(index.outer, new_inner, new_expanded))
+function decollision_QSum(q::QSum, decollision::QSumDecollisionInds)::Vector{QComposite}
+    decollision = update_QSumDecollisionInds(q, decollision)
+    return decollision_QSum(q, decollision, Val(:noupdate))
+end
+
+
+function decollision_QSum(q::QTerm, decollision::QSumDecollisionInds, statespace::StateSpace)::QTerm
+    op_indices = copy(q.op_indices)
+    @inbounds for (old_ind, new_ind) in decollision.var_tuples
+        @assert is_numeric(q, new_ind, statespace) "Cannot decollision QTerm, because new summation index is already in use, albeit undefined!"
+        op_indices[(old_ind, new_ind)] = op_indices[(new_ind, old_ind)]
     end
-    new_blocks = Vector{Vector{SubSpaceIndex}}()
-    for blk in q.blocks
-        new_blk = SubSpaceIndex[]
-        for index in blk
-            new_expanded = findfirst(==(index.expanded), op_ind)
-            diff = new_expanded - index.expanded
-            new_inner = index.inner + diff
-            if new_inner < 1
-                error("New index no longer in the same ensemble subspace.")
-            end
-            push!(new_blk, SubSpaceIndex(index.outer, new_inner, new_expanded))
-        end
-        push!(new_blocks, new_blk)
+    return modify_expr(q, op_indices)
+end
+function decollision_QSum(q::QAbstract, decollision::QSumDecollisionInds, statespace::StateSpace)::QAbstract
+    return add_to_index_map(q, decollision.op_tuples)
+end
+function decollision_QSum(q::QAtomProduct, decollision::QSumDecollisionInds)::Vector{QComposite}
+    if decollision.init
+        return QComposite[modify_coeff_expr(q, repartition(q.coeff_fun, decollision.var_tuples), QAtom[decollision_QSum(x, decollision, q.statespace) for x in q.expr])]
+    else
+        return QComposite[q] 
     end
-    return modify_expr_indexing( q, repartition(q.expr, false, new_where_defined, op_ind, var_tuples_new), new_indexes, new_blocks )
+end
+function decollision_QSum(q::QExpr, decollision::QSumDecollisionInds)::QExpr
+    new_terms = QComposite[]
+    sizehint!(new_terms, length(q.terms))
+     for t in q.terms
+        append!(new_terms, decollision_QSum(t, decollision))
+    end
+    return QExpr(q.statespace, new_terms)
+end
+function decollision_QSum(q::T, decollision::QSumDecollisionInds)::Vector{QComposite} where T <: QComposite
+    return QComposite[modify_coeff_expr(q, repartition(q.coeff_fun, decollision.var_tuples), decollision_QSum(q.expr, decollision))]
+end
+function decollision_QSum(q::T, decollision::QSumDecollisionInds)::Vector{QComposite} where T <: QMultiComposite
+    return QComposite[modify_coeff_expr(q, repartition(q.coeff_fun, decollision.var_tuples), [decollision_QSum(qq, decollision) for qq in q.expr])]
 end

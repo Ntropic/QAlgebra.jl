@@ -12,14 +12,18 @@ const _NOCHK = Val(false)
 ### Basic Operations: 
 
 ####### Unary Minus #############################################################
-function -(t::QAtomProduct)::QAtomProduct
-    return QAtomProduct(t.statespace, -t.coeff_fun, t.expr) # removed copy
+function -(t::QAtomProduct)::Vector{QAtomProduct}
+    return [QAtomProduct(t.statespace, -t.coeff_fun, t.expr)] # removed copy
 end
 function -(t::QExpr)::QExpr
-    return QExpr(t.statespace, .-t.terms)
+    new_term_vec = Vector{QComposite}()
+    for s in t.terms
+        append!(new_term_vec, -s)
+    end
+    return QExpr(t.statespace, new_term_vec)
 end
-function -(t::T)::T where T<:QComposite
-    return modify_expr(t, -t.expr)
+function -(t::T)::Vector{T} where T<:QComposite
+    return [modify_coeff(t, -t.coeff_fun)]
 end
 
 #### Binary + ####################################################################
@@ -48,27 +52,11 @@ end
 
 
 #### Binary - ####################################################################
--(Q1::QExpr, Q2::QExpr)::QExpr = _sub(Q1, Q2)
-(-(Q1::QExpr, Q2::T)::QExpr) where {T<:QComposite} = _sub(Q1, Q2)
-(-(Q2::T, Q1::QExpr)::QExpr) where {T<:QComposite} = -Q1 + Q2
--(Q1::QExpr, N::Number)::QExpr = _sub(Q1, N)
--(N::Number, Q1::QExpr)::QExpr = _sub(N, Q1)
-
-@inline function _sub(Q1::QExpr, Q2::QExpr, ::Val{C})::QExpr where {C}
-    statespace_check_if(Val(C), Q1, Q2)
-    new_terms = simplify_QExpr(vcat(Q1.terms, .-Q2.terms))
-    return QExpr(Q1.statespace, new_terms)
-end
-@inline function _sub(Q1::QExpr, Q2::T, ::Val{C})::QExpr where {T<:QComposite,C}
-    statespace_check_if(Val(C), Q1, Q2)
-    new_terms = vcat(Q1.terms, -Q2)
-    return QExpr(Q1.statespace, new_terms)
-end
-@inline function _sub(Q1::QExpr, N::Number, ::Val{C})::QExpr where {C}
-    new_terms = vcat(Q1.terms, QAtomProduct(Q1.statespace, -Q1.statespace.c_one * N, QTerm(Q1.statespace.I_op)))
-    return QExpr(Q1.statespace, new_terms)
-end
-@inline _sub(N::Number, Q1::QExpr, ::Val{C}) where {C} = _add(-N, Q1, _NOCHK)
+-(Q1::QExpr, Q2::QExpr)::QExpr = Q1 + (-Q2)
+(-(Q1::QExpr, Q2::T)::QExpr) where {T<:QComposite} = Q1 + (-Q2)
+(-(Q2::T, Q1::QExpr)::QExpr) where {T<:QComposite} = (-Q1) + Q2
+-(Q1::QExpr, N::Number)::QExpr = Q1 + (-N)
+-(N::Number, Q1::QExpr)::QExpr = N + (-Q1)
 
 #### Multiply ####################################################################
 # Multiplies two QTerm’s from the same statespace. (explicit StateSpace argument)
@@ -203,28 +191,30 @@ end
     p2_coeff, p2_new = separate_coeff_qcomposite(p2)
     coeff = p1_coeff * p2_coeff
     c, t = add_QComposite_to_QCompositeProduct([p1_new], p2_new, ss)
-    return [QCompositeProduct( c * coeff, t, Val(:nosimp))]
+    return _QCompositeProduct( c * coeff, t, Val(:nosimp))
 end
 
 # sums eat other QComposites!!! Mjam Mjam Mjam
-@inline function _mul(p1::QSum, p2::QSum, ::Val{C})::Vector{QSum} where {T2<:QComposite,C} # immediately flatten! 
+@inline function _mul(p1::QSum, p2::QSum, ::Val{C})::Vector{QComposite} where {C}
     statespace_check_if(Val(C), p1, p2)
-    new_expr::Vector{QComposite} = []
-    # check indexes
-    # continuing here 
-    for t1 in p1.expr
-        for t2 in p2.expr
-        append!(new_expr, _mul(t1, t2, _NOCHK))
-    end
-    return [modify_expr(p1, QExpr(p1.statespace, new_expr))]
+    new_expr = p1.expr*p2.expr
+    return modify_expr(p1, modify_expr(p2, new_expr))
 end
-@inline function _mul(p1::QSum, p2::T2, ::Val{C})::Vector{QSum} where {T2<:QComposite,C}
+@inline function _mul(p1::QSum, p2::T2, ::Val{C})::Vector{QComposite} where {T2<:QComposite,C}
     statespace_check_if(Val(C), p1, p2)
     new_expr::Vector{QComposite} = []
     for t in p1.expr
         append!(new_expr, _mul(t, p2, _NOCHK))
     end
-    return [modify_expr(p1, QExpr(p1.statespace, new_expr))]
+    return modify_expr(p1, QExpr(p1.statespace, new_expr))
+end
+@inline function _mul(p1::T1, p2::QSum, ::Val{C})::Vector{QComposite} where {T1<:QComposite,C}
+    statespace_check_if(Val(C), p1, p2)
+    new_expr::Vector{QComposite} = []
+    for t in p2.expr
+        append!(new_expr, _mul(p1, t, _NOCHK))
+    end
+    return modify_expr(p2, QExpr(p2.statespace, new_expr))
 end
 
 

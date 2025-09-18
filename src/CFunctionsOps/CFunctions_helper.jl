@@ -96,7 +96,7 @@ This includes actions from CFunctions. Th function should only be applied after 
 Their present can be checked via `contains_abstract(q)`.
 """
 function which_ensemble_acting(f::CFunction)::Vector{BitVector}
-    where_non_trivial::Vector{BitVector} = [zeros(Bool, n) for n in f.param_info.how_many_by_ensemble]
+    where_non_trivial::Vector{BitVector} = [falses(n) for n in f.param_info.how_many_by_ensemble]
     return which_ensemble_acting(f, where_non_trivial)
 end
 function which_ensemble_acting(f::CFunction, where_non_trivial::Vector{BitVector})::Vector{BitVector}
@@ -121,7 +121,7 @@ end
 Returns a vector of booleans specifying if the associated parameter is present in the expression.
 """
 function where_acting(f::CFunction)::BitVector
-    acting::BitVector = zeros(Bool, dims(f))
+    acting::BitVector = falses(dims(f))
     where_acting!(f, acting)
     return acting
 end

@@ -111,6 +111,7 @@ struct QAbstract <: QAtom
 end
 dag_copy(q::QAbstract)::QAbstract = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, !q.dag, q.time_index, q.index_map)
 add_to_index_map(q::QAbstract, added_index_pair::Tuple{SubSpaceIndex,SubSpaceIndex}) = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, q.dag, q.time_index, vcat(q.index_map, added_index_pair))
+add_to_index_map(q::QAbstract, added_index_pair::Vector{Tuple{SubSpaceIndex,SubSpaceIndex}}) = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, q.dag, q.time_index, vcat(q.index_map, added_index_pair))
 modify_exp_dag(q::QAbstract, new_exp::Int, new_dag::Bool) = QAbstract(q.operator_type, q.key_index, q.sub_index, new_exp, new_dag, q.time_index, q.index_map)
 modify_time_index(q::QAbstract, new_time_index::Int) = QAbstract(q.operator_type, q.key_index, q.sub_index, q.exponent, q.dag, new_time_index, q.index_map)
 of_time(q::QAbstract) = q.operator_type.of_time
@@ -127,32 +128,25 @@ It also contains a reference to the state space in which the equation is defined
 struct QExpr <: QParent
     statespace::StateSpace
     terms::Vector{QComposite}              #AbstractVector{<:QComposite}   
-    parent::ParentCell 
-    function QExpr(statespace::StateSpace, terms::AbstractVector{<:QComposite}, parent::ParentCell=Ref{ParentRef}(nothing))
+    function QExpr(statespace::StateSpace, terms::AbstractVector{<:QComposite})
         if isempty(terms) 
             # add neotral zero term
             zero_term = QAtomProduct(statespace, statespace.c_zero, QAtom[])
             terms = [zero_term]
         end
-        expr = new(statespace, terms, parent)
-        set_parent!.(expr.terms, Ref(expr))
-        return expr
+        new(statespace, terms)
     end
-    function QExpr(statespace::StateSpace, prod::T, parent::ParentCell=Ref{ParentRef}(nothing)) where T<:QComposite
-        expr = new(statespace, QComposite[prod], parent)
-        set_parent!.(expr.terms, Ref(expr))
-        return expr
+    function QExpr(statespace::StateSpace, prod::T) where T<:QComposite
+        new(statespace, QComposite[prod])
     end
-    function QExpr(statespace::StateSpace, terms::QAtom, parent::ParentCell=Ref{ParentRef}(nothing))
-        expr = new(statespace, QComposite[QAtomProduct(statespace,terms)], parent)
-        set_parent!.(expr.terms, Ref(expr))
-        return expr
+    function QExpr(statespace::StateSpace, terms::QAtom)
+        new(statespace, QComposite[QAtomProduct(statespace,terms)])
     end
 end
 length(q::QExpr) = length(q.terms)
 each_term(q::QExpr) = q.terms
 each_coeff(q::QExpr)::Vector{CFunction} = flatmap_to(each_coeff, each_term(q), CFunction)
-multiply_coeff(q::QExpr, coeff::CFunction) = QExpr(q.statespace, [multiply_coeff(s, coeff) for s in q.terms], q.parent)
+multiply_coeff(q::QExpr, coeff::CFunction) = QExpr(q.statespace, [multiply_coeff(s, coeff) for s in q.terms])
 
 include("QExpressionsOps/QExpressions_composites.jl")
 include("QExpressionsOps/QExpressions_helper.jl") 
@@ -188,11 +182,9 @@ Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
 function diff_QEq(statespace::StateSpace, left_hand_side::QAtomProduct, expr::QExpr; do_braket::Bool=true)
     if !contains_abstract(left_hand_side) && !contains_abstract(expr)
-        diff = repartition(neq(diff_QEq(statespace, left_hand_side, expr, do_braket)))
-        set_parent!.(diff.expr, Ref(expr))
+        return repartition(neq(diff_QEq(statespace, left_hand_side, expr, do_braket)))
     else
-        diff = diff_QEq(statespace, left_hand_side, expr, do_braket)
-        set_parent!.(diff.expr, Ref(expr))
+        return diff_QEq(statespace, left_hand_side, expr, do_braket)
     end
     return diff
 end
@@ -255,28 +247,6 @@ function getindex(q::T, i::Int) where T <: QComposite
     q.expr[i]
 end
 
-function parent(x::T)::Union{Nothing, QParent, QComposite} where T <: Union{QComposite, QParent}
-    p = x.parent[]
-    p === nothing ? nothing : p.value
-end
-parent(x::diff_QEq)::Nothing = nothing # not supposed to be put inside another object 
-function set_parent!(target::S, p::T)::S where {S<:Union{QComposite,QExpr}, T<:Union{QComposite,QParent}}
-    target.parent[] = WeakRef(p)
-    return target 
-end
-function clear_parent!(target::T)::T where T <: Union{QComposite, QParent} 
-    target.parent[] = nothing
-    return target 
-end
-function attach_parent_to_children!(q::T)::T where {T <: QComposite}
-    set_parent!(q.expr, q)
-    return q 
-end
-function attach_parent_to_children!(q::T)::T where {T <: QMultiComposite}
-    set_parent!.(q.expr, Ref(q))
-    return q
-end
-
 
 include("QExpressionsOps/QExpressions_base_operators.jl")
 include("QExpressionsOps/QExpressions_sort.jl")
@@ -291,6 +261,7 @@ include("QExpressionsOps/QSum_modify.jl")
 include("QExpressionsOps/QExpressions_welldefined.jl")
 include("QExpressionsOps/QExpressions_substitute.jl")
 include("QExpressionsOps/QExpressions_repartition.jl")
+include("QExpressionsOps/QExpressions_repartition_summation.jl")
 
 include("QExpressionsOps/QExpressions_cumulants.jl")
 

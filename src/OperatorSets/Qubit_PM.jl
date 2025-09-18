@@ -1,28 +1,28 @@
 export QubitPM
 
 #### Cayley tables for PM Operators
-const PM_TRANSFORM_TABLE1 = Int[4 4 1 1; # p 
-    4 4 2 2; # m
-    1 2 4 3; # z
-    1 2 3 4] # I
-#                               p,m,z,I
-const PM_TRANSFORM_TABLE2 = Int[0 3 0 0; # p 
-    3 0 0 0; # m
-    0 0 0 0; # z
-    0 0 0 0] # I
+#                               I, p, m, z
+const PM_TRANSFORM_TABLE1 = Int[1 2 3 4; # I
+                                2 1 1 2; # p
+                                3 1 1 3; # m 
+                                4 2 3 1] # z
+const PM_TRANSFORM_TABLE2 = Int[0 0 0 0; # I 
+                                0 0 4 0; # p
+                                0 4 0 0; # m
+                                0 0 0 0] # z
 
-const PM_COEFF_TABLE1 = crationalize.([0.0 0.5 -1.0 1.0;
-    0.5 0.0 1.0 1.0;
-    1.0 -1.0 1.0 1.0;
-    1.0 1.0 1.0 1.0])
-const PM_COEFF_TABLE2 = crationalize.([0 0.5 0 0;
-    -0.5 0 0 0;
-    0 0 0 0;
-    0 0 0 0])
-const PM_HOW_MANY = Int[1 2 1 1; # p 
-    2 1 1 1; # m
-    1 1 1 1; # z
-    1 1 1 1] # I
+const PM_COEFF_TABLE1 = crationalize.([ 1.0  1.0  1.0  1.0;
+                                        1.0  0.0  0.5 -1.0;
+                                        1.0  0.5  0.0  1.0;
+                                        1.0  1.0 -1.0  1.0])
+const PM_COEFF_TABLE2 = crationalize.([ 0.0  0.0  0.0  0.0
+                                        0.0  0.0  0.5  0.0
+                                        0.0 -0.5  0.0  0.0
+                                        0.0  0.0  0.0  0.0])
+const PM_HOW_MANY = Int[1  1  1  1;
+                        1  1  2  1;
+                        1  2  1  1;
+                        1  1  1  1] # I
 
 @doc raw""" 
     QubitPM() -> OperatorSet
@@ -30,10 +30,10 @@ const PM_HOW_MANY = Int[1 2 1 1; # p
 Creates the OperatorSet for a qubit using Raising and Lowering operators (``\sigma_+``, ``\sigma_-``, ``\sigma_z``, ``\sigma_I``).
 """
 function QubitPM(symbol::String="")::OperatorSet
-    ops = ["p", "m", "z", "I"]
-    ops_str = ["+", "-", "z", "I"]
-    base_pm = [[1], [2], [3]]
-    pm_dag_inds = [[2], [1], [3], [4]]
+    ops = ["I", "p", "m", "z"]
+    ops_str = ["I", "+", "-", "z"]
+    base_pm = [[2], [3], [4]]
+    pm_dag_inds = [[1], [3], [2], [4]]
 
     symbol_str, symbol_latex = symbol2formatted(symbol, do_hat=true)
     do_symbol::Bool = length(symbol) > 0
@@ -94,10 +94,26 @@ function QubitPM(symbol::String="")::OperatorSet
         # everything commutes with 4, otherwise must be the same
         return (op1[1] == 4 || op2[1] == 4 || op1[1] == op2[1])
     end
-    return OperatorSet("PM Qubit", "Fermion", 1, [4], base_pm, ops, pm_product, pm_dag, pm2str, pm2latex, pmcommutes)
+    return OperatorSet("PM Qubit", "Fermion", 1, [1], base_pm, ops, pm_product, pm_dag, pm2str, pm2latex, pmcommutes)
 end
 # Test 
 #q = QubitPM()
 #q.strs2ind("p")
 #display(latexstring(q.op2latex(1, "i")))
 #q.op_product(1, 2)
+
+
+####################################### Helpers to transform Cayley Tables for new ordering: ##################################################################################################################
+# apply the shift to a whole table of operator indices
+#function shift_table_indices(tbl::Matrix{Int})
+#    return [shift_index(x) for x in tbl]
+#end
+#
+# permute matrix entries first by column [4,1,2,3], then rows the same way
+#function permute_table(tbl::Matrix)
+#    order = [4, 1, 2, 3]
+#    return tbl[order, order]
+#end
+#function shiftandpermute(A::Matrix{Int})
+#    return permute_table(shift_table_indices(A))
+#end

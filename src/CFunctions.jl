@@ -244,6 +244,7 @@ struct CAbstract <: AbstractCAbstract
 end
 coeff(a::CAbstract) = [a.coeff]
 exponent(a::CAbstract) = a.exponent
+var_exponents(a::CAbstract) = zeros(Int, a.param_info.dims)
 isdag(a::CAbstract) = a.dag
 modify_coeff(a::CAbstract, c::ComplexRational) = CAbstract(a.param_info, c, a.index, a.exponent, a.dag)
 modify_exponent(a::CAbstract, q::Rational{Int}) = CAbstract(a.param_info, a.coeff, a.index, q, a.dag)
@@ -271,6 +272,7 @@ end
 function modify_expr(f::CCustomType, new_expr::Vector{CFunction})
     return CCustomType(f.param_info, f.coeff, new_expr, f.ctype_def)
 end
+var_exponents(a::CCustomType) = zeros(Int, a.param_info.dims)
 coeff(f::CCustomType) = [f.coeff]
 length(f:: CCustomType) = 1
 
@@ -320,7 +322,7 @@ coeff(a::CAtom)::Vector{ComplexRational} = [a.coeff]
 modify_exponents(a::CAtom, var_exponents::Vector{Vector{Int}})::CAtom = CAtom(a.param_info, a.coeff, var_exponents)
 modify_coeff(a::CAtom, coeff::ComplexRational)::CAtom = CAtom(a.param_info, coeff, a.var_exponents)
 modify_coeff_exponents(a::CAtom, coeff::ComplexRational, var_exponents::Vector{Vector{Int}}) = CAtom(a.param_info, coeff, var_exponents)
-
+var_exponents(a::CAtom) = a.var_exponents
 length(a::CAtom) = 1
 function repartition(f::CAtom, var_tuples::Vector{Tuple{Int, Int}})::CAtom 
     curr_var_exponents = f.var_exponents
@@ -362,7 +364,7 @@ end
 coeff(x::CSum) = [ComplexRational(1,0,1)] #error("Sums don't have a coeff, you likely have a sum in a sum, this shouldn't happen. Please inform the developers. ")
 length(q::CSum) = length(q.expr)
 repartition(f::CSum, var_tuples::Vector{Tuple{Int, Int}}) = _CSum(f.param_info, repartition.(f.expr, Ref(var_tuples)) )
-
+var_exponents(a::CSum) = min.(var_exponents.(a.expr)...)
 
 struct CProd <: CMultiComposite
     param_info::ParameterInfo
@@ -387,7 +389,13 @@ end
 coeff(x::CProd) = [x.coeff]
 length(q::CProd) = max(length.(q.expr)...)
 repartition(f::CProd, var_tuples::Vector{Tuple{Int, Int}})= CProd(f.param_info, f.coeff, repartition.(f.expr, Ref(var_tuples)) )
-
+function var_exponents(a::CProd) 
+    if length(a.expr) > 0 
+        return var_exponents(a.expr[1])
+    else 
+        return zeros(Int, a.param_info.dims)
+    end
+end
 
 """
     CRational(numer::CSum, denom::CSum)
@@ -408,6 +416,7 @@ end
 coeff(x::CRational) = coeff(x.numer) #/coeff(x.denom)
 length(q::CRational) = max(length(q.numer), length(q.denom))
 repartition(q::CRational, var_tuples::Vector{Tuple{Int, Int}}) = CRational(q.param_info, repartition(q.numer, var_tuples), repartition(q.denom, var_tuples))
+var_exponents(a::CRational) = var_exponents(a.numer)
 
 
 struct CExp <: CComposite
@@ -437,6 +446,7 @@ end
 coeff(x::CExp) = [x.coeff]
 length(q::CExp) = 1
 repartition(q::CExp, var_tuples::Vector{Tuple{Int, Int}}) = CExp(q.param_info, q.coeff, repartition(q.expr, var_tuples))
+var_exponents(a::CExp) = zeros(Int, a.param_info.dims)
 
 
 struct CLog <: CComposite
@@ -466,6 +476,7 @@ end
 coeff(x::CLog) = [x.coeff] 
 length(q::CLog) = 1
 repartition(q::CLog, var_tuples::Vector{Tuple{Int, Int}}) = CLog(q.param_info, q.coeff, repartition(q.expr, var_tuples))
+var_exponents(a::CExp) = zeros(Int, a.param_info.dims)
 
 """
     CPower(coeff::ComplexRational, x::CFunction, exponent::Rational{Int})
@@ -499,6 +510,8 @@ end
 coeff(p::CPower) = [p.coeff]
 length(::CPower) = 1
 repartition(p::CPower, var_tuples::Vector{Tuple{Int,Int}}) = CPower(p.param_info, p.coeff, repartition(p.expr, var_tuples), p.exponent)
+var_exponents(a::CExp) = zeros(Int, a.param_info.dims)
+
 
 """
     CVector(entries::AbstractVector{<:CFunction}; row::Bool=false)
@@ -523,6 +536,8 @@ size(v::CVector) = v.row ? (1, length(v.expr)) : (length(v.expr), 1)
 getindex(v::CVector, i::Int) = v.expr[i]
 iterate(v::CVector, st::Int=1) = st > length(v.expr) ? nothing : (v.expr[st], st+1)
 repartition(v::CVector, var_tuples::Vector{Tuple{Int,Int}}) = CVector(v.param_info, v.coeff, repartition.(v.expr, Ref(var_tuples)); row=v.row)
+var_exponents(a::CExp) = zeros(Int, a.param_info.dims)
+
 
 """
     CMatrix(entries::AbstractMatrix{<:CFunction})
@@ -543,6 +558,8 @@ length(M::CMatrix) = length(M.expr)         # number of elements (m*n)
 size(M::CMatrix) = size(M.expr)
 getindex(M::CMatrix, i::Int, j::Int) = M.expr[i, j]
 repartition(M::CMatrix, var_tuples::Vector{Tuple{Int,Int}}) = CMatrix(M.param_info, M.coeff, reshape(repartition.(M.expr[:], Ref(var_tuples)), size(M.expr)))
+var_exponents(a::CExp) = zeros(Int, a.param_info.dims)
+
 
 #### Some basic functions ##############################################################################################
 

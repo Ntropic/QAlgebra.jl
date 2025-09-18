@@ -4,26 +4,16 @@ import Base: isless, sort, sort!
 # Small helpers (boolean style)
 # -------------------------------
 
-@inline function less_vec_int(a::AbstractVector{<:Integer}, b::AbstractVector{<:Integer})
-    n = min(length(a), length(b))
+@inline function less_vec_int(a::Vector{Vector{Integer}}, b::Vector{Vector{Integer}})
+    n = length(a)
+    # @assert length(a) == length(b)  # ==> Should be a given 
     @inbounds for i in 1:n
         ai = a[i]; bi = b[i]
         if ai != bi
             return ai < bi
         end
     end
-    return length(a) < length(b)
-end
-
-@inline function less_vec(a::AbstractVector, b::AbstractVector)
-    n = min(length(a), length(b))
-    @inbounds for i in 1:n
-        ai = a[i]; bi = b[i]
-        if !(ai == bi)   # cheap eq; assumes well-behaved == for your types
-            return isless(ai, bi)
-        end
-    end
-    return length(a) < length(b)
+    return false
 end
 
 @inline function compare_isless(x, y)
@@ -53,7 +43,7 @@ qatom_tag(::QAbstract) = 1
 # QTerm: compare op_indices lexicographically
 function isless(a::QTerm, b::QTerm)::Bool
     a.time_index == b.time_index || return a.time_index < b.time_index
-    less_vec_int(a.op_indices, b.op_indices)
+    isless(a.op_indices, b.op_indices)
 end
 
 # QAbstract: compare (key_index, sub_index, exponent, dag)

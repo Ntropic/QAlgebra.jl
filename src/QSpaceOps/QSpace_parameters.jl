@@ -118,7 +118,7 @@ function ParameterInfo(parameters::Vector{Parameter}, outer_labels_symbols::Vect
     for (i, param) in enumerate(parameters)
         if param.indexed_param 
             push!(indexed_parameter_indexes, i)
-            curr_bools = [zeros(Bool, n) for n in ensemble_sizes]
+            curr_bools = [falses( n) for n in ensemble_sizes]
             for curr_ind in param.param_indexes 
                 outer = curr_ind.outer 
                 inner = curr_ind.inner 

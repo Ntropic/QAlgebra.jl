@@ -17,25 +17,25 @@ struct QAtomProduct <: QComposite
     coeff_fun::CFunction            # function of scalar parameters => has +,-,*,/,^ defined 
     expr::Vector{QAtom}             # Vector of qAtoms (qTerms or QAbstract).
     separate_expectation_values::Bool 
-    parent::ParentCell
-    function QAtomProduct(statespace::StateSpace, coeff::T, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false, parent::ParentCell=Ref{ParentRef}(nothing)) where T <: CFunction
-        return new(statespace, coeff, expr, separate_expectation_values, parent)
+    
+    function QAtomProduct(statespace::StateSpace, coeff::T, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false) where T <: CFunction
+        return new(statespace, coeff, expr, separate_expectation_values)
     end
-    function QAtomProduct(statespace::StateSpace, coeff::T, expr::S, separate_expectation_values::Bool=false, parent::ParentCell=Ref{ParentRef}(nothing)) where {T <: CFunction, S <: QAtom}
-        return new(statespace, coeff, [expr], separate_expectation_values, parent)
+    function QAtomProduct(statespace::StateSpace, coeff::T, expr::S, separate_expectation_values::Bool=false) where {T <: CFunction, S <: QAtom}
+        return new(statespace, coeff, [expr], separate_expectation_values)
     end
-    function QAtomProduct(statespace::StateSpace, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false, parent::ParentCell=Ref{ParentRef}(nothing)) 
-        return new(statespace, statespace.c_one, expr, separate_expectation_values, parent)
+    function QAtomProduct(statespace::StateSpace, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false) 
+        return new(statespace, statespace.c_one, expr, separate_expectation_values)
     end
-    function QAtomProduct(statespace::StateSpace, expr::S, separate_expectation_values::Bool=false, parent::ParentCell=Ref{ParentRef}(nothing)) where {S <: QAtom}
-         new(statespace, statespace.c_one, [expr], separate_expectation_values, parent)
+    function QAtomProduct(statespace::StateSpace, expr::S, separate_expectation_values::Bool=false) where {S <: QAtom}
+         new(statespace, statespace.c_one, [expr], separate_expectation_values)
     end
 end
-modify_expr(q::QAtomProduct, expr::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, q.coeff, expr, q.separate_expectation_values, q.parent)
-modify_coeff_expr(q::QAtomProduct, coeff::CFunction, expr::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, coeff, expr, q.separate_expectation_values, q.parent)
-modify_coeff(q::QAtomProduct, coeff::CFunction)::QAtomProduct = QAtomProduct(q.statespace, coeff, q.expr, q.separate_expectation_values, q.parent)
+modify_expr(q::QAtomProduct, expr::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, q.coeff_fun, expr, q.separate_expectation_values)
+modify_coeff_expr(q::QAtomProduct, coeff::CFunction, expr::Vector{QAtom})::QAtomProduct = QAtomProduct(q.statespace, coeff, expr, q.separate_expectation_values)
+modify_coeff(q::QAtomProduct, coeff::CFunction)::QAtomProduct = QAtomProduct(q.statespace, coeff, q.expr, q.separate_expectation_values)
 each_term(q::QAtomProduct) = q.expr
-each_coeff(q::QAtomProduct)::Vector{CFunction} = [q.coeff]
+each_coeff(q::QAtomProduct)::Vector{CFunction} = [q.coeff_fun]
 get_coeff(q::QComposite) = q.coeff_fun
 multiply_coeff(q::QComposite, coeff::CFunction) = modify_coeff(q, get_coeff(q)*coeff)
 
@@ -63,30 +63,38 @@ struct QSum <: QComposite
     expr::QExpr
     eq_indexes::Vector{SubSpaceIndex}            # may be empty
     neq_blocks::Vector{Vector{SubSpaceIndex}}    # each block nonempty and sorted
-    parent::ParentCell
-    function QSum(statespace::StateSpace, expr::QExpr, eq_indexes::Vector{SubSpaceIndex}, neq_blocks::Vector{Vector{SubSpaceIndex}}, parent::ParentCell=Ref{ParentRef}(nothing))
-        q = new(statespace, expr, eq_indexes, neq_blocks, parent)
-        return attach_parent_to_children!(q)
+end
+function _QSum(statespace::StateSpace, expr::QExpr, eq_indexes::Vector{SubSpaceIndex}, neq_blocks::Vector{Vector{SubSpaceIndex}})::Vector{QComposite}
+    qsum = QSum(statespace, expr, eq_indexes, neq_blocks)
+    # run decollision + flatten
+    comps = decollision_QSum(qsum)
+
+    if length(comps) == 1 && comps[1] isa QSum
+        return QComposite[comps[1]]
+    else
+        # wrap multiple composites back into an expr
+        return comps
     end
 end
-# Back-compat single-block constructor
-function QSum(expr::QExpr, indexes::Vector{SubSpaceIndex}; neq::Bool=false)
-    isempty(indexes) && return expr
+function _QSum(statespace::StateSpace, expr::QExpr, indexes::Vector{SubSpaceIndex}; neq::Bool=false)::Vector{QComposite}
+    isempty(indexes) && return QComposite[expr]
     idxs_sorted = sort(indexes, by=expanded)
     if neq && length(idxs_sorted) > 1
-        return QSum(expr.statespace, expr, SubSpaceIndex[], Vector{Vector{SubSpaceIndex}}([idxs_sorted]))
+        return _QSum(statespace, expr, SubSpaceIndex[], Vector{Vector{SubSpaceIndex}}([idxs_sorted]))
     else
-        return QSum(expr.statespace, expr, idxs_sorted, Vector{Vector{SubSpaceIndex}}())
+        return _QSum(statespace, expr, idxs_sorted, Vector{Vector{SubSpaceIndex}}())
     end
 end
-modify_expr(q::QSum, expr::QExpr) = QSum(q.statespace, expr, q.eq_indexes, q.neq_blocks, q.parent)
-modify_expr_indexing(q::QSum, expr::QExpr, eq_indexes::Vector{SubSpaceIndex}, neq_blocks::Vector{Vector{SubSpaceIndex}}) = QSum(q.statespace, expr, eq_indexes, neq_blocks, q.parent)
+modify_expr(q::QSum, expr::QExpr) = _QSum(q.statespace, expr, q.eq_indexes, q.neq_blocks)
+modify_expr(q::QSum, expr::Vector{QComposite}) = _QSum(q.statespace, QExpr(q.statespace, expr), q.eq_indexes, q.neq_blocks)
+modify_expr_indexing(q::QSum, expr::QExpr, eq_indexes::Vector{SubSpaceIndex}, neq_blocks::Vector{Vector{SubSpaceIndex}}) = _QSum(q.statespace, expr, eq_indexes, neq_blocks)
 each_term(q::QSum) = q.expr
 each_coeff(q::QSum)::Vector{CFunction} = flatmap_to(each_coeff, each_term(q), CFunction)
 multiply_coeff(q::QSum, coeff::CFunction)::QSum = modify_expr(q, multiply_coeff(q.expr, coeff) )
 get_coeff(q::QSum) = q.statespace.c_one
 all_indexes(q::QSum) = vcat(q.eq_indexes, q.neq_blocks...)
 iter_all_indexes(q::QSum) = Iterators.flatten((q.eq_indexes, Iterators.flatten(q.neq_blocks)))
+iter_all_indexes_with_refs(q::QSum) = Iterators.flatten(( ((q.eq_indexes, i, q.eq_indexes[i]) for i in eachindex(q.eq_indexes)), ((blk, j, blk[j]) for blk in q.neq_blocks for j in eachindex(blk))))   # also returns the current vector and index 
 length_all_indexes(q::QSum) = length(q.eq_indexes) + sum(length(block) for block in q.neq_blocks)
 function is_single_neq(q::QSum)::Bool 
     (length(q.eq_indexes) == 1 && isempty(q.neq_blocks)) || (isempty(q.eq_indexes) && length(q.neq_blocks) == 1)
@@ -97,7 +105,7 @@ end
 
 Constructor of a `QSum` struct. Defines the indexes to sum over, the expressions for which to apply the sum and optionally whether the sum is only over non equal indexes. 
 """
-function Sum(expr::QExpr, eq_indexes::Vector{SubSpaceIndex}, blocks::Vector{Vector{SubSpaceIndex}})::QExpr
+function Sum(statespace::StateSpace, expr::QExpr, eq_indexes::Vector{SubSpaceIndex}, blocks::Vector{Vector{SubSpaceIndex}})::QExpr
     if length(blocks) > 1 
         sort!(blocks)
     end
@@ -120,16 +128,9 @@ function Sum(expr::QExpr, eq_indexes::Vector{SubSpaceIndex}, blocks::Vector{Vect
     if length(sort_unique!(all)) != length(all) 
         error("Sum: indexes must be unique across blocks.")
     end
-    return QExpr(expr.statespace, [QSum(expr.statespace, expr, eq_indexes, new_blocks)])
+    return QExpr(statespace, QSum(statespace, expr, eq_indexes, new_blocks))
 end
-function Sum(expr::QExpr, blocks::Vector{Vector{SubSpaceIndex}},::Val{:nosimp})::QExpr   # for when blocks didn't change! or all indexes are sorted and unique
-    if (length(eq_indexes)==0 && (length(blocks) == 0 || (length(blocks) == 1 && length(blocks[1]) == 0)))
-        return expr 
-    end
-    return QExpr(expr.statespace, [QSum(expr.statespace, expr, blocks_idx, neq_vec)])
-end
-function Sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=false)::QExpr
-    statespace = expr.statespace
+function Sum(statespace::StateSpace, indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=false)::QExpr
     subspace_indexes = SubSpaceIndex.(indexes, Ref(statespace.subspace_info))
     for (i, ind) in enumerate(subspace_indexes)
         for ind2 in subspace_indexes[i+1:end]
@@ -156,18 +157,20 @@ function Sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bo
         end
     end
     subspace_indexes = sort(subspace_indexes, by = expanded)
-    return QExpr(statespace, [QSum( expr, subspace_indexes, neq=neq)])
+    return QExpr(statespace, _QSum(statespace, expr, subspace_indexes, neq=neq))
 end
-function Sum(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false)::QExpr
-    return Sum([index], expr, neq=neq)
+function Sum(statespace::StateSpace, index::Union{String,Symbol}, expr::QExpr; neq::Bool=false)::QExpr
+    return Sum(statespace, [index], expr, neq=neq)
 end
 """ 
-    ∑(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false) -> QSum
-
+      ∑(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false) -> QSum (use \\sum + Enter)
+    sum(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false) -> QSum
 Alternative way to call the `Sum` constructor. Sum(index, expr; neq) = ∑(index, expr; neq).
 """
-∑(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false) = Sum(index, expr, neq=neq)
-∑(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=false) = Sum(indexes, expr, neq=neq)
+∑(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false) = Sum(expr.statespace, index, expr, neq=neq)
+∑(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=false) = Sum(expr.statespace, indexes, expr, neq=neq)
+Base.sum(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false) = Sum(expr.statespace, index, expr, neq=neq)
+Base.sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=false) = Sum(expr.statespace, indexes, expr, neq=neq)
  
 
 
@@ -180,65 +183,50 @@ struct QCompositeProduct <: QMultiComposite
     statespace::StateSpace         # State space of the product.
     coeff_fun::CFunction
     expr::Vector{QComposite} 
-    parent::ParentCell
-    function QCompositeProduct(statespace::StateSpace, coeff_fun::CFunction, expr::Vector{QComposite}, parent::ParentCell, ::Val{:noattach})
-        return new(statespace, coeff_fun, expr, parent)
-    end
 end
-function QCompositeProduct(coeff_fun::CFunction, expr::Vector{QComposite}, parent::ParentCell=Ref{ParentRef}(nothing))
+function _QCompositeProduct(statespace::StateSpace, coeff_fun::CFunction, expr::Vector{QComposite})::Vector{QComposite}
     if length(expr) == 0
-        return IdentityQAtomProduct(ss, coeff_fun)
+        return [IdentityQAtomProduct(statespace, coeff_fun)]
     elseif length(expr) == 1
-        return multiply_coeff(expr[1], coeff_fun)
+        return [multiply_coeff(expr[1], coeff_fun)]
     else
         coeff_fun_mod, expr_mod = separate_coeff_qcomposites(expr, statespace) 
-        return QCompositeProduct(expr[1].statespace, coeff_fun * coeff_fun_mod, expr_mod, parent)
+        return [QCompositeProduct(statespace, coeff_fun * coeff_fun_mod, expr_mod)]
     end
 end
-function QCompositeProduct(coeff_fun::CFunction, expr::Vector{QComposite}, parent::ParentCell, ::Val{:nosimp})
+function _QCompositeProduct(statespace::StateSpace, coeff_fun::CFunction, expr::Vector{QComposite}, ::Val{:nosimp})::Vector{QComposite}
     if length(expr) == 0
-        return IdentityQAtomProduct(ss, coeff_fun)
+        return QComposite[IdentityQAtomProduct(statespace, coeff_fun)]
     elseif length(expr) == 1
-        return multiply_coeff(expr[1], coeff_fun)
+        return QComposite[multiply_coeff(expr[1], coeff_fun)]
     else
-        return QCompositeProduct(expr[1].statespace, coeff_fun, expr, parent)
+        return QComposite[_QCompositeProduct(statespace, coeff_fun, expr)]
     end
 end
-function QCompositeProduct(coeff_fun::CFunction, expr::Vector{QComposite}, ::Val{:nosimp})
-    if length(expr) == 0
-        return IdentityQAtomProduct(ss, coeff_fun)
-    elseif length(expr) == 1
-        return multiply_coeff(expr[1], coeff_fun)
-    else
-        return QCompositeProduct(expr[1].statespace, coeff_fun, expr, Ref{ParentRef}(nothing))
-    end
-end
-modify_expr(q::QCompositeProduct, expr::Vector{QComposite}) = QCompositeProduct(q.coeff_fun, expr, q.parent)
-modify_expr(q::QCompositeProduct, expr::Vector{QComposite},::Val{:nosimp}) = QCompositeProduct(q.coeff_fun, expr, q.parent, Val(:nosimp))
-modify_coeff_expr(q::QCompositeProduct, coeff_fun::CFunction, expr::Vector{QComposite}) = QCompositeProduct(coeff_fun, expr, q.parent)
-modify_coeff_expr(q::QCompositeProduct, coeff_fun::CFunction, expr::Vector{QComposite}, ::Val{:nosimp}) = QCompositeProduct(coeff_fun, expr, q.parent, Val(:nosimp))
-modify_coeff(q::QCompositeProduct, coeff_fun::CFunction)::QCompositeProduct = QCompositeProduct(coeff_fun, q.expr, q.parent, Val(:nosimp))
+modify_expr(q::QCompositeProduct, expr::Vector{QComposite}) = _QCompositeProduct(q.statespace, q.coeff_fun, expr)
+modify_expr(q::QCompositeProduct, expr::Vector{QComposite},::Val{:nosimp}) = _QCompositeProduct(q.statespace, q.coeff_fun, expr, Val(:nosimp))
+modify_coeff_expr(q::QCompositeProduct, coeff_fun::CFunction, expr::Vector{QComposite}) = _QCompositeProduct(q.statespace, coeff_fun, expr)
+modify_coeff_expr(q::QCompositeProduct, coeff_fun::CFunction, expr::Vector{QComposite}, ::Val{:nosimp}) = _QCompositeProduct(q.statespace, coeff_fun, expr, Val(:nosimp))
+modify_coeff(q::QCompositeProduct, coeff_fun::CFunction)::QCompositeProduct = QCompositeProduct(q.statespace, coeff_fun, q.expr)
 
 struct QCommutator <: QMultiComposite
     statespace::StateSpace
     coeff_fun::CFunction
     expr::Vector{QExpr}
-    parent::ParentCell
-    function QCommutator(statespace::StateSpace, coeff_fun::CFunction, expr::Vector{QExpr}, parent::ParentCell)
-        @assert length(expr) == 2 "Commutator consists of 2 expressions, got $length(expr) instead."
-        q = new(QCommutator(statespace, q1.statespace.c_one, QExpr[q1, q2]), parent)
-        return attach_parent_to_children!(q)
+    function QCommutator(statespace::StateSpace, coeff_fun::CFunction, expr::Vector{QExpr})
+        @assert length(expr)==2 "QCommutators require two QExpr, got $(length(expr)) instead."
+        new(statespace, coeff_fun, expr)
     end
 end
-function QCommutator(q1::QExpr, q2::QExpr, coeff_fun::CFunction, parent::ParentCell=Ref{ParentRef}(nothing))
-    return QCommutator(q1.statespace, coeff_fun, QExpr[q1, q2], parent)
+function QCommutator(statespace::StateSpace, q1::QExpr, q2::QExpr, coeff_fun::CFunction)::Vector{QComposite}
+    return QComposite[QCommutator(statespace, coeff_fun, QComposite[q1, q2])]
 end
-function QCommutator(q1::QExpr, q2::QExpr, parent::ParentCell=Ref{ParentRef}(nothing))
-    return QCommutator(q1.statespace, q1.statespace.c_one, QExpr[q1, q2], parent)
+function QCommutator(statespace::StateSpace, q1::QExpr, q2::QExpr)::Vector{QComposite}
+    return QComposite[QCommutator(statespace, statespace.c_one, QExpr(statespace, QComposite[q1, q2]))]
 end
-modify_expr(q::QCommutator, expr::Vector{QExpr}) = QCommutator(q.statespace, q.coeff_fun, expr, q.parent)
-modify_coeff_expr(q::QCommutator, coeff_fun::CFunction, expr::Vector{QExpr}) = QCommutator(q.statespace, coeff_fun, expr, q.parent)
-modify_coeff(q::QCommutator, coeff_fun::CFunction)::QCommutator = QCommutator(q.statespace, coeff_fun, q.expr, q.parent)
+modify_expr(q::QCommutator, expr::Vector{QExpr}) = QComposite[QCommutator(q.statespace, q.coeff_fun, expr)]
+modify_coeff_expr(q::QCommutator, coeff_fun::CFunction, expr::Vector{QExpr}) = QComposite[QCommutator(q.statespace, coeff_fun, expr)]
+modify_coeff(q::QCommutator, coeff_fun::CFunction)::QCommutator = QCommutator(q.statespace, coeff_fun, q.expr)
 each_term(q::QMultiComposite) = q.expr
 each_coeff(q::QMultiComposite)::Vector{CFunction} = CFunction[q.coeff_fun; flatmap_to(each_coeff, each_term(q), CFunction)]
 each_term(q::QComposite) = [q.expr]
@@ -249,57 +237,45 @@ struct QExp <: QComposite
     statespace::StateSpace
     coeff_fun::CFunction
     expr::QExpr
-    parent::ParentCell
-    function QExp(statespace::StateSpace, coeff_fun::CFunction, expr::QExpr, parent::ParentCell=Ref{ParentRef}(nothing))
-        q = new(statespace, coeff_fun, expr, parent)
-        return attach_parent_to_children!(q)
-    end
 end
-function QExp(coeff_fun::CFunction, expr::QExpr, parent::ParentCell=Ref{ParentRef}(nothing))
-    statespace = expr.statespace
+function _QExp(statespace::StateSpace, coeff_fun::CFunction, expr::QExpr)::Vector{QComposite}
     if length(expr) == 1 && isa(expr[1], QLog)
-        return expr[1].expr
+        return QComposite[expr[1].expr]
     elseif is_numeric(expr) 
         sum_of_coeff_funs = sum(qi.coeff_fun for qi in expr)
-        return modify_coeff(expr[1], coeff_fun * exp(sum_of_coeff_funs)) 
+        return QComposite[modify_coeff(expr[1], coeff_fun * exp(sum_of_coeff_funs)) ]
     end
-    return QExp(statespace, coeff_fun, simplify_QExpr(expr), parent)
+    return QComposite[QExp(statespace, coeff_fun, simplify_QExpr(expr))]
 end
 function exp(q::QExpr)::QExpr
-    return QExpr(q.statespace, [QExp(q.statespace.c_one, q)])
+    return QExpr(q.statespace, _QExp(q.statespace, q.statespace.c_one, q))
 end
-modify_expr(q::QExp, expr::QExpr) = QExp(q.coeff_fun, expr, q.parent)
-modify_coeff_expr(q::QExp, coeff_fun::CFunction, expr::QExpr) = QExp(coeff_fun, expr, q.parent)
-modify_coeff(q::QExp, coeff_fun::CFunction) = QExp( q.statespace, coeff_fun, q.expr, q.parent)
+modify_expr(q::QExp, expr::QExpr) = _QExp(q.statespace, q.coeff_fun, expr)
+modify_coeff_expr(q::QExp, coeff_fun::CFunction, expr::QExpr) = _QExp(q.statespace, coeff_fun, expr)
+modify_coeff(q::QExp, coeff_fun::CFunction) = QExp( q.statespace, coeff_fun, q.expr)
 iszero(q::QExp) = iszero(q.coeff_fun) 
 
 struct QLog <: QComposite
     statespace::StateSpace
     coeff_fun::CFunction
     expr::QExpr
-    parent::ParentCell
-    function QLog(statespace::StateSpace, coeff_fun::CFunction, expr::QExpr, parent::ParentCell=Ref{ParentRef}(nothing))
-        q = new(statespace, coeff_fun, expr, parent)
-        return attach_parent_to_children!(q)
-    end
 end
-function QLog(coeff_fun::CFunction, expr::QExpr, parent::ParentCell=Ref{ParentRef}(nothing))
-    statespace = expr.statespace
+function _QLog(statespace::StateSpace, coeff_fun::CFunction, expr::QExpr)::Vector{QComposite}
     if length(expr) == 1 && isa(expr[1], QExp)
-        return set_parent!(expr[1].expr * coeff_fun, parent)
+        return QComposite[expr[1].expr * coeff_fun]
     end
     if is_numeric(expr)
         sum_of_coeff_funs = sum(qi.coeff_fun for qi in expr)
-        return modify_coeff(expr[1], coeff_fun * log(sum_of_coeff_funs)) 
+        return QComposite[modify_coeff(expr[1], coeff_fun * log(sum_of_coeff_funs)) ]
     end
-    return QLog(statespace, coeff_fun, simplify_QExpr(expr), parent)
+    return QComposite[QLog(statespace, coeff_fun, simplify_QExpr(expr))]
 end
 function log(q::QExpr)::QExpr
-    return QExpr(q.statespace, [QLog(q.statespace.c_one, q)])
+    return QExpr(q.statespace, _QLog(q.statespace, q.statespace.c_one, q))
 end
-modify_expr(q::QLog, expr::QExpr) = QLog(q.coeff_fun, expr, q.parent)
-modify_coeff_expr(q::QLog, coeff_fun::CFunction, expr::QExpr) = QLog(coeff_fun, expr, q.parent)
-modify_coeff(q::QLog, coeff_fun::CFunction)::QLog = QLog(q.statespace, coeff_fun, q.expr, q.parent)
+modify_expr(q::QLog, expr::QExpr) = _QLog(q.statespace, q.coeff_fun, expr)
+modify_coeff_expr(q::QLog, coeff_fun::CFunction, expr::QExpr) = _QLog(q.statespace, coeff_fun, expr)
+modify_coeff(q::QLog, coeff_fun::CFunction)::QLog = QLog(q.statespace, coeff_fun, q.expr)
 iszero(q::QLog) = iszero(q.coeff_fun) #|| isone(q.expr) => that should be autosimplified
 
 struct QPower <: QCompositeN
@@ -307,22 +283,16 @@ struct QPower <: QCompositeN
     coeff_fun::CFunction
     n::Int
     expr::QExpr
-    parent::ParentCell
-    function QPower(statespace::StateSpace, coeff_fun::CFunction, n::Int, expr::QExpr, parent::ParentCell=Ref{ParentRef}(nothing))
-
-        q = new(statespace, coeff_fun, n, simplify_QExpr(expr), parent)
-        return attach_parent_to_children!(q)
-    end
 end
-function QPower(coeff_fun::CFunction, n::Int, expr::QExpr, parent::ParentCell=Ref{ParentRef}(nothing))
+function _QPower(statespace::StateSpace, coeff_fun::CFunction, n::Int, expr::QExpr)::Vector{QComposite}
     if is_numeric(expr)
         sum_of_coeff_funs = sum(qi.coeff_fun for qi in expr)
-        return modify_coeff(expr[1], coeff_fun * power(sum_of_coeff_funs, n))
+        return QComposite[modify_coeff(expr[1], coeff_fun * power(sum_of_coeff_funs, n))]
     end
-    return QPower(expr.statespace, coeff_fun, n, expr, parent)
+    return QComposite[QPower(statespace, coeff_fun, n, expr)]
 end
-modify_expr(q::QPower, expr::QExpr) = QPower(q.coeff_fun, q.n, expr)
-modify_coeff_expr(q::QPower, coeff_fun::CFunction, expr::QExpr)::QPower = QPower(coeff_fun, q.n, expr)
+modify_expr(q::QPower, expr::QExpr) = _QPower(q.statespace, q.coeff_fun, q.n, expr)
+modify_coeff_expr(q::QPower, coeff_fun::CFunction, expr::QExpr)::QPower = _QPower(q.statespace, coeff_fun, q.n, expr)
 modify_coeff(q::QPower, coeff_fun::CFunction) = QPower(q.statespace, coeff_fun, q.n, q.expr)
 
 """ 
@@ -334,7 +304,7 @@ function power(q::QExpr, n::Int)::QExpr
     if n == 1 
          return q 
     end
-    return QExpr(q.statespace, [QPower(q.statespace.c_one, n, q)])
+    return QExpr(q.statespace, _QPower(q.statespace.c_one, n, q))
 end
 
 
@@ -343,18 +313,13 @@ struct QRoot <: QCompositeN
     coeff_fun::CFunction
     n::Int
     expr::QExpr
-    parent::ParentCell
-    function QRoot(statespace::StateSpace, coeff_fun::CFunction, n::Int, expr::QExpr, parent::ParentCell=Ref{ParentRef}(nothing))
-        q = new(statespace, coeff_fun, n, expr, parent)
-        return attach_parent_to_children!(q)
-    end
 end
-function QRoot(coeff_fun::CFunction, n::Int, expr::QExpr, parent::ParentCell=Ref{ParentRef}(nothing))
+function _QRoot(statespace::StateSpace, coeff_fun::CFunction, n::Int, expr::QExpr)::Vector{QComposite}
     if is_numeric(expr)
         sum_of_coeff_funs = sum(qi.coeff_fun for qi in expr)
-        return modify_coeff(expr[1], coeff_fun * root(sum_of_coeff_funs, n))
+        return QComposite[modify_coeff(expr[1], coeff_fun * root(sum_of_coeff_funs, n))]
     end 
-    return QRoot(expr.statespace, coeff_fun, n, expr, parent)
+    return QComposite[QRoot(statespace, coeff_fun, n, expr)]
 end
 """ 
     root(q::QExpr, n::Int)::QExpr
@@ -365,11 +330,11 @@ function root(q::QExpr, n::Int=2)::QExpr
     if n == 1 
         return q 
     end
-    return QExpr(q.statespace, [QRoot(q.statespace.c_one, n, q)])
+    return QExpr(q.statespace, _QRoot(q.statespace, q.statespace.c_one, n, q))
 end
 function sqrt(q::QExpr)::QExpr
-    return QExpr(q.statespace, [QRoot(q.statespace.c_one, 2, q)])
+    return QExpr(q.statespace, _QRoot(q.statespace, q.statespace.c_one, 2, q))
 end
-modify_expr(q::QRoot, expr::QExpr) = QRoot( q.coeff_fun, q.n, expr, q.parent)
-modify_coeff_expr(q::QRoot, coeff_fun::CFunction, expr::QExpr)::QRoot = QRoot(coeff_fun, q.n, expr, q.parent)
-modify_coeff(q::QRoot, coeff_fun::CFunction) = QRoot(q.statespace, coeff_fun, q.n, q.expr, q.parent)
+modify_expr(q::QRoot, expr::QExpr) = _QRoot(q.statespace, q.coeff_fun, q.n, expr)
+modify_coeff_expr(q::QRoot, coeff_fun::CFunction, expr::QExpr)::QRoot = QRoot(coeff_fun, q.n, expr)
+modify_coeff(q::QRoot, coeff_fun::CFunction) = QRoot(q.statespace, coeff_fun, q.n, q.expr)

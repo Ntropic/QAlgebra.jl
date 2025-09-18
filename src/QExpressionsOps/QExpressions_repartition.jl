@@ -1,7 +1,6 @@
 import ..CFunctions: repartition
 export repartition
 
-# Fix this function vor variables 
 function where_defined_to_index_order(statespace::StateSpace, where_defined::Vector{BitVector})::Tuple{Vector{Int}, Vector{Tuple{Int, Int}}}
     # takes where_defined and the ensemble indexes to determine the new order for both operators and variables 
     # for each element of where_defined, we shift all the true elements to the left, and all false elements to the right, we want to get the indexes of the permutation that achieves that 
@@ -17,10 +16,8 @@ function where_defined_to_index_order(statespace::StateSpace, where_defined::Vec
 
     n_ops = length(statespace.I_op)
     n_vars = length(statespace.params)
-
     param_info = statespace.param_info 
     subspace_info = statespace.subspace_info
-    
     op_inds = collect(1:n_ops)
     var_inds = collect(1:n_vars)
 
@@ -46,7 +43,7 @@ end
 
 
 """
-    repartition!(q::diff_QEq) -> diff_QEq
+    repartition!(q::QParent) -> diff_QEq
 
 Reorders the indexes of ensemble-subspaces to the left, so that present indexes are for example  i,j,k and not i,_,k,m .
 This allows simplify to further simplify expressions, by removing differences only in indexing parameters
@@ -134,4 +131,10 @@ function repartition(q::diff_QEq)::diff_QEq
     end
     expr = repartition(q.expr, true, where_defined_lhs, op_inds, var_inds)
     return diff_QEq(q.statespace, q.left_hand_side, expr, Val(:nosimp), do_braket=q.do_braket)
+end
+function repartition(q::QExpr)::QExpr
+    # check index order on left side 
+    where_defined = [falses( n) for n in q.statespace.subspace_info.how_many_by_ensemble]
+    op_inds, var_inds = where_defined_to_index_order(q.statespace, where_defined)
+    return QExpr(q.statespace, repartition(q.expr, true, where_defined, op_inds, var_inds))
 end

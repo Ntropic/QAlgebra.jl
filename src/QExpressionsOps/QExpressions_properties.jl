@@ -15,6 +15,9 @@ end
 function is_numeric(t::QTerm, statespace::StateSpace)::Bool
     return statespace.I_op == t.op_indices
 end
+function is_numeric(t::QTerm, index::Int, statespace::StateSpace)::Bool
+    return statespace.I_op[index] == t.op_indices[index]
+end
 function is_numeric(t::QAbstract, statespace::StateSpace)::Bool
     return false
 end
@@ -261,7 +264,7 @@ function where_acting(q::QAtomProduct)::BitVector
     # combine the action of all of its constituents via OR
     statespace = q.statespace 
     if length(q.expr) == 0
-        return zeros(Bool, length(statespace.I_op))
+        return falses(length(statespace.I_op))
     else
         return mapreduce(expr -> where_acting(expr, statespace), .|, q.expr)
     end
