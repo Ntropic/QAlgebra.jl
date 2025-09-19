@@ -91,7 +91,7 @@ export @define, @define_basics, QExpr2CFunction
 
 export contains_abstract, are_indexes_defined, which_summations_acting, which_summations_to_root
 export substitute, Substitution, --> 
-export repartition!,repartition, neq, flatten
+export repartition!,repartition, neq, flatsums, complexsums
 export QExpr2string   # remove later 
 end # module QAlgebra
 

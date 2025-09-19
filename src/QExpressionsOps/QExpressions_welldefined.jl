@@ -97,6 +97,30 @@ function which_summations_acting(q::QSum, where_acting::Vector{BitVector}, which
     return where_acting
 end
 
+# gather a unique list of SubSpaceIndexes from nested QSums 
+function gather_summation_indexes!(q::T, curr_inds::Vector{SubSpaceIndex}=SubSpaceIndex[])::Vector{SubSpaceIndex} where T<: QComposite
+    return gather_summation_indexes!(q.expr, curr_inds)
+end
+function gather_summation_indexes!(q::T, curr_inds::Vector{SubSpaceIndex}=SubSpaceIndex[])::Vector{SubSpaceIndex} where T<: QMultiComposite
+    for t in q.expr 
+        curr_inds = gather_summation_indexes!(t, curr_inds)
+    end
+    return curr_inds 
+end
+function gather_summation_indexes!(q::QExpr, curr_inds::Vector{SubSpaceIndex}=SubSpaceIndex[])::Vector{SubSpaceIndex}
+    for t in q.terms 
+        curr_inds = gather_summation_indexes!(t, curr_inds)
+    end
+    return curr_inds
+end
+gather_summation_indexes!(q::QAtomProduct, curr_inds::Vector{SubSpaceIndex}=SubSpaceIndex[])::Vector{SubSpaceIndex} = curr_inds
+function gather_summation_indexes!(q::QSum, curr_inds::Vector{SubSpaceIndex}=SubSpaceIndex[])::Vector{SubSpaceIndex}
+    for index in iter_all_indexes(q) 
+        sorted_unique_push!(curr_inds, index)
+    end 
+    return curr_inds
+end
+
 
 """ 
     are_indexes_defined(q::diff_QEq)::Bool

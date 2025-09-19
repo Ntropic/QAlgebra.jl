@@ -63,7 +63,7 @@ function variants_C(name::String)
 end
 
 # find first variant, that first searches to the right of a vector, and only if nothing is found searches to the left 
-function findfirstfreeafterbefore(x::Vector, start_index::Int)::Union{Int, Nothing}
+function findfirstfreeafterbefore(x::BitVector, start_index::Int)::Union{Int, Nothing}
     n = length(x) 
     @assert 1 <= start_index <= n "Starting index must be in bounds."
     # Search to the right first, then left
@@ -73,4 +73,14 @@ function findfirstfreeafterbefore(x::Vector, start_index::Int)::Union{Int, Nothi
         end
     end
     return nothing
+end
+
+function sorted_unique_push!(arr::Vector{T}, x::T) where T
+    # Find insertion index with binary search
+    i = searchsortedfirst(arr, x)
+    # Only insert if element is not already there
+    if i > length(arr) || arr[i] != x
+        insert!(arr, i, x)
+    end
+    return arr
 end

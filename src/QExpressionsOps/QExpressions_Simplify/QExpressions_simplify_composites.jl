@@ -52,21 +52,8 @@ function simplify_pair_composite(a::QExp, b::QExp, statespace::StateSpace)::Tupl
     end
 end
 function simplify_pair_composite(a::QSum, b::QSum, statespace::StateSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool}
-    @inline function hasdupes_sorted(v::AbstractVector)
-        for i in 2:length(v)
-            if v[i] == v[i-1]
-                return true
-            end
-        end
-        return false
-    end
-    new_indexes = sort!(vcat(a.indexes, b.indexes))
-    if hasdupes_sorted(new_indexes)
-        error("Two sums cannot have the same summation indexes and be multiplied with one another!")
-    end
-    return [modify_expr_indexes(a, a.expr*b.expr, new_indexes, Val(:nosort))], true, false, false
+    return a*b, true, false, false
 end
-
 function simplify_pair_composite(a::QSum, b::QAtomProduct, statespace::StateSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool}
     return [modify_expr(a, a.expr * b)], true, false, false
 end

@@ -213,7 +213,7 @@ function iszero(c::CCustomType)
     # 1. First check coeff
     iszero(c.coeff) && return true
     # 2. Substitute arguments into the base definition
-    substituted = substitute_and_simplify(c.ctype_def.fun, c.ctype_def.abstract_parameters, c.expr)
+    substituted = simplify(substitute(c.ctype_def.fun, c.ctype_def.abstract_parameters, c.expr))
     # 3. Check if the expanded form is zero
     return iszero(substituted)
 end

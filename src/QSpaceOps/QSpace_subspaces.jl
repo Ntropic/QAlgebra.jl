@@ -250,7 +250,7 @@ end
 end
 @inline function SummationIndex2SubSpaceIndex(outer_ind::Int, ensemble_ind::Int, summation_ind::Int, info::SubSpaceInfo)::SubSpaceIndex
     inner_ind = summation_ind + info.how_many_non_sum_by_ensemble[ensemble_ind]
-    return SubSpaceInfo(outer_ind, inner_ind, outer_inner_2_expanded(info, outer_ind, inner_ind))
+    return SubSpaceIndex(outer_ind, inner_ind, outer_inner_2_expanded(info, outer_ind, inner_ind))
 end
 
 @inline function Base.isless(a::SubSpaceIndex, b::SubSpaceIndex)::Bool

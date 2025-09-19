@@ -4,7 +4,7 @@ using ..CFunctions
 using ..StringUtils
 using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, /, ^, product, iszero, copy
-using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED, vecvec_or, vecvec_or!
+using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED, vecvec_or, vecvec_or!, findfirstfreeafterbefore, sorted_unique_push!
 using ..CFunctions: isnumeric
 export QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, diff_QEq, base_operators, d_dt #simplify
 export @define, @define_basics, QExpr2CFunction
@@ -71,7 +71,7 @@ end
 @inline function Base.getindex(qterm::QTerm, i::Int)
     return qterm.op_indices[i]
 end
-modify_expr(q::QTerm, new_op_indices::Vector{Int}) = QTerm(new_op_indices, q.time_index)
+modify_expr(q::QTerm, new_op_indices::Vector{Is}) = QTerm(new_op_indices, q.time_index)
 function modify_time_index(q::QTerm, new_time_index::Int)::QTerm
     @assert q.time_index != -1 "Cannot change time_index of non time dependent QTerm."
     QTerm(q.op_indices, new_time_index)
@@ -181,6 +181,7 @@ Construct a [`diff_QEq`](@ref) that represents the time derivative of ⟨lhs⟩ 
 Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
 function diff_QEq(statespace::StateSpace, left_hand_side::QAtomProduct, expr::QExpr; do_braket::Bool=true)
+    @assert !(iscomplex(expr)) "Differential requires simple QSums, i.e. no QSums in QComposites (such as QExp, QLog...) and no nested QSums (multiple and complex indexing at the same level is possible, and immediate nesting is automatically simplified to composite indexes)."
     if !contains_abstract(left_hand_side) && !contains_abstract(expr)
         return repartition(neq(diff_QEq(statespace, left_hand_side, expr, do_braket)))
     else
@@ -344,9 +345,9 @@ macro define(statespace, name, fun=nothing)
         end)
     end
 end
-macro define_basics(statespace)
+macro define_basics(statespace, var=:var0)
     return esc(quote
-        var0 = @define($statespace, "var0")
+        var0 = @define($statespace, var)
         @define($statespace, sin, 1//(2*1im) * (exp(1im*var0) - exp(-1im*var0)))
         @define($statespace, cos, 1//2 * (exp(1im*var0) + exp(-1im*var0)))
     end)

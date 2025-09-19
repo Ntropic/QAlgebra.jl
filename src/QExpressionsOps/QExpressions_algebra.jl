@@ -87,12 +87,7 @@ end
 # Main Multiplication Functions
 # ==============================
 # Public APIs (checked by default)
-*(p1::QAtomProduct, p2::QAtomProduct)::Vector{QComposite} = _mul(p1, p2)
 (*(p1::T1, p2::T2)::Vector{QComposite}) where {T1<:QComposite,T2<:QComposite} = _mul(p1, p2)
-(*(p1::QSum, p2::T2)::Vector{QSum}) where {T2<:QComposite} = _mul(p1, p2)
-(*(p1::QCompositeProduct, p2::T2)::Vector{QComposite}) where {T2<:QComposite} = _mul(p1, p2)
-(*(p2::T2, p1::QCompositeProduct)::Vector{QComposite}) where {T2<:QComposite} = _mul(p2, p1)
-*(p1::QCompositeProduct, p2::QCompositeProduct)::Vector{QComposite} = _mul(p1, p2)
 
 *(Q1::QExpr, Q2::QExpr)::QExpr = _mul(Q1, Q2)
 (*(Q1::QExpr, Q2::T)::QExpr) where {T<:QComposite} = _mul(Q1, Q2)
@@ -197,8 +192,7 @@ end
 # sums eat other QComposites!!! Mjam Mjam Mjam
 @inline function _mul(p1::QSum, p2::QSum, ::Val{C})::Vector{QComposite} where {C}
     statespace_check_if(Val(C), p1, p2)
-    new_expr = p1.expr*p2.expr
-    return modify_expr(p1, modify_expr(p2, new_expr))
+    return decollision_QSum_product(p1, p2)  
 end
 @inline function _mul(p1::QSum, p2::T2, ::Val{C})::Vector{QComposite} where {T2<:QComposite,C}
     statespace_check_if(Val(C), p1, p2)

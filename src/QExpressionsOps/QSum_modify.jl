@@ -1,83 +1,30 @@
 #### Flatten 
-import Base.Iterators: flatten
-export neq, flatten
+export neq, flatsums, complexsums
 
+""" 
+    flatsums(q::QObj)::Bool 
+
+Checks if QSums are flattened in QObj. Returns true if there are no nested QSums. 
 """
-flatten(qeq::QExpr) -> QExpr
+flatsums(q::QSum, has_sum::Bool=false)::Bool = has_sum ? false : flatsums(q.expr, has_sum) 
+(flatsums(q::T, has_sum::Bool=false)::Bool) where {T<:QComposite} = flatsums(q.expr, has_sum) 
+flatsums(q::QAtomProduct, has_sum::Bool=false) = true 
+(flatsums(q::T, has_sum::Bool=false)::Bool) where {T<:QMultiComposite} = all(flatsums.(q.expr, has_sum))  
+flatsums(q::QExpr, has_sum::Bool=false)::Bool = all(flatsums.(q.terms, has_sum))  
+flatsums(q::diff_QEq)::Bool = flatsums(q.expr)
 
-Flattens nested Sums in quantum Equations (QExpr).
-Does not support QSums within QComposites within QSums!
+
+""" 
+    complexsums(q::QObj)::Bool 
+
+Returns ture if any QSum is nested or in a QComposite. 
 """
-function flatten(q::QExpr)::QExpr 
-    subspace_info = q.statespace.subspace_info
-    where_acting::Vector{BitVector} = [falses( s) for s in subspace_info.how_many_sum_by_ensemble]
-    return flatten(q, where_acting)
-end
-
-# seems outdated now! 
-function flatten(s::QSum, where_acting::Vector{BitVector})  # nested sums need distinct indexes -> no auto repartition is done currently
-    # modify where_acting 
-    outer_inds = all_indexes(s)  # materialize once for membership checks
-    info = s.statespace.subspace_info
-    @inbounds for index in outer_inds
-        ensemble, summation = Index2Ensemble_and_Summation(index, info)
-        if where_acting[ensemble][summation] 
-            rem_inds = findall(!, where_acting[ensemble]) .+ info.how_many_non_sum_by_ensemble[ens]
-            remaining_indexes = [SubSpaceIndex(index.outer, rem_ind, info) for rem_ind in rem_inds]
-            error("Summation index $(Index2String(index, info)) already defined in stack! ")
-        end
-        where_acting[ensemble][summation] = true
-    end
-    inner = flatten(s.expr, where_acting)
-
-    base_terms  = QComposite[]
-    nested_sums = QSum[]
-    for t in inner.terms
-        if t isa QSum
-            push!(nested_sums, t)
-        else
-            push!(base_terms, t)
-        end
-    end
-    out_terms = QComposite[]
-
-    # keep direct base terms under the same indexing
-    if !isempty(base_terms)
-        push!(out_terms, QSum(s.statespace, QExpr(s.statespace, base_terms), s.eq_indexes, s.neq_blocks))
-    end
-    for n in nested_sums
-
-        # merge eq indexes (sorted)
-        merged_eq  = sort!(vcat(s.eq_indexes, n.eq_indexes), by=expanded)
-
-        # merge neq blocks
-        merged_neq = vcat(s.neq_blocks, n.neq_blocks)
-        if !isempty(merged_neq)
-            perm = sortperm(merged_neq; by = blk -> expanded(first(blk)))
-            merged_neq = merged_neq[perm]
-        end
-
-        push!(out_terms, QSum(n.statespace, n.expr, merged_eq, merged_neq))
-    end
-    return QExpr(inner.statespace, out_terms)
-end
-
-function flatten(q::QAtomProduct, where_acting::Vector{BitVector})
-    return [q] 
-end
-function flatten(q::T, where_acting::Vector{BitVector}) where T<:QComposite
-    return [modify_expr(q, flatten(q.expr, where_acting))]
-end
-function flatten(q::T, where_acting::Vector{BitVector}) where T<:QMultiComposite
-    return [modify_expr(q, flatten.(q.expr, where_acting))]
-end
-function flatten(qeq::QExpr, where_acting::Vector{BitVector})::QExpr
-    new_terms = QComposite[]
-    for s in qeq.terms
-        append!(new_terms, flatten(s, where_acting))
-    end
-    return QExpr(qeq.statespace, new_terms)
-end
+complexsums(q::QSum, in_complex::Bool=false)::Bool = in_complex ? true : complexsums(q.expr, true)  
+(complexsums(q::T, in_complex::Bool=false)::Bool) where {T<:QComposite} = complexsums(q.expr, true) 
+complexsums(q::QAtomProduct, in_complex::Bool=false) = false 
+(complexsums(q::T, in_complex::Bool=false)::Bool) where {T<:QMultiComposite} = any(complexsums.(q.expr, true))  
+complexsums(q::QExpr, in_complex::Bool=false)::Bool = any(complexsums.(q.terms, in_complex))  
+complexsums(q::diff_QEq)::Bool = complexsums(q.expr)
 
 
 
@@ -295,8 +242,6 @@ function neq_qsum(s::QSum, index::Int, where_defined::Vector{BitVector})::QExpr
     return pieces
 end
 function neq(qeq::QExpr, do_abstract::Bool=false)::QExpr
-    # flatten first 
-    qeq = flatten(qeq)
     if length(qeq) == 0
         return qeq
     end
@@ -318,8 +263,6 @@ end
 
 #### where defined variants 
 function neq(qeq::QExpr, where_defined::Vector{BitVector})::QExpr
-    # flatten first 
-    qeq = flatten(qeq)
     if length(qeq) == 0
         return qeq
     end

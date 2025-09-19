@@ -476,7 +476,7 @@ end
 coeff(x::CLog) = [x.coeff] 
 length(q::CLog) = 1
 repartition(q::CLog, var_tuples::Vector{Tuple{Int, Int}}) = CLog(q.param_info, q.coeff, repartition(q.expr, var_tuples))
-var_exponents(a::CExp) = zeros(Int, a.param_info.dims)
+var_exponents(a::CLog) = zeros(Int, a.param_info.dims)
 
 """
     CPower(coeff::ComplexRational, x::CFunction, exponent::Rational{Int})
@@ -510,7 +510,7 @@ end
 coeff(p::CPower) = [p.coeff]
 length(::CPower) = 1
 repartition(p::CPower, var_tuples::Vector{Tuple{Int,Int}}) = CPower(p.param_info, p.coeff, repartition(p.expr, var_tuples), p.exponent)
-var_exponents(a::CExp) = zeros(Int, a.param_info.dims)
+var_exponents(a::CPower) = zeros(Int, a.param_info.dims)
 
 
 """
@@ -536,7 +536,7 @@ size(v::CVector) = v.row ? (1, length(v.expr)) : (length(v.expr), 1)
 getindex(v::CVector, i::Int) = v.expr[i]
 iterate(v::CVector, st::Int=1) = st > length(v.expr) ? nothing : (v.expr[st], st+1)
 repartition(v::CVector, var_tuples::Vector{Tuple{Int,Int}}) = CVector(v.param_info, v.coeff, repartition.(v.expr, Ref(var_tuples)); row=v.row)
-var_exponents(a::CExp) = zeros(Int, a.param_info.dims)
+var_exponents(a::CVector) = zeros(Int, a.param_info.dims)
 
 
 """
@@ -558,7 +558,7 @@ length(M::CMatrix) = length(M.expr)         # number of elements (m*n)
 size(M::CMatrix) = size(M.expr)
 getindex(M::CMatrix, i::Int, j::Int) = M.expr[i, j]
 repartition(M::CMatrix, var_tuples::Vector{Tuple{Int,Int}}) = CMatrix(M.param_info, M.coeff, reshape(repartition.(M.expr[:], Ref(var_tuples)), size(M.expr)))
-var_exponents(a::CExp) = zeros(Int, a.param_info.dims)
+var_exponents(a::CMatrix) = zeros(Int, a.param_info.dims)
 
 
 #### Some basic functions ##############################################################################################
@@ -586,6 +586,7 @@ contains_non_simple_CFunction(c::CSum)::Bool = any(contains_non_simple_CFunction
 
 include("CFunctionsOps/CFunctions_algebra.jl")
 include("CFunctionsOps/CFunctions_sort.jl")
+include("CFunctionsOps/CFunctions_substitute.jl")
 include("CFunctionsOps/CFunctions_simplify.jl")
 include("CFunctionsOps/CFunctions_orders_eval.jl")
 include("CFunctionsOps/CFunctions_expand.jl")

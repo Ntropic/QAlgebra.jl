@@ -67,14 +67,7 @@ end
 function _QSum(statespace::StateSpace, expr::QExpr, eq_indexes::Vector{SubSpaceIndex}, neq_blocks::Vector{Vector{SubSpaceIndex}})::Vector{QComposite}
     qsum = QSum(statespace, expr, eq_indexes, neq_blocks)
     # run decollision + flatten
-    comps = decollision_QSum(qsum)
-
-    if length(comps) == 1 && comps[1] isa QSum
-        return QComposite[comps[1]]
-    else
-        # wrap multiple composites back into an expr
-        return comps
-    end
+    return decollision_QSum(qsum)
 end
 function _QSum(statespace::StateSpace, expr::QExpr, indexes::Vector{SubSpaceIndex}; neq::Bool=false)::Vector{QComposite}
     isempty(indexes) && return QComposite[expr]
@@ -85,6 +78,8 @@ function _QSum(statespace::StateSpace, expr::QExpr, indexes::Vector{SubSpaceInde
         return _QSum(statespace, expr, idxs_sorted, Vector{Vector{SubSpaceIndex}}())
     end
 end
+modify_expr(q::QSum, expr::QExpr, ::Val{:nodecollision}) = QSum(q.statespace, expr, q.eq_indexes, q.neq_blocks)
+modify_expr(q::QSum, expr::Vector{QComposite}, ::Val{:nodecollision}) = QSum(q.statespace, QExpr(q.statespace, expr), q.eq_indexes, q.neq_blocks)
 modify_expr(q::QSum, expr::QExpr) = _QSum(q.statespace, expr, q.eq_indexes, q.neq_blocks)
 modify_expr(q::QSum, expr::Vector{QComposite}) = _QSum(q.statespace, QExpr(q.statespace, expr), q.eq_indexes, q.neq_blocks)
 modify_expr_indexing(q::QSum, expr::QExpr, eq_indexes::Vector{SubSpaceIndex}, neq_blocks::Vector{Vector{SubSpaceIndex}}) = _QSum(q.statespace, expr, eq_indexes, neq_blocks)
