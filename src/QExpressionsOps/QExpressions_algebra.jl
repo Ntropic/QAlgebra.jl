@@ -179,7 +179,7 @@ end
     statespace_check_if(Val(C), p1, p2)
 
     ss = p1.statespace  # same after check
-    if is_numeric(p1)
+    if isnumeric(p1)
         return [modify_coeff(p2, get_coeff(p1) * get_coeff(p2))]
     end
     p1_coeff, p1_new = separate_coeff_qcomposite(p1)
@@ -255,7 +255,7 @@ function /(num::Number, Q::QExpr)::QExpr
     if num == 0
         return QExpr(Q.statespace, QComposite[])  # zero expression
     end
-    if is_numeric(Q)
+    if isnumeric(Q)
         # If Q is purely numeric, collapse to scalar division
         return (num / (sum(get_coeff(t) for t in Q2.terms))) * Identity(Q.statespace)
     else
@@ -268,7 +268,7 @@ function /(num::Number, Q::T) where {T<:QComposite}
     if num == 0
         return QExpr(Q.statespace, QComposite[])
     end
-    if is_numeric(Q)
+    if isnumeric(Q)
         return modify_coeff(num/get_coeff(Q))
     else
         error("Division by non-numeric QComposite is not supported.")
@@ -276,7 +276,7 @@ function /(num::Number, Q::T) where {T<:QComposite}
 end
 
 function /(Q1::QExpr, Q2::QExpr)::QExpr
-    if is_numeric(Q2)
+    if isnumeric(Q2)
         return Q1 * (1 / (sum(get_coeff(t) for t in Q2.terms)))
     else
         error("Division by non-numeric QExpr is not supported.")
@@ -284,7 +284,7 @@ function /(Q1::QExpr, Q2::QExpr)::QExpr
 end
 
 function /(Q1::T1, Q2::T2) where {T1<:QComposite,T2<:QComposite}
-    if is_numeric(Q2)
+    if isnumeric(Q2)
         return Q1 * (1 / get_coeff(Q2))
     else
         error("Division by non-numeric QComposite is not supported.")

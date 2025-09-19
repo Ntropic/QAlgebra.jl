@@ -186,6 +186,7 @@ var_exponents_iter_simple(s::CSum)  = Iterators.flatten(var_exponents_iter_simpl
 var_exponents_iter_simple(p::CProd) = Iterators.flatten(var_exponents_iter_simple.(p.expr))
 var_exponents_iter_simple(f::CFunction) = (zeros(Int, dims(f)),)
 
+import Base: isnumeric
 """
     isnumeric(f::CFunction)
 
@@ -228,7 +229,7 @@ allnegative(a::CAtom) = is_negative(a.coeff)
 allnegative(s::CSum)  = !isempty(s.expr) && all(allnegative, s.expr)
 allnegative(p::CProd) = is_negative(p.coeff)
 allnegative(r::CRational) = allnegative(r.numer)
-allnegative(x::CFunction)  = is_negative(a.coeff)
+allnegative(x::CFunction)  = is_negative(x.coeff)
 
 """
     min_exponents(f::CFunction) -> Vector{Int}

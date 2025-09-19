@@ -86,7 +86,7 @@ end
 
 # CExp / CLog: just compare inner expr
 function isless_same(a::CPower, b::CPower)::Bool
-    a.exponent != b.exponent &&  a.exponent < b.exponent
+    a.exponent != b.exponent &&  return a.exponent < b.exponent
     return isless(a.expr, b.expr)
 end
 function isless_same(a::T, b::T) where T <: CComposite
@@ -95,9 +95,7 @@ end
 
 # CVector: orientation (col<row), then length, then entries pairwise
 function isless_same(a::CVector, b::CVector)
-    if a.row != b.row
-        return (!a.row) && b.row  # columns (row=false) sort before rows (row=true)
-    end
+    a.row != b.row && return ((!a.row) && b.row)  # columns (row=false) sort before rows (row=true)
     la = length(a.expr); lb = length(b.expr)
     la != lb && return la < lb
     return less_vec(a.expr, b.expr)
@@ -112,10 +110,19 @@ function isless_same(a::CMatrix, b::CMatrix)
     return less_vec(vec(a.expr), vec(b.expr))
 end
 
+function isless_same(a::CAbstract, b::CAbstract)
+    a.dag != b.dag && return a.dag < b.dag
+    return a.exponent < b.exponent 
+end
+
+function isless_same(a::CCustomType, b::CCustomType)
+    return less_vec(a.expr, b.expr)
+end
+
 # -------------------------------
 # Cross-type dispatcher (boolean)
 # -------------------------------
-function isless(a::CFunction, b::CFunction)
+function isless(a::S, b::T) where {S<:CFunction, T<:CFunction}
     ta = cf_tag(a); tb = cf_tag(b)
     ta != tb && return ta < tb
     return isless_same(a, b)

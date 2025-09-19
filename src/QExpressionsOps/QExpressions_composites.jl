@@ -236,7 +236,7 @@ end
 function _QExp(statespace::StateSpace, coeff_fun::CFunction, expr::QExpr)::Vector{QComposite}
     if length(expr) == 1 && isa(expr[1], QLog)
         return QComposite[expr[1].expr]
-    elseif is_numeric(expr) 
+    elseif isnumeric(expr) 
         sum_of_coeff_funs = sum(qi.coeff_fun for qi in expr)
         return QComposite[modify_coeff(expr[1], coeff_fun * exp(sum_of_coeff_funs)) ]
     end
@@ -259,7 +259,7 @@ function _QLog(statespace::StateSpace, coeff_fun::CFunction, expr::QExpr)::Vecto
     if length(expr) == 1 && isa(expr[1], QExp)
         return QComposite[expr[1].expr * coeff_fun]
     end
-    if is_numeric(expr)
+    if isnumeric(expr)
         sum_of_coeff_funs = sum(qi.coeff_fun for qi in expr)
         return QComposite[modify_coeff(expr[1], coeff_fun * log(sum_of_coeff_funs)) ]
     end
@@ -280,7 +280,7 @@ struct QPower <: QCompositeN
     expr::QExpr
 end
 function _QPower(statespace::StateSpace, coeff_fun::CFunction, n::Int, expr::QExpr)::Vector{QComposite}
-    if is_numeric(expr)
+    if isnumeric(expr)
         sum_of_coeff_funs = sum(qi.coeff_fun for qi in expr)
         return QComposite[modify_coeff(expr[1], coeff_fun * power(sum_of_coeff_funs, n))]
     end
@@ -310,7 +310,7 @@ struct QRoot <: QCompositeN
     expr::QExpr
 end
 function _QRoot(statespace::StateSpace, coeff_fun::CFunction, n::Int, expr::QExpr)::Vector{QComposite}
-    if is_numeric(expr)
+    if isnumeric(expr)
         sum_of_coeff_funs = sum(qi.coeff_fun for qi in expr)
         return QComposite[modify_coeff(expr[1], coeff_fun * root(sum_of_coeff_funs, n))]
     end 

@@ -63,7 +63,7 @@ using .CFunctions
 export CFunction, CAbstractDefinition, CTypeDefinition, ParameterInfo, add_cabstract!, add_ctype!, CAbstract, CCustomType, CAtom, CSum, CRational, CProd, CExp, CLog
 export CMatrix, CVector, CPower
 export repartition, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
-export isnumeric, coeff, var_exponents, expand
+export coeff, var_exponents, expand, substitute
 export contains_non_simple_CFunction
 export define_cabstract, define_ctype, list_cabstracts, list_ctypes
 export which_ensemble_acting
@@ -82,7 +82,7 @@ using .QExpressions
 export QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QAtomProduct, QSum, Sum, ∑, QCompositeProduct, diff_QEq, d_dt
 export QCommutator, QExp, QLog, QPower, power, QRoot, root #, simplify
 export Dag, Commutator, same_statespace
-export is_numeric, is_t_var, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, max_moment_of_terms, contains_which_t_indexes, where_acting
+export is_t_var, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, max_moment_of_terms, contains_which_t_indexes, where_acting
 export is_unitary, is_hermitian, substitution_properties_fulfilled
 export base_operators, QExprLookup 
 export string, latex_string
@@ -90,7 +90,7 @@ export term
 export @define, @define_basics, QExpr2CFunction
 
 export contains_abstract, are_indexes_defined, which_summations_acting, which_summations_to_root
-export substitute, Substitution, --> 
+export Substitution, --> 
 export repartition!,repartition, neq, flatsums, complexsums
 export QExpr2string   # remove later 
 end # module QAlgebra

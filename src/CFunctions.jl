@@ -6,10 +6,10 @@ using ..QAlgebra: get_default, FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
 
 export CFunction, CAbstractDefinition, CTypeDefinition, ParameterInfo, add_cabstract!, add_ctype!, CAbstract, CCustomType, CAtom, CSum, CRational, CProd, CExp, CLog, CPower, CVector, CMatrix
 export CMatrix, CVector, CPower
-export isnumeric, coeff, var_exponents
+export coeff, var_exponents
 export contains_non_simple_CFunction
 export define_cabstract, define_ctype, list_cabstracts, list_ctypes
-export which_ensemble_acting
+export which_ensemble_acting, substitute
 
 import Base: copy, exp, log, length, getindex, iterate, size
 import ComplexRationals: isonelike

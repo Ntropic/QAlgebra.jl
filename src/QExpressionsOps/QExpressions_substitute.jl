@@ -1,6 +1,6 @@
-export substitute, Substitution, -->
+export Substitution, -->
 
-
+import ..CFunctions: substitute
 # --- typed Substitution + ASCII operator ------------------------------------------
 """
     Substitution(from_expr::QExpr, to_expr::QExpr)

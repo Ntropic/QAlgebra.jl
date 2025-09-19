@@ -83,23 +83,23 @@ function _expand(r::CRational, ::Val{M}, ::Val{T}, args...) where {M,T}
     n2, e1 = _expand(r.numer, Val(M), Val(T), args...)
     d2, e2 = _expand(r.denom, Val(M), Val(T), args...)
     any_exp = e1 || e2
-    return any_exp ? (CRational(n2, d2, Val(:nosimp)), true) : (r, false)
+    return any_exp ? (CRational(r.param_info, n2, d2, Val(:nosimp)), true) : (r, false)
 end
 
 # Exp / Log
 function _expand(e::CExp, ::Val{M}, ::Val{T}, args...) where {M,T}
     x2, ch = _expand(e.expr, Val(M), Val(T), args...)
-    return ch ? (CExp(e.coeff, x2, Val(:nosimp)), true) : (e, false)
+    return ch ? (CExp(e.param_info, e.coeff, x2, Val(:nosimp)), true) : (e, false)
 end
 function _expand(l::CLog, ::Val{M}, ::Val{T}, args...) where {M,T}
     x2, ch = _expand(l.expr, Val(M), Val(T), args...)
-    return ch ? (CLog(l.coeff, x2, Val(:nosimp)), true) : (l, false)
+    return ch ? (CLog(l.param_info, l.coeff, x2, Val(:nosimp)), true) : (l, false)
 end
 
 # Power
 function _expand(p::CPower, ::Val{M}, ::Val{T}, args...) where {M,T}
     x2, ch = _expand(p.expr, Val(M), Val(T), args...)
-    return ch ? (CPower(p.coeff, x2, p.exponent, Val(:nosimp)), true) : (p, false)
+    return ch ? (CPower(p.param_info, p.coeff, x2, p.exponent, Val(:nosimp)), true) : (p, false)
 end
 
 # Vector / Matrix (descend elementwise; keep coeff/orientation/shape)
@@ -111,7 +111,7 @@ function _expand(v::CVector, ::Val{M}, ::Val{T}, args...) where {M,T}
         ent2[i] = t2
         any_exp |= e
     end
-    return any_exp ? (CVector(v.coeff, ent2; row=v.row), true) : (v, false)
+    return any_exp ? (CVector(v.param_info, v.coeff, ent2; row=v.row), true) : (v, false)
 end
 function _expand(A::CMatrix, ::Val{M}, ::Val{T}, args...) where {M,T}
     m, n = size(A.expr)
@@ -122,7 +122,7 @@ function _expand(A::CMatrix, ::Val{M}, ::Val{T}, args...) where {M,T}
         flat[k] = t2
         any_exp |= ch
     end
-    return any_exp ? (CMatrix(A.coeff, reshape(flat, m, n)), true) : (A, false)
+    return any_exp ? (CMatrix(A.param_info, A.coeff, reshape(flat, m, n)), true) : (A, false)
 end
 
 ########################################################################################################################################################################
@@ -323,7 +323,7 @@ function _log_collect_terms(x::CFunction, acc::Vector{Tuple{ComplexRational,CFun
     if x isa CProd
         # coefficient factor
         if !isone(x.coeff)
-            push!(acc, (ComplexRational(1,0,1), CAtom(x.coeff, zeros(Int, dims(x)))))
+            push!(acc, (ComplexRational(1,0,1), CAtom(x.param_info, x.coeff, zeros(Int, dims(x)))))
         end
         @inbounds for t in x.terms
             _log_collect_terms(t, acc)
@@ -339,7 +339,7 @@ function _log_collect_terms(x::CFunction, acc::Vector{Tuple{ComplexRational,CFun
     elseif x isa CPower
         # q * log(base) + log(coeff) if coeff != 1
         if !isone(x.coeff)
-            push!(acc, (ComplexRational(1,0,1), CAtom(x.coeff, zeros(Int, dims(x)))))
+            push!(acc, (ComplexRational(1,0,1), CAtom(x.param_info, x.coeff, zeros(Int, dims(x)))))
         end
         push!(acc, (_qcr(x.exponent), x.expr))
     else

@@ -98,7 +98,7 @@ end
 
 # braced not used here as an argument use, it in other QComposites that contain QExpr to determine groupings!
 function QComposite2string(q::QAtomProduct; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
-    if is_numeric(q)
+    if isnumeric(q)
         curr_sign, curr_str = to_stringer(q.coeff_fun, braced=false, do_frac=do_frac, do_latex=do_latex)
         if return_if_braced
             return curr_sign, curr_str, length(q.coeff_fun) == 1
@@ -256,7 +256,7 @@ function qAtomProduct_group2string(qs::Tuple{Union{CAtom, CSum}, Vector{QAtomPro
     # assume the qs can be simple grouped (see the functions: simple_combinable_Fs, group_Fs)
     F = qs[1]
     qs = qs[2]
-    has_op = any([!is_numeric(s) for s in qs])
+    has_op = any([!isnumeric(s) for s in qs])
     f_sign, f_str = to_stringer(F; do_latex=do_latex, braced=braced, do_frac=do_frac, has_op=has_op)
     q_str = QComposites2string(qs; do_latex=do_latex, braced=braced, do_frac=do_frac, separate_sign=false, do_braket=do_braket)  # don't worry about internal signs, this has already been taken care off by the sign handling of the grouping 
     return f_sign, f_str, q_str

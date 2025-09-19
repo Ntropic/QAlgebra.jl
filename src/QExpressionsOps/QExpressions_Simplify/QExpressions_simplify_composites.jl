@@ -36,7 +36,7 @@ end
 function simplify_pair_composite(a::QExp, b::QExp, statespace::StateSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool} 
     if commutes(a,b)
         new_expr = a.expr+b.expr 
-        if is_numeric(new_expr)
+        if isnumeric(new_expr)
             if length(new_expr) == 0 
                 coeff_fun = statespace.c_one 
             elseif length(new_expr) == 1
@@ -91,7 +91,7 @@ function add_QComposite_to_QCompositeProduct(terms::AbstractVector{<:QComposite}
                 else
                     curr_coeff = ss.c_one
                     for p in pair 
-                        if !is_numeric(p) 
+                        if !isnumeric(p) 
                             push!(nt, p) 
                         else 
                             curr_coeff *= p.coeff_fun

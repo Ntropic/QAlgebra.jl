@@ -93,7 +93,7 @@ function simplify_QExp(q::QExp)::Vector{QComposite}
     if length(q.expr) == 1 && isa(q.expr[1], QLog)
         return q.expr[1].expr
     end
-    if is_numeric(q.expr) 
+    if isnumeric(q.expr) 
         sum_of_coeff_funs = sum(qi.coeff_fun for qi in q.expr)
         return [ modify_coeff(q.expr[1], q.coeff_fun * exp(sum_of_coeff_funs)) ]
     end
@@ -104,7 +104,7 @@ function simplify_QLog(q::QLog)::Vector{QComposite}
     if length(q.expr) == 1 && isa(q.expr[1], QExp)
         return q.expr[1].expr
     end
-    if is_numeric(q.expr)
+    if isnumeric(q.expr)
         sum_of_coeff_funs = sum(qi.coeff_fun for qi in q.expr)
         return [ modify_coeff(q.expr[1], q.coeff_fun * log(sum_of_coeff_funs)) ]
     end
@@ -112,14 +112,14 @@ function simplify_QLog(q::QLog)::Vector{QComposite}
 end
 
 function simplify_QPower(q::QPower)::Vector{QComposite}
-    if is_numeric(q.expr)
+    if isnumeric(q.expr)
         sum_of_coeff_funs = sum(qi.coeff_fun for qi in q.expr)
         return [ modify_coeff(q.expr[1], q.coeff_fun * power(sum_of_coeff_funs, q.n)) ]
     end
     return [ q ]
 end
 function simplify_QRoot(q::QRoot)::Vector{QComposite}
-    if is_numeric(q.expr)
+    if isnumeric(q.expr)
         sum_of_coeff_funs = sum(qi.coeff_fun for qi in q.expr)
         return [ modify_coeff(q.expr[1], q.coeff_fun * root(sum_of_coeff_funs, q.n)) ]
     end    

@@ -60,7 +60,7 @@ end
         out = Vector{Tuple{ComplexRational, Vector{QAtom}}}()
         @inbounds for (t, c) in zip(Ts, Cs)
             if !iszero(c) 
-                if is_numeric(t, ss) 
+                if isnumeric(t, ss) 
                     push!(out, (c, Vector{QAtom}([])))
                 else
                     push!(out, (c, Vector{QAtom}([t])))

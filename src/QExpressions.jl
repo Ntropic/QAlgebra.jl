@@ -269,7 +269,7 @@ include("QExpressionsOps/QExpressions_cumulants.jl")
 import ..CFunctions: define_cabstract, define_ctype, list_cabstracts, list_ctypes, c_abstract_exists
 
 function QExpr2CFunction(q::QExpr)::CFunction 
-    if is_numeric(q) 
+    if isnumeric(q) 
         if length(q.terms) < 1 
             error("Cannot extract CFunction from empty QExpr.") 
         end 
@@ -345,7 +345,7 @@ macro define(statespace, name, fun=nothing)
         end)
     end
 end
-macro define_basics(statespace, var=:var0)
+macro define_basics(statespace, var=:q)
     return esc(quote
         var0 = @define($statespace, var)
         @define($statespace, sin, 1//(2*1im) * (exp(1im*var0) - exp(-1im*var0)))

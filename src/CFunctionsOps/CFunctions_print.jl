@@ -212,7 +212,7 @@ function stringer(e::CExp; do_latex::Bool=false, do_frac::Bool=true, braced::Boo
     body = if use_fn
         (do_latex ? "\\exp " : "exp") * brace(x_str_signed; do_latex=do_latex)
     else
-        do_latex ? " e^{" * x_str_signed * "}" : " e" * str2sup(x_str_signed)
+        do_latex ? " e^{" * x_str_signed * "}" : " exp(" * x_str_signed * ")"
     end
 
     return with_coeff(e.coeff, body; do_latex=do_latex)

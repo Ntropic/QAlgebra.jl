@@ -1,54 +1,51 @@
-export is_numeric, is_t_var, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, contains_which_t_indexes, max_moment_of_terms, where_acting
+export is_t_var, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, contains_which_t_indexes, max_moment_of_terms, where_acting
 export is_unitary, is_hermitian, substitution_properties_fulfilled, same_statespace, statespace_check
+import ..CFunctions: isnumeric
 """ 
-    is_numeric(t::QTerm, qspace::StateSpace) -> Bool
-    is_numeric(t::QAbstract, qspace::StateSpace) -> Bool
-    is_numeric(p::QAtomProduct) -> Bool
-    is_numeric(s::QSum) -> Bool
-    is_numeric(expr::QExpr) -> Bool
+    isnumeric(t::QObj) -> Bool
 
 Returns true either if it is zero or it has only neutral elements for operators.
 """
-function is_numeric(op_indices::Vector{Vector{Int}}, statespace::StateSpace)::Bool
+function isnumeric(op_indices::Vector{Vector{Int}}, statespace::StateSpace)::Bool
     return statespace.I_op == op_indices
 end
-function is_numeric(t::QTerm, statespace::StateSpace)::Bool
+function isnumeric(t::QTerm, statespace::StateSpace)::Bool
     return statespace.I_op == t.op_indices
 end
-function is_numeric(t::QTerm, index::Int, statespace::StateSpace)::Bool
+function isnumeric(t::QTerm, index::Int, statespace::StateSpace)::Bool
     return statespace.I_op[index] == t.op_indices[index]
 end
-function is_numeric(t::QAbstract, statespace::StateSpace)::Bool
+function isnumeric(t::QAbstract, statespace::StateSpace)::Bool
     return false
 end
-function is_numeric(e::QAtomProduct)
+function isnumeric(e::QAtomProduct)
     if length(e.expr) > 1
         return false 
     elseif length(e.expr) == 0 
         return true
     else 
-        return iszero(e.coeff_fun) || all([is_numeric(e.expr[1], e.statespace) for x in e.expr]) 
+        return iszero(e.coeff_fun) || all([isnumeric(e.expr[1], e.statespace) for x in e.expr]) 
     end
 end
-function is_numeric(e::T) where T<:QComposite
+function isnumeric(e::T) where T<:QComposite
     return iszero(e.coeff_fun)
 end
-function is_numeric(e::T) where T<:QMultiComposite
+function isnumeric(e::T) where T<:QMultiComposite
     return iszero(e.coeff_fun) 
 end
 
-function is_numeric(s::QSum)::Bool
-    return false # is_numeric(s.expr)
+function isnumeric(s::QSum)::Bool
+    return false # isnumeric(s.expr)
 end
-function is_numeric(expr::QExpr)::Bool
+function isnumeric(expr::QExpr)::Bool
     terms = expr.terms
     isempty(terms) && return true  # No terms = numeric 0
-    return all(is_numeric, terms)
+    return all(isnumeric, terms)
 end
 
 function is_t_var(t::QExpr)::Bool
     # must be a single QAtomProduct term that is numeric
-    if length(t) != 1 || !(t.terms[1] isa QAtomProduct) || !is_numeric(t.terms[1])
+    if length(t) != 1 || !(t.terms[1] isa QAtomProduct) || !isnumeric(t.terms[1])
         return false
     end
 
@@ -230,7 +227,7 @@ function isaQAtomProduct(q::QExpr)::Bool
 end
 import Base: isone, iszero
 function isone(q::QAtomProduct)::Bool
-    if is_numeric(q) && isnumeric(q.coeff_fun)
+    if isnumeric(q) && isnumeric(q.coeff_fun)
         return isone(q.coeff_fun)
     end
     return false
@@ -426,7 +423,7 @@ function ==(a::QSum, b::QSum)
 end
 
 function ==(expr::QExpr, n::Number)
-    if is_numeric(expr)
+    if isnumeric(expr)
         if length(simple_expr.terms) == 0
             return isapprox(0, n)
         else

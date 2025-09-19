@@ -156,7 +156,7 @@ end
 function decollision_QSum(q::QTerm, decollision::QSumDecollisionInds, statespace::StateSpace)::QTerm
     op_indices = copy(q.op_indices)
     @inbounds for (old_ind, new_ind) in decollision.op_tuples
-        @assert is_numeric(q, new_ind, statespace) "Cannot decollision QTerm, because new summation index is already in use, albeit undefined!"
+        @assert isnumeric(q, new_ind, statespace) "Cannot decollision QTerm, because new summation index is already in use, albeit undefined!"
         op_indices[old_ind], op_indices[new_ind] = op_indices[new_ind], op_indices[old_ind]
     end
     return QTerm(op_indices)
