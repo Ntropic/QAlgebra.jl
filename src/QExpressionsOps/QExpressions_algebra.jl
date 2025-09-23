@@ -3,6 +3,19 @@ export Dag, Commutator
 
 const _CHK   = Val(true)
 const _NOCHK = Val(false)
+
+@inline function lookup_operation_error(op::Symbol, ql::QExprLookup)
+    combos = join(_available_lookup_combos(ql), ", ")
+    error("Pick a key before `$op`: choose from $(combos).")
+end
+
+# Guard algebra ops on lookups so users provide explicit arguments
+for op in (:+, :-, :*, :^)
+    @eval begin
+        Base.$op(ql::QExprLookup, other) = lookup_operation_error($(QuoteNode(op)), ql)
+        Base.$op(other, ql::QExprLookup) = lookup_operation_error($(QuoteNode(op)), ql)
+    end
+end
 # Default-to-checked helper entry points
 @inline _add(a, b) = _add(a, b, _CHK)
 @inline _sub(a, b) = _sub(a, b, _CHK)
@@ -127,7 +140,7 @@ end
 *(num::Number, Q1::QExpr)::QExpr = Q1 * num
 
 function *(Q1::T, num::Number)::Vector{QComposite} where {T<:QComposite}
-    return [modify_expr(Q1, Q1.expr * num)]
+    return modify_expr(Q1, Q1.expr * num)
 end
 (*(num::Number, Q2::T)::Vector{QComposite}) where {T<:QComposite} = Q2 * num
 
@@ -239,8 +252,12 @@ end
     p1_coeff, p1_new = separate_coeff_qcomposite(p1)
     p2_coeff, p2_new = separate_coeff_qcomposite(p2)
     coeff = p1_coeff * p2_coeff
-    c, t = add_QComposite_to_QCompositeProduct([p1_new], p2_new, ss)
-    return _QCompositeProduct(p1.qspace, c * coeff, t, Val(:nosimp))
+    branches = add_QComposite_to_QCompositeProduct([p1_new], p2_new, ss)
+    results = QComposite[]
+    for (c, t) in branches
+        append!(results, _QCompositeProduct(p1.qspace, c * coeff, t, Val(:nosimp)))
+    end
+    return results
 end
 
 # sums eat other QComposites!!! Mjam Mjam Mjam
@@ -521,6 +538,8 @@ function Dag(qspace::QSpace, t::QAbstract)::Vector{Tuple{QAbstract,ComplexRation
     return Tuple{QAbstract,ComplexRational}[(new_t, one(ComplexRational))]
 end
 
+Dag(ql::QExprLookup) = lookup_operation_error(:Dag, ql)
+
 function Dag(p::QAtomProduct)::Vector{QAtomProduct}
     terms::Vector{Vector{Tuple{QAtom,ComplexRational}}} = []
     for t in reverse(p.expr)
@@ -549,7 +568,7 @@ function Dag(Q::QExpr)::QExpr
 end
 
 function Dag(t::T)::Vector{QComposite} where {T<:QComposite}
-    return QComposite[modify_expr(t, Dag(t.expr))]
+    return modify_expr(t, Dag(t.expr))
 end
 
 function Dag(t::QMultiComposite)::Vector{QMultiComposite}
@@ -557,7 +576,12 @@ function Dag(t::QMultiComposite)::Vector{QMultiComposite}
     for expr in reverse(t.expr)
         append!(dag_exprs, Dag(expr))
     end
-    return [modify_expr(t, dag_exprs)]
+    results = Vector{QMultiComposite}()
+    for new_term in modify_expr(t, dag_exprs)
+        new_term isa QMultiComposite || error("Dag expected QMultiComposite, got $(typeof(new_term)).")
+        push!(results, new_term)
+    end
+    return results
 end
 
 adjoint(Q::QExpr) = Dag(Q)

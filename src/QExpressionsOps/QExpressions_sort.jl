@@ -172,7 +172,8 @@ sort!(qprod::QAtomProduct; kwargs...) = qprod
 
 # QMultiComposite — recursively sort children, not the outer
 function sort(q::T; kwargs...) where {T<:QMultiComposite}
-    return modify_expr(q, sort.(q.expr; kwargs...))
+    sorted_children = map(only, sort.(q.expr; kwargs...))
+    return only(modify_expr(q, sorted_children))
 end
 function sort!(q::T; kwargs...) where {T<:QMultiComposite}
     modify_expr!(q, sort!.(q.expr; kwargs...))
@@ -181,7 +182,7 @@ end
 
 # QComposite — sort inner expr only
 function sort(q::T; kwargs...) where {T<:QComposite}
-    return modify_expr(q, sort(q.expr; kwargs...))
+    return only(modify_expr(q, sort(q.expr; kwargs...)))
 end
 function sort!(q::T; kwargs...) where {T<:QComposite}
     modify_expr!(q, sort!(q.expr; kwargs...))

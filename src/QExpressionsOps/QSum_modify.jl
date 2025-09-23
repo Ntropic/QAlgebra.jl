@@ -111,9 +111,12 @@ function term_equal_indexes(q::T, index1::SubSpaceIndex, index2::SubSpaceIndex, 
     if !changed
         return false, [q]
     end
-    results::Vector{T} = []
+    results = Vector{T}()
     for v in variants
-        push!(results, modify_expr(q, v))
+        for new_term in modify_expr(q, v)
+            new_term isa T || error("modify_expr returned $(typeof(new_term)), expected $(T).")
+            push!(results, new_term)
+        end
     end
     return true, results
 end
@@ -123,9 +126,12 @@ function term_equal_indexes(q::T, index1::SubSpaceIndex, index2::SubSpaceIndex, 
     if !changed
         return false, [q]
     end
-    results::Vector{T} = []
+    results = Vector{T}()
     for v in variants
-        push!(results, modify_expr(q, v))
+        for new_term in modify_expr(q, v)
+            new_term isa T || error("modify_expr returned $(typeof(new_term)), expected $(T).")
+            push!(results, new_term)
+        end
     end
     return true, results
 end
@@ -160,10 +166,10 @@ function neq(q::QAtomProduct, do_abstract::Bool=false)::QAtomProduct
     return q 
 end
 function neq(q::T, do_abstract::Bool=false)::T where {T<:QComposite}
-    return modify_expr(q, neq(q.expr, do_abstract))
+    return only(modify_expr(q, neq(q.expr, do_abstract)))
 end
 function neq(q::T, do_abstract::Bool=false)::T where {T<:QMultiComposite}
-    return modify_expr(q, neq.(q.expr, do_abstract))
+    return only(modify_expr(q, neq.(q.expr, do_abstract)))
 end
 
 # -------------------------------------------------------------------
@@ -405,10 +411,10 @@ function neq(q::QAtomProduct, where_defined::Vector{BitVector})::QAtomProduct
     return q 
 end
 function neq(q::T, where_defined::Vector{BitVector})::T where {T<:QComposite}
-    return modify_expr(q, neq(q.expr, where_defined))
+    return only(modify_expr(q, neq(q.expr, where_defined)))
 end
 function neq(q::T, where_defined::Vector{BitVector})::T where {T<:QMultiComposite}
-    return modify_expr(q, neq.(q.expr, where_defined))
+    return only(modify_expr(q, neq.(q.expr, where_defined)))
 end
 
 function neq(q::diff_QEq)

@@ -211,7 +211,7 @@ function reorder(q::QSum, mode::Val{M}, where_defined::Vector{BitVector}, orders
 
     if !add_at_sum
         inner = reorder(q.expr, mode, where_defined, orders; add_at_sum=false)
-        return modify_expr(q, inner, Val(:nodecollision))
+        return only(modify_expr(q, inner, Val(:nodecollision)))
     end
 
     new_where_defined = copy.(where_defined)
@@ -239,7 +239,7 @@ function reorder(q::QSum, mode::Val{M}, where_defined::Vector{BitVector}, orders
         push!(new_blocks, remapped)
     end
 
-    return modify_expr_indexing(q, inner, new_eq, new_blocks, Val(:nodecollision))
+    return only(modify_expr_indexing(q, inner, new_eq, new_blocks, Val(:nodecollision)))
 end
 
 function reorder(q::QObj, mode::Val{M}, where_defined::Vector{BitVector}, orders::ReorderOrders; add_at_sum::Bool) where M
@@ -361,7 +361,7 @@ end
 function _reorder_time(q::QSum, ctx::TimeReorderContext)
     inner = _reorder_time(q.expr, ctx)
     inner === q.expr && return q
-    return modify_expr(q, inner, Val(:nodecollision))
+    return only(modify_expr(q, inner, Val(:nodecollision)))
 end
 
 function _reorder_time(q::QExpr, ctx::TimeReorderContext)

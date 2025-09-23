@@ -304,18 +304,19 @@ end
 # Any single composite holding one expr
 function _substitute(targ::T, sp::Substitution) where {T<:QComposite}
     # Note: QMultiComposite is <: QComposite; a more specific method follows below.
-    return [modify_expr(targ, _substitute(targ.expr, sp))]
+    return modify_expr(targ, _substitute(targ.expr, sp))
 end
 
 function _substitute(target::QSum, sp::Substitution)
     new_expr = _substitute(target.expr, sp)
-    new_expr === target.expr && return [target]
-    return [modify_expr(target, new_expr, Val(:nodecollision))]
+    new_expr === target.expr && return QComposite[target]
+    return modify_expr(target, new_expr, Val(:nodecollision))
 end
 
 # Any multi-composite holding many sub-expressions
 function _substitute(targ::T, sp::Substitution) where {T<:QMultiComposite}
-    return [modify_expr(targ, map(x -> _substitute(x, sp), targ.expr))]
+    substituted = map(x -> _substitute(x, sp), targ.expr)
+    return modify_expr(targ, map(only, substituted))
 end
 
 # diff_QEq → diff_QEq
@@ -419,7 +420,7 @@ end
 
 function _substitute(target::QSum, ctx::TimeSubContext)::QSum 
     new_expr = _substitute( target.expr, ctx)
-    return modify_expr(target, new_expr)
+    return only(modify_expr(target, new_expr))
 end
 
 function _substitute(target::T, ctx::TimeSubContext)::T where T <: QComposite

@@ -31,7 +31,8 @@ struct QAtomProduct <: QComposite
          new(qspace, qspace.c_one, [expr], separate_expectation_values)
     end
 end
-modify_expr(q::QAtomProduct, expr::Vector{QAtom})::QAtomProduct = QAtomProduct(q.qspace, q.coeff_fun, expr, q.separate_expectation_values)
+modify_expr(q::QAtomProduct, expr::Vector{QAtom})::Vector{QComposite} =
+    QComposite[QAtomProduct(q.qspace, q.coeff_fun, expr, q.separate_expectation_values)]
 modify_coeff_expr(q::QAtomProduct, coeff::CFunction, expr::Vector{QAtom})::QAtomProduct = QAtomProduct(q.qspace, coeff, expr, q.separate_expectation_values)
 modify_coeff(q::QAtomProduct, coeff::CFunction)::QAtomProduct = QAtomProduct(q.qspace, coeff, q.expr, q.separate_expectation_values)
 each_term(q::QAtomProduct) = q.expr
@@ -78,15 +79,20 @@ function _QSum(qspace::QSpace, expr::QExpr, indexes::Vector{SubSpaceIndex}; neq:
         return _QSum(qspace, expr, idxs_sorted, Vector{Vector{SubSpaceIndex}}())
     end
 end
-modify_expr(q::QSum, expr::QExpr, ::Val{:nodecollision}) = QSum(q.qspace, expr, q.eq_indexes, q.neq_blocks)
-modify_expr(q::QSum, expr::Vector{QComposite}, ::Val{:nodecollision}) = QSum(q.qspace, QExpr(q.qspace, expr), q.eq_indexes, q.neq_blocks)
+modify_expr(q::QSum, expr::QExpr, ::Val{:nodecollision}) =
+    QComposite[QSum(q.qspace, expr, q.eq_indexes, q.neq_blocks)]
+modify_expr(q::QSum, expr::Vector{QComposite}, ::Val{:nodecollision}) =
+    QComposite[QSum(q.qspace, QExpr(q.qspace, expr), q.eq_indexes, q.neq_blocks)]
 modify_expr(q::QSum, expr::QExpr) = _QSum(q.qspace, expr, q.eq_indexes, q.neq_blocks)
 modify_expr(q::QSum, expr::Vector{QComposite}) = _QSum(q.qspace, QExpr(q.qspace, expr), q.eq_indexes, q.neq_blocks)
-modify_expr_indexing(q::QSum, expr::QExpr, eq_indexes::Vector{SubSpaceIndex}, neq_blocks::Vector{Vector{SubSpaceIndex}}) = _QSum(q.qspace, expr, eq_indexes, neq_blocks)
-modify_expr_indexing(q::QSum, expr::QExpr, eq_indexes::Vector{SubSpaceIndex}, neq_blocks::Vector{Vector{SubSpaceIndex}}, ::Val{:nodecollision}) = QSum(q.qspace, expr, eq_indexes, neq_blocks)
+modify_expr_indexing(q::QSum, expr::QExpr, eq_indexes::Vector{SubSpaceIndex}, neq_blocks::Vector{Vector{SubSpaceIndex}}) =
+    _QSum(q.qspace, expr, eq_indexes, neq_blocks)
+modify_expr_indexing(q::QSum, expr::QExpr, eq_indexes::Vector{SubSpaceIndex}, neq_blocks::Vector{Vector{SubSpaceIndex}}, ::Val{:nodecollision}) =
+    QComposite[QSum(q.qspace, expr, eq_indexes, neq_blocks)]
 each_term(q::QSum) = q.expr
 each_coeff(q::QSum)::Vector{CFunction} = flatmap_to(each_coeff, each_term(q), CFunction)
-multiply_coeff(q::QSum, coeff::CFunction)::QSum = modify_expr(q, multiply_coeff(q.expr, coeff) )
+multiply_coeff(q::QSum, coeff::CFunction)::QSum =
+    only(modify_expr(q, multiply_coeff(q.expr, coeff)))
 get_coeff(q::QSum) = q.qspace.c_one
 all_indexes(q::QSum) = vcat(q.eq_indexes, q.neq_blocks...)
 iter_all_indexes(q::QSum) = Iterators.flatten((q.eq_indexes, Iterators.flatten(q.neq_blocks)))

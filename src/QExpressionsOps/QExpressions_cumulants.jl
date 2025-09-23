@@ -15,8 +15,8 @@ struct QCumulant <: QComposite
     where_acting::Vector{Int}
 end
 
-function modify_expr(q::QCumulant, expr::QExpr)
-    return QCumulant(q.qspace, q.coeff_fun, q.atom, expr, q.order, q.where_acting)
+function modify_expr(q::QCumulant, expr::QExpr)::Vector{QComposite}
+    return QComposite[QCumulant(q.qspace, q.coeff_fun, q.atom, expr, q.order, q.where_acting)]
 end
 
 function modify_coeff(q::QCumulant, coeff::CFunction)::QCumulant

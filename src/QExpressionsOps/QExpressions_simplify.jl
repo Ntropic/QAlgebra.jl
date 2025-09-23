@@ -43,7 +43,7 @@ function combine_term_sum(t1::QAtomProduct, t2::QAtomProduct)::QAtomProduct
     return QAtomProduct(t1.qspace, t1.coeff_fun + t2.coeff_fun, t1.expr)
 end
 function combine_term_sum(s1::QSum, s2::QSum)::QSum
-    return modify_expr(s1, s1.expr + s2.expr)
+    return only(modify_expr(s1, s1.expr + s2.expr))
 end
 function combine_term_sum(q1::S, q2::S)::QComposite where S<:QComposite 
     return modify_coeff(q1, q1.coeff_fun + q2.coeff_fun)
@@ -146,18 +146,19 @@ function simplify(q::QAtomProduct)::Vector{QComposite}
 end
 
 function simplify(q::T)::Vector{QComposite} where T <: QMultiComposite
-    return [modify_expr(q, simplify.(q.expr))]
+    simplified = simplify.(q.expr)
+    return modify_expr(q, map(only, simplified))
 end
 
 function simplify(q::T)::Vector{QComposite} where T <: QComposite
-    return [modify_expr(q, simplify(q.expr))]
+    return modify_expr(q, simplify(q.expr))
 end 
 
 function simplify(q::QLog)::Vector{QComposite} 
-    return simplify_QLog(modify_expr(q, simplify(q.expr)))
+    return simplify_QLog(only(modify_expr(q, simplify(q.expr))))
 end 
 function simplify(q::QExp)::Vector{QComposite} 
-    return simplify_QExp(modify_expr(q, simplify(q.expr)))
+    return simplify_QExp(only(modify_expr(q, simplify(q.expr))))
 end 
 
 function simplify(q::QExpr)::QExpr

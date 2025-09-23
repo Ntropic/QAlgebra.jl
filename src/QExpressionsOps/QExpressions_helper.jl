@@ -18,6 +18,27 @@ end
 
 Keeps Vectors of QExprs accessible via their Symbols either as a function x(:x,:i) or vector x[:x,:i]. But similarly via string indexing.
 """ 
+@inline function _as_lookup_symbol(param)::Symbol
+    param isa Symbol && return param
+    param isa AbstractString && return Symbol(param)
+    error("Unsupported lookup key $(param)::$(typeof(param)); expected Symbol or String.")
+end
+
+@inline function _canonical_lookup_symbol(sym::Symbol)::Symbol
+    sym === :t && return :t0
+    return sym
+end
+
+@inline function _canonical_lookup_symbols(params)::Tuple{Vararg{Symbol}}
+    return Tuple(_canonical_lookup_symbol(_as_lookup_symbol(p)) for p in params)
+end
+
+@inline function _format_lookup_combo(combo)::String
+    canonical = Tuple(_canonical_lookup_symbol(sym) for sym in combo)
+    return "(" * join(string.(canonical), ", ") * ")"
+end
+
+
 struct QExprLookup
     ops_comb::Vector{Vector{Symbol}}
     ops_vec::Vector{QExpr}
@@ -51,28 +72,34 @@ function QExprLookup(ops_comb::Vector{Vector{Symbol}}, ops_vec::Vector{QExpr};
     if use_dict
         lookup = Dict{Tuple{Vararg{Symbol}}, QExpr}()
         for (c, op) in zip(out_keys, out_vals)
-            lookup[Tuple(c)...] = op
+            lookup[Tuple(_canonical_lookup_symbol(sym) for sym in c)] = op
         end
         return QExprLookup(out_keys, out_vals, true, lookup)
     else
         return QExprLookup(out_keys, out_vals, false, nothing)
     end
 end
+@inline function _available_lookup_combos(ql::QExprLookup)::Vector{String}
+    combos = [_format_lookup_combo(c) for c in ql.ops_comb]
+    return unique(combos)
+end
+
 
 # Make it callable
 function (ql::QExprLookup)(params...)
-    syms = Tuple(Symbol.(params))  # normalize to Tuple
+    syms = _canonical_lookup_symbols(params)
+    combos = _available_lookup_combos(ql)
     if ql.use_dict
         return get(ql.dict, syms) do
-            error("No operator found for input $(syms)")
+            error("No entry for $(syms). Pick one of $(join(combos, ", ")).")
         end
     else
         for (c, op) in zip(ql.ops_comb, ql.ops_vec)
-            if Tuple(c) == syms
+            if Tuple(_canonical_lookup_symbol(sym) for sym in c) == syms
                 return op
             end
         end
-        error("No operator found for input $(syms)")
+        error("No entry for $(syms). Pick one of $(join(combos, ", ")).")
     end
 end
 function Base.getindex(ql::QExprLookup, params...)
@@ -81,4 +108,3 @@ end
 # Provide available keys
 import Base: keys
 keys(ql::QExprLookup) = ql.ops_comb
-

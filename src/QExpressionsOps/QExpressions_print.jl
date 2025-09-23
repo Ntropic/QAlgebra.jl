@@ -177,24 +177,29 @@ function QComposite2string(term::QSum; do_latex::Bool=false, braced::Bool=true, 
     end
 end
 function QComposite2string(q::QCompositeProduct; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
-    all_strings::Vector{String} = []
+    parts = String[]
     total_sign, coeff_str = to_stringer(q.coeff_fun; braced=true, do_frac=do_frac, has_op=true, do_latex=do_latex)
-    for term in q.expr
-        new_sign, new_str, is_grouped = QComposite2string(term, do_latex=do_latex, braced=braced, do_frac=do_frac, return_if_braced=true, do_braket=do_braket)
-        total_sign = xor(total_sign, new_sign)
-        if !is_grouped
-            new_str = brace(new_str, do_latex=do_latex)
-        end
-        push!(all_strings, new_str)
+    if !isempty(coeff_str)
+        push!(parts, coeff_str)
     end
-    # concatenate strings 
-    connector = "" # do_latex ? raw"\cdot" : "⋅"
-    total_string = join(all_strings, connector) 
-    if return_if_braced 
-        return total_sign, total_string, true 
-    else 
-        return total_sign, total_string 
-    end 
+    for term in q.expr
+        term_sign, term_str, is_grouped = QComposite2string(term, do_latex=do_latex, braced=braced, do_frac=do_frac, return_if_braced=true, do_braket=do_braket)
+        total_sign = xor(total_sign, term_sign)
+        if !isempty(term_str)
+            if !is_grouped
+                term_str = brace(term_str, do_latex=do_latex)
+            end
+            push!(parts, term_str)
+        end
+    end
+
+    connector = "" # do_latex ? raw"\\cdot" : "⋅"
+    total_string = join(parts, connector)
+    if return_if_braced
+        return total_sign, total_string, true
+    else
+        return total_sign, total_string
+    end
 end
 function QComposite2string(q::QCommutator; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     all_strings::Vector{String} = []

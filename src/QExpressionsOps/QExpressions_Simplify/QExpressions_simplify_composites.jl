@@ -21,19 +21,40 @@ function separate_coeff_qcomposites(qs::Vector{QComposite}, qspace::QSpace)::Tup
     return coeff_fun, new_vector 
 end
 
+# split replacements into (coeff, stripped factors) while dropping numeric identities
+const CompositeBranch = Tuple{CFunction, Vector{QComposite}}
+
+function _make_branch(replacements::AbstractVector{<:QComposite}, qspace::QSpace)::CompositeBranch
+    coeff = qspace.c_one
+    factors = QComposite[]
+    sizehint!(factors, length(replacements))
+    for rep in replacements
+        part_coeff, stripped = separate_coeff_qcomposite(rep)
+        coeff *= part_coeff
+        if !(stripped isa QAtomProduct && isnumeric(stripped))
+            push!(factors, stripped)
+        end
+    end
+    return coeff, factors
+end
+
 # contains QComposite Vector (for product), changed, go_left, new_coeff_fun
 # ======> Pair Sorting & Simplifications <===========================================================================================================
-function simplify_pair_composite(a::S, b::T, qspace::QSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool} where {S <: QComposite, T <: QComposite}
+function simplify_pair_composite(a::S, b::T, qspace::QSpace)::Tuple{Vector{CompositeBranch}, Bool, Bool} where {S <: QComposite, T <: QComposite}
     if b < a && commutes(a,b)
-        return QComposite[b, a], true, true, false
+        return CompositeBranch[_make_branch(QComposite[b, a], qspace)], true, true
     else
-        return QComposite[a, b], false, true, false
+        return CompositeBranch[], false, true
     end
 end
-function simplify_pair_composite(a::QAtomProduct, b::QAtomProduct, qspace::QSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool}
-    return multiply_QAtomProducts(a, b),  true, true, false
+function simplify_pair_composite(a::QAtomProduct, b::QAtomProduct, qspace::QSpace)::Tuple{Vector{CompositeBranch}, Bool, Bool}
+    branches = CompositeBranch[]
+    for prod in multiply_QAtomProducts(a, b)
+        push!(branches, _make_branch(QComposite[prod], qspace))
+    end
+    return branches, true, true
 end 
-function simplify_pair_composite(a::QExp, b::QExp, qspace::QSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool} 
+function simplify_pair_composite(a::QExp, b::QExp, qspace::QSpace)::Tuple{Vector{CompositeBranch}, Bool, Bool} 
     if commutes(a,b)
         new_expr = a.expr+b.expr 
         if isnumeric(new_expr)
@@ -44,115 +65,121 @@ function simplify_pair_composite(a::QExp, b::QExp, qspace::QSpace)::Tuple{Vector
             else
                 error("Numeric terms should be of length 0 or 1. ")
             end
-            return QComposite[IdentityQAtomProduct(qspace, coeff_fun)], true, false, true
+            return CompositeBranch[(coeff_fun, QComposite[])], true, false
         end
-        return QComposite[modify_expr(a, new_expr)], true, false, false
+        return CompositeBranch[_make_branch(modify_expr(a, new_expr), qspace)], true, false
     else
-        return QComposite[a, b], false, false, false
+        return CompositeBranch[], false, false
     end
 end
-function simplify_pair_composite(a::QSum, b::QSum, qspace::QSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool}
-    return a*b, true, false, false
+function simplify_pair_composite(a::QSum, b::QSum, qspace::QSpace)::Tuple{Vector{CompositeBranch}, Bool, Bool}
+    return CompositeBranch[_make_branch(a*b, qspace)], true, false
 end
-function simplify_pair_composite(a::QSum, b::QAtomProduct, qspace::QSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool}
-    return [modify_expr(a, a.expr * b)], true, false, false
+function simplify_pair_composite(a::QSum, b::QAtomProduct, qspace::QSpace)::Tuple{Vector{CompositeBranch}, Bool, Bool}
+    return CompositeBranch[_make_branch(modify_expr(a, a.expr * b), qspace)], true, false
 end
-function simplify_pair_composite(b::QAtomProduct, a::QSum, qspace::QSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool}
-    return [modify_expr(a, b * a.expr)], true, false, false
+function simplify_pair_composite(b::QAtomProduct, a::QSum, qspace::QSpace)::Tuple{Vector{CompositeBranch}, Bool, Bool}
+    return CompositeBranch[_make_branch(modify_expr(a, b * a.expr), qspace)], true, false
 end
 
 
 """
-    add_QComposite_to_QCompositeProduct(terms::Vector{QComposite}, a::QComposite, ss::QSpace) → Vector{Tuple{ComplexRational, Vector{QComposite}}}  # sum of products
+    add_QComposite_to_QCompositeProduct(terms::Vector{QComposite}, a::QComposite, ss::QSpace) → Vector{Tuple{CFunction, Vector{QComposite}}}  # sum of products
 
 Append `a` and bubble it left:
 - if a pair changes (swap / multiply / unify), splice the replacement and step left
 - if no change, step left
 - branching is preserved
 """
-function add_QComposite_to_QCompositeProduct(terms::AbstractVector{<:QComposite}, a::T, ss::QSpace)::Tuple{CFunction, Vector{QComposite}} where {T<:QComposite}
-    seed = QComposite[terms...]
+function add_QComposite_to_QCompositeProduct(terms::AbstractVector{<:QComposite}, a::T, ss::QSpace)::Vector{CompositeBranch} where {T<:QComposite}
+    seed = QComposite[]
+    append!(seed, terms)
     push!(seed, a)
 
     start_i = length(seed) > 1 ? length(seed) - 1 : 0
-    c = ss.c_one
-    t = seed
-    i = start_i
+    states = Vector{Tuple{CFunction,Vector{QComposite},Int}}()
+    push!(states, (ss.c_one, seed, start_i))
+    results = CompositeBranch[]
 
-    done = false
-    while !done 
-        if i > 0
-            pair, changed, go_left, new_coeff_fun = simplify_pair_composite(t[i], t[i+1], ss)  
-            if changed
-                nt = Vector{QComposite}()
-                append!(nt, t[1:i-1])
-                if !new_coeff_fun 
-                    append!(nt, pair)          # pair may be length 0, 1, or 2
-                else
-                    curr_coeff = ss.c_one
-                    for p in pair 
-                        if !isnumeric(p) 
-                            push!(nt, p) 
-                        else 
-                            curr_coeff *= p.coeff_fun
+    while !isempty(states)
+        next_states = Tuple{CFunction,Vector{QComposite},Int}[]
+        for (c, t, i) in states
+            if i > 0
+                branches, changed, go_left = simplify_pair_composite(t[i], t[i+1], ss)  
+                if changed
+                    for (dc, pair_terms) in branches
+                        nt = Vector{QComposite}()
+                        append!(nt, t[1:i-1])
+                        append!(nt, pair_terms)
+                        append!(nt, t[i+2:end])
+
+                        new_coeff = c * dc
+                        if length(nt) <= 1
+                            push!(results, (new_coeff, nt))
+                        else
+                            new_index = go_left ? max(1, i-1) : min(i, length(nt)-1)
+                            if new_index >= length(nt)
+                                push!(results, (new_coeff, nt))
+                            else
+                                push!(next_states, (new_coeff, nt, new_index))
+                            end
                         end
                     end
-                end
-                append!(nt, t[i+2:end])
-
-                if go_left 
-                    new_index = i-1
-                    if new_index < 1 
-                        new_index = 2
-                    end
                 else
-                    new_index = length(pair) == 2 ? i+1 : i 
+                    new_i = i + 1
+                    if new_i >= length(t)
+                        push!(results, (c, t))
+                    else
+                        push!(next_states, (c, t, new_i))
+                    end
                 end
-                if new_index == 0 # can't go further left 
-                    new_index = 2 # hence try going right
-                end
-                
-                # can'T we just add another case here for when it gets smaller than 1 through a go left operation?
-                if new_index >= length(nt) 
-                    done = true
-                end
-                if new_coeff_fun
-                    c *= curr_coeff
-                end
-                t = nt
-                i = new_index
             else
-                # no local change → move right
-                new_i = i+1
-                if new_i >= length(t)   
-                    done = true
-                end
-                i = new_i
+                push!(results, (c, t))
             end
-        else
-            done = true
         end
+        states = next_states
     end
-    # Outer vector = sum, inner Vector{QAtom} = product
-    return c, t
+
+    return results
 end
 
 function multiply_QCompositeProduct_terms(p1::AbstractVector{<:QComposite}, p2::AbstractVector{<:QComposite})
-    qspace = p1[1].qspace
-    c = ComplexRational(1,0,1)
-    t = p1
+    isempty(p1) && isempty(p2) && error("Cannot multiply two empty composite products.")
+    qspace = isempty(p1) ? p2[1].qspace : p1[1].qspace
+
+    seed = QComposite[]
+    append!(seed, p1)
+    states = CompositeBranch[]
+    push!(states, (qspace.c_one, seed))
+
     for a in p2 
-        dc, t =  add_QComposite_to_QCompositeProduct(t, a, qspace) 
-        c *= dc
+        new_states = CompositeBranch[]
+        for (c, t) in states
+            for branch in add_QComposite_to_QCompositeProduct(t, a, qspace)
+                dc, nt = branch
+                push!(new_states, (c * dc, nt))
+            end
+        end
+        states = new_states
     end
-    return c, t
+    return states
 end
 
 function multiply_QCompositeProducts(coeff::CFunction, p1::AbstractVector{<:QComposite}, p2::AbstractVector{<:QComposite})
-    c, t = multiply_QCompositeProduct_terms(p1, p2)
-    return [ QCompositeProduct(c * coeff , t)]
+    states = multiply_QCompositeProduct_terms(p1, p2)
+    qspace = isempty(p1) ? p2[1].qspace : p1[1].qspace
+    results = QComposite[]
+    for (c, terms) in states
+        append!(results, _QCompositeProduct(qspace, coeff * c, terms))
+    end
+    return results
 end
 function multiply_QCompositeProducts(coeff::CFunction, p1::AbstractVector{<:QComposite}, p2::AbstractVector{<:QComposite}, ::Val{:nosimp})
-    c, t = multiply_QCompositeProduct_terms(p1, p2)
-    return [ QCompositeProduct(c * coeff , t, Val(:nosimp)) ] # coeff stuff not done 
+    states = multiply_QCompositeProduct_terms(p1, p2)
+    qspace = isempty(p1) ? p2[1].qspace : p1[1].qspace
+    results = QComposite[]
+    for (c, terms) in states
+        append!(results, _QCompositeProduct(qspace, coeff * c, terms, Val(:nosimp)))
+    end
+    return results 
 end

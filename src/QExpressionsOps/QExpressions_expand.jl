@@ -243,7 +243,7 @@ end
 function _expand(q::QSum, ::Val{M}, ::Val{T}, order::Int, args...) where {M,T}
     inner, changed = _expand(q.expr, Val(M), Val(T), order, args...)
     if changed
-        return modify_expr(q, inner, Val(:nodecollision)), true
+        return only(modify_expr(q, inner, Val(:nodecollision))), true
     else
         return q, false
     end
@@ -262,7 +262,7 @@ function _expand(q::QComposite, ::Val{M}, ::Val{T}, order::Int, args...) where {
     end
     inner, changed = _expand(getproperty(q_work, :expr), Val(M), Val(T), order, args...)
     if changed
-        return modify_expr(q_work, inner), true
+        return only(modify_expr(q_work, inner)), true
     elseif coeff_changed
         return q_work, true
     else
@@ -293,7 +293,7 @@ function _expand(q::QMultiComposite, ::Val{M}, ::Val{T}, order::Int, args...) wh
     end
     inner, changed = _expand(q_work.expr, Val(M), Val(T), order, args...)
     if changed
-        return modify_expr(q_work, inner), true
+        return only(modify_expr(q_work, inner)), true
     elseif coeff_changed
         return q_work, true
     else
