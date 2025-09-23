@@ -1,26 +1,6 @@
 # To Do List 03.09.2025
 
 ## High Priority 
-- [x] Add time_indexes to QAtoms, then update: 
-    - [x] base_operators
-    - [x] QAtomProduct multiplication  & simplification
-    - [x] commutes
-    - [x] sort / isless 
-    - [x] print => to print `t_{time_index}`
-- [x] Remove parentage again!
-- [ ] Distinguish summation indexes from non-summation indexes
-    - [x] `which_summation_acting` to track only summation indexes
-    - [x] Refactored QSum
-    - [ ] Change outer QComposite constructors, so that they return Vectors fo QComposites, to allow for complex transformations. 
-    - [x] Removed indexing
-        - [ ] remove `indexes` from `QExpressions_simplify_composites
-        - [ ] remove `flatten` 
-        - [ ] rewrite `QSum_modify` 
-        - [ ] rewrite `QSum_repartition`
-    - [ ] repartition among sum indexes. 
-    - [ ] Shift/repartition within summation indexes 
-    - [ ] Implement a repartition variants only for sum indexes!
-
 - [ ] Implement *Unitary Conjugation*
     - [x] Create *Conjugate (Krylov) Cycle* via Guassian elimination 
     - [x] Add new CFunction types `Cpower`, `CVector` and `CMatrix` 
@@ -42,6 +22,8 @@
 - [ ] Add *QInt* with integral solver also for time. Should only accept `t_index=0`
     - [ ] Numerical Solver
     - [ ] Sampler  
+    - [ ] Finder of QInt types (which CFunctions are present) -> for this the CFunctions need to be reorder_full 
+        -> and detection be permutation invariant between index names.
 
 ## Medium Priority 
 - [x] is_t_var

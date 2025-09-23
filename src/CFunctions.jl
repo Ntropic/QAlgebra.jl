@@ -143,7 +143,8 @@ struct ParameterInfo <: AbstractParameterInfo
             params_name, params_str, params_latex, param_of_indexes,
             outer_group_by_index, t_index_by_index, ss_ensemble_indexes_by_group, ss_ensemble_present_by_group,
             indexed_parameter_indexes, where_acting_by_parameter, subspace_index_maps, t_index_transform,
-            indexes_by_t_index, indexes_of_t, how_many_by_ensemble, param_of_t, param_is_t, param_values, param_indexes, [],[])
+            indexes_by_t_index, indexes_of_t, how_many_by_ensemble, param_of_t, param_is_t, param_values,
+            param_indexes, CAbstractDefinition[], CTypeDefinition[])
     end
 end
 
@@ -248,7 +249,7 @@ var_exponents(a::CAbstract) = zeros(Int, a.param_info.dims)
 isdag(a::CAbstract) = a.dag
 modify_coeff(a::CAbstract, c::ComplexRational) = CAbstract(a.param_info, c, a.index, a.exponent, a.dag)
 modify_exponent(a::CAbstract, q::Rational{Int}) = CAbstract(a.param_info, a.coeff, a.index, q, a.dag)
-modify_exponent(a::CAbstract, n::Integer) = modify_exponent(a, n//1)
+modify_exponent(a::CAbstract, n::Int) = modify_exponent(a, n//1)
 modify_dag(a::CAbstract, d::Bool=true) = CAbstract(a.param_info, a.coeff, a.index, a.exponent, d)
 toggle_dag(a::CAbstract) = modify_dag(a, !a.dag)
 repartition(::CAbstract, ::Vector{Tuple{Int,Int}}) = error("You should not repartition abstract parameters! Remove them before repartitioning.")
@@ -271,6 +272,10 @@ function repartition(f::CCustomType, var_tuples::Vector{Tuple{Int, Int}})::CCust
 end
 function modify_expr(f::CCustomType, new_expr::Vector{CFunction})
     return CCustomType(f.param_info, f.coeff, new_expr, f.ctype_def)
+end
+function modify_coeff(f::CCustomType, coeff::ComplexRational)::CFunction
+    iszero(coeff) && return zero_catom(f.param_info)
+    return CCustomType(f.param_info, coeff, f.expr, f.ctype_def)
 end
 var_exponents(a::CCustomType) = zeros(Int, a.param_info.dims)
 coeff(f::CCustomType) = [f.coeff]
@@ -318,6 +323,9 @@ struct CAtom <: CAtomic
         return new(param_info, c, copy(var_exponents))
     end
 end
+@inline function zero_catom(param_info::ParameterInfo)
+    return CAtom(param_info, CR_ZERO, zeros(Int, param_info.dims))
+end
 coeff(a::CAtom)::Vector{ComplexRational} = [a.coeff]
 modify_exponents(a::CAtom, var_exponents::Vector{Vector{Int}})::CAtom = CAtom(a.param_info, a.coeff, var_exponents)
 modify_coeff(a::CAtom, coeff::ComplexRational)::CAtom = CAtom(a.param_info, coeff, a.var_exponents)
@@ -325,7 +333,7 @@ modify_coeff_exponents(a::CAtom, coeff::ComplexRational, var_exponents::Vector{V
 var_exponents(a::CAtom) = a.var_exponents
 length(a::CAtom) = 1
 function repartition(f::CAtom, var_tuples::Vector{Tuple{Int, Int}})::CAtom 
-    curr_var_exponents = f.var_exponents
+    curr_var_exponents = copy(f.var_exponents)
     @inbounds for (i, tar) in var_tuples
         curr_var_exponents[tar] += curr_var_exponents[i]
         curr_var_exponents[i] = 0 
@@ -361,6 +369,11 @@ end
 function modify_expr(f::CSum, new_expr::Vector{CFunction})
     return CSum(f.param_info, new_expr)
 end
+function modify_coeff(f::CSum, coeff::ComplexRational)
+    iszero(coeff) && return zero_catom(f.param_info)
+    coeff == CR_ONE && return f
+    return f * coeff
+end
 coeff(x::CSum) = [ComplexRational(1,0,1)] #error("Sums don't have a coeff, you likely have a sum in a sum, this shouldn't happen. Please inform the developers. ")
 length(q::CSum) = length(q.expr)
 repartition(f::CSum, var_tuples::Vector{Tuple{Int, Int}}) = _CSum(f.param_info, repartition.(f.expr, Ref(var_tuples)) )
@@ -385,6 +398,10 @@ function CProd(param_info::ParameterInfo, expr::AbstractVector{<:CFunction})
 end
 function modify_expr(f::CProd, new_expr::Vector{CFunction})
     return CProd(f.param_info, f.coeff, new_expr, Val(:nosimp))
+end
+function modify_coeff(f::CProd, coeff::ComplexRational)::CFunction
+    iszero(coeff) && return zero_catom(f.param_info)
+    return CProd(f.param_info, coeff, f.expr, Val(:nosimp))
 end
 coeff(x::CProd) = [x.coeff]
 length(q::CProd) = max(length.(q.expr)...)
@@ -416,6 +433,11 @@ end
 coeff(x::CRational) = coeff(x.numer) #/coeff(x.denom)
 length(q::CRational) = max(length(q.numer), length(q.denom))
 repartition(q::CRational, var_tuples::Vector{Tuple{Int, Int}}) = CRational(q.param_info, repartition(q.numer, var_tuples), repartition(q.denom, var_tuples))
+function modify_coeff(r::CRational, coeff::ComplexRational)::CFunction
+    iszero(coeff) && return zero_catom(r.param_info)
+    numer = modify_coeff(r.numer, coeff)
+    return CRational(r.param_info, numer, r.denom, Val(:nosimp))
+end
 var_exponents(a::CRational) = var_exponents(a.numer)
 
 
@@ -442,6 +464,10 @@ end
 function modify_expr(f::CExp, new_expr::Vector{CFunction})
     @assert length(new_expr) == 1
     return CExp(f.param_info, f.coeff, new_expr[1], Val(:nosimp))
+end
+function modify_coeff(f::CExp, coeff::ComplexRational)::CFunction
+    iszero(coeff) && return zero_catom(f.param_info)
+    return CExp(f.param_info, coeff, f.expr, Val(:nosimp))
 end
 coeff(x::CExp) = [x.coeff]
 length(q::CExp) = 1
@@ -473,6 +499,10 @@ function modify_expr(f::CLog, new_expr::Vector{CFunction})
     @assert length(new_expr) == 1
     return CLog(f.param_info, f.coeff, new_expr[1], Val(:nosimp))
 end
+function modify_coeff(f::CLog, coeff::ComplexRational)::CFunction
+    iszero(coeff) && return zero_catom(f.param_info)
+    return CLog(f.param_info, coeff, f.expr, Val(:nosimp))
+end
 coeff(x::CLog) = [x.coeff] 
 length(q::CLog) = 1
 repartition(q::CLog, var_tuples::Vector{Tuple{Int, Int}}) = CLog(q.param_info, q.coeff, repartition(q.expr, var_tuples))
@@ -481,7 +511,7 @@ var_exponents(a::CLog) = zeros(Int, a.param_info.dims)
 """
     CPower(coeff::ComplexRational, x::CFunction, exponent::Rational{Int})
     CPower(x::CFunction, exponent::Rational{Int})
-    CPower(x::CFunction, exponent::Integer)
+    CPower(x::CFunction, exponent::Int)
 
 Symbolic power with a **rational** exponent: `coeff * x^(p//q)`.
 Use `x ^ (p//q)` or `sqrt(x)` (which maps to `x^(1//2)`).
@@ -501,11 +531,15 @@ end
 function CPower(param_info::ParameterInfo, coeff::ComplexRational, expr::CFunction, exponent::Rational{Int})
     simplify_CPower(param_info, coeff, expr, exponent)
 end
-CPower(param_info::ParameterInfo, expr::CFunction, n::Integer)       = CPower(param_info, ComplexRational(1,0,1), expr, n//1)
+CPower(param_info::ParameterInfo, expr::CFunction, n::Int)       = CPower(param_info, ComplexRational(1,0,1), expr, n//1)
 CPower(param_info::ParameterInfo, expr::CFunction, q::Rational{Int}) = CPower(param_info, ComplexRational(1,0,1), expr, q)
 function modify_expr(f::CPower, new_expr::Vector{CFunction})
     @assert length(new_expr) == 1
     return CPower(f.param_info, f.coeff, new_expr[1], f.exponent, Val(:nosimp))
+end
+function modify_coeff(f::CPower, coeff::ComplexRational)::CFunction
+    iszero(coeff) && return zero_catom(f.param_info)
+    return CPower(f.param_info, coeff, f.expr, f.exponent, Val(:nosimp))
 end
 coeff(p::CPower) = [p.coeff]
 length(::CPower) = 1
@@ -530,6 +564,9 @@ end
 CVector(param_info::ParameterInfo, expr::AbstractVector{<:CFunction}; row::Bool=false) = CVector(param_info, ComplexRational(1,0,1), collect(expr), row)
 CVector(param_info::ParameterInfo, coeff::ComplexRational, expr::AbstractVector{<:CFunction}; row::Bool=false) = CVector(param_info, coeff, collect(expr), row)
 modify_exprs(f::CVector, new_expr::Vector{CFunction}) = CVector(f.param_info, f.coeff, new_expr; row=f.row)
+function modify_coeff(v::CVector, coeff::ComplexRational)::CVector
+    return CVector(v.param_info, coeff, v.expr; row=v.row)
+end
 coeff(v::CVector) = isempty(v.expr) ? ComplexRational[] : vcat(coeff.(v.expr)...)
 length(v::CVector) = length(v.expr)
 size(v::CVector) = v.row ? (1, length(v.expr)) : (length(v.expr), 1)
@@ -553,6 +590,9 @@ end
 CMatrix(param_info::ParameterInfo, expr::AbstractMatrix{<:CFunction}) = CMatrix(param_info, ComplexRational(1,0,1), Matrix{CFunction}(expr))
 CMatrix(param_info::ParameterInfo, coeff::ComplexRational, expr::AbstractMatrix{<:CFunction}) = CMatrix(param_info, coeff, Matrix{CFunction}(expr))
 modify_exprs(f::CMatrix, new_expr::Matrix{CFunction}) = CMatrix(f.param_info, f.coeff, new_expr)
+function modify_coeff(M::CMatrix, coeff::ComplexRational)::CMatrix
+    return CMatrix(M.param_info, coeff, M.expr)
+end
 coeff(M::CMatrix) = [M.coeff]
 length(M::CMatrix) = length(M.expr)         # number of elements (m*n)
 size(M::CMatrix) = size(M.expr)

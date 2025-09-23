@@ -4,43 +4,58 @@ export expand
 # Public API
 # ──────────────────────────────────────────────────────────────────────────────
 """
-    expand(f::CFunction, mode::Symbol, target::Type{T}, args...) where T<:CFunction
+    expand(f::CFunction, mode::Symbol, target::Type{T}; order=0) where T<:CFunction
 
 Walk the symbolic AST `f` and apply a mode-specific expansion whenever a node of type `target` is encountered.
 
 # Modes
-- `:Taylor`   — Taylor-series expansion on `CExp` or `CLog` nodes (needs `order::Int`).
+- `:Taylor`   — Taylor-series expansion on `CExp` or `CLog` nodes (needs `order`).
 - `:Rational` — Distribute `CRational` over sums in the numerator.
 - `:Log`      — Distribute `log` over products/quotients (you can omit `target` with `expand(f, Val(:Log))`).
 """
-function expand(f::CFunction, mode::Symbol, target::Type{T}, args...) where T<:CFunction
-    newf, _ = _expand(f, Val(mode), Val(Symbol(target)), args...)
+function expand(f::CFunction, mode::Symbol, target::Type{T}; order::Int=0) where T<:CFunction
+    newf, _ = _expand(f, Val(mode), Val(Symbol(target)), order)
     return newf
 end
-function expand(f::CFunction, mode::Symbol, target::Symbol, args...) 
-    newf, _ = _expand(f, Val(mode), Val(target), args...)
+function expand(f::CFunction, mode::Symbol, target::Symbol; order::Int=0)
+    newf, _ = _expand(f, Val(mode), Val(target), order)
     return newf
 end
 
+function expand(f::CFunction, mode::Symbol; order::Int=0)
+    if mode in (:CExp, :Exp)
+        return expand(f, Val(:Exp); order=order)
+    elseif mode in (:CLog, :Log)
+        return expand(f, Val(:Log); order=order)
+    elseif mode in (:CRational, :Rational)
+        return expand(f, Val(:Rational); order=order)
+    end
+    newf, _ = _expand(f, Val(mode), Val(:Any), order)
+    return newf
+end
 
-function expand(f::CFunction, ::Val{:Taylor}, ::Val{:Log}, order::Int=2)
-    newf, _ = _expand(f, Val(:Taylor), Val(:Log), order)
+function expand(f::CFunction, ::Val{:Taylor}, ::Val{:Log}; order::Int=2)
+    ord = order > 0 ? order : 2
+    newf, _ = _expand(f, Val(:Taylor), Val(:Log), ord)
     return newf
 end
-function expand(f::CFunction, ::Val{:Log}, order::Int=2)
-    newf, _ = _expand(f, Val(:Log), Val(:Log), order)
+function expand(f::CFunction, ::Val{:Log}; order::Int=2)
+    ord = order > 0 ? order : 2
+    newf, _ = _expand(f, Val(:Log), Val(:Log), ord)
     return newf
 end
-function expand(f::CFunction, ::Val{:Exp}, order::Int=2)
-    newf, _ = _expand(f, Val(:Taylor), Val(:CExp), order)
+function expand(f::CFunction, ::Val{:Exp}; order::Int=2)
+    ord = order > 0 ? order : 2
+    newf, _ = _expand(f, Val(:Taylor), Val(:CExp), ord)
     return newf
 end
-function expand(f::CFunction, ::Val{:Taylor}, ::Val{:Exp}, order::Int=2)
-    newf, _ = _expand(f, Val(:Taylor), Val(:CExp), order)
+function expand(f::CFunction, ::Val{:Taylor}, ::Val{:Exp}; order::Int=2)
+    ord = order > 0 ? order : 2
+    newf, _ = _expand(f, Val(:Taylor), Val(:CExp), ord)
     return newf
 end
-function expand(f::CFunction, ::Val{:Rational})
-    newf, _ = _expand(f, Val(:Rational), Val(:CRational))
+function expand(f::CFunction, ::Val{:Rational}; order::Int=0)
+    newf, _ = _expand(f, Val(:Rational), Val(:CRational), order)
     return newf
 end
 
@@ -48,14 +63,14 @@ end
 # Generic tree walk (default: recurse & rebuild if children changed)
 # ──────────────────────────────────────────────────────────────────────────────
 
-_expand(f::CFunction, ::Val{M}, ::Val{T}, args...) where {M,T} = (f, false)  # fallback includes CAtom and CAbstracht
+_expand(f::CFunction, ::Val{M}, ::Val{T}, order::Int, args...) where {M,T} = (f, false)  # fallback includes CAtom and CAbstracht
 
 # Sums
-function _expand(s::CSum, ::Val{M}, ::Val{T}, args...) where {M,T}
+function _expand(s::CSum, ::Val{M}, ::Val{T}, order::Int, args...) where {M,T}
     terms2 = CFunction[]
     any_exp = false
     @inbounds for term in s.terms
-        t2, e = _expand(term, Val(M), Val(T), args...)
+        t2, e = _expand(term, Val(M), Val(T), order, args...)
         if t2 isa CSum
             append!(terms2, t2.terms)
         else
@@ -67,11 +82,11 @@ function _expand(s::CSum, ::Val{M}, ::Val{T}, args...) where {M,T}
 end
 
 # Products
-function _expand(p::CProd, ::Val{M}, ::Val{T}, args...) where {M,T}
+function _expand(p::CProd, ::Val{M}, ::Val{T}, order::Int, args...) where {M,T}
     terms2 = Vector{CFunction}(undef, length(p.terms))
     any_exp = false
     @inbounds for (i, term) in enumerate(p.terms)
-        t2, e = _expand(term, Val(M), Val(T), args...)
+        t2, e = _expand(term, Val(M), Val(T), order, args...)
         terms2[i] = t2
         any_exp |= e
     end
@@ -79,46 +94,46 @@ function _expand(p::CProd, ::Val{M}, ::Val{T}, args...) where {M,T}
 end
 
 # Rationals
-function _expand(r::CRational, ::Val{M}, ::Val{T}, args...) where {M,T}
-    n2, e1 = _expand(r.numer, Val(M), Val(T), args...)
-    d2, e2 = _expand(r.denom, Val(M), Val(T), args...)
+function _expand(r::CRational, ::Val{M}, ::Val{T}, order::Int, args...) where {M,T}
+    n2, e1 = _expand(r.numer, Val(M), Val(T), order, args...)
+    d2, e2 = _expand(r.denom, Val(M), Val(T), order, args...)
     any_exp = e1 || e2
     return any_exp ? (CRational(r.param_info, n2, d2, Val(:nosimp)), true) : (r, false)
 end
 
 # Exp / Log
-function _expand(e::CExp, ::Val{M}, ::Val{T}, args...) where {M,T}
-    x2, ch = _expand(e.expr, Val(M), Val(T), args...)
+function _expand(e::CExp, ::Val{M}, ::Val{T}, order::Int, args...) where {M,T}
+    x2, ch = _expand(e.expr, Val(M), Val(T), order, args...)
     return ch ? (CExp(e.param_info, e.coeff, x2, Val(:nosimp)), true) : (e, false)
 end
-function _expand(l::CLog, ::Val{M}, ::Val{T}, args...) where {M,T}
-    x2, ch = _expand(l.expr, Val(M), Val(T), args...)
+function _expand(l::CLog, ::Val{M}, ::Val{T}, order::Int, args...) where {M,T}
+    x2, ch = _expand(l.expr, Val(M), Val(T), order, args...)
     return ch ? (CLog(l.param_info, l.coeff, x2, Val(:nosimp)), true) : (l, false)
 end
 
 # Power
-function _expand(p::CPower, ::Val{M}, ::Val{T}, args...) where {M,T}
-    x2, ch = _expand(p.expr, Val(M), Val(T), args...)
+function _expand(p::CPower, ::Val{M}, ::Val{T}, order::Int, args...) where {M,T}
+    x2, ch = _expand(p.expr, Val(M), Val(T), order, args...)
     return ch ? (CPower(p.param_info, p.coeff, x2, p.exponent, Val(:nosimp)), true) : (p, false)
 end
 
 # Vector / Matrix (descend elementwise; keep coeff/orientation/shape)
-function _expand(v::CVector, ::Val{M}, ::Val{T}, args...) where {M,T}
+function _expand(v::CVector, ::Val{M}, ::Val{T}, order::Int, args...) where {M,T}
     ent2 = Vector{CFunction}(undef, length(v.expr))
     any_exp = false
     @inbounds for i in eachindex(v.expr)
-        t2, e = _expand(v.expr[i], Val(M), Val(T), args...)
+        t2, e = _expand(v.expr[i], Val(M), Val(T), order, args...)
         ent2[i] = t2
         any_exp |= e
     end
     return any_exp ? (CVector(v.param_info, v.coeff, ent2; row=v.row), true) : (v, false)
 end
-function _expand(A::CMatrix, ::Val{M}, ::Val{T}, args...) where {M,T}
+function _expand(A::CMatrix, ::Val{M}, ::Val{T}, order::Int, args...) where {M,T}
     m, n = size(A.expr)
     flat = Vector{CFunction}(undef, length(A.expr))
     any_exp = false
     @inbounds for (k, e) in enumerate(A.expr)
-        t2, ch = _expand(e, Val(M), Val(T), args...)
+        t2, ch = _expand(e, Val(M), Val(T), order, args...)
         flat[k] = t2
         any_exp |= ch
     end
@@ -183,7 +198,7 @@ function insert(fun::CCustomType, index_map::Vector{Int}, expr::Vector{CFunction
 end
 ########################################################################################################################################################################
 
-function _expand(A::CCustomType, ::Val{M}, ::Val{T}, args...) where {M,T}
+function _expand(A::CCustomType, ::Val{M}, ::Val{T}, order::Int, args...) where {M,T}
     new_expr::Vector{CFunction} = []>
     if M ∈ DefinitionAliases 
         if T ∈ A.ctype_def.type_symbols
@@ -192,14 +207,14 @@ function _expand(A::CCustomType, ::Val{M}, ::Val{T}, args...) where {M,T}
             if A.ctype_def.has_abstract  # expand the substituted expression 
                 any_changed = false
                 for expr in new_expr 
-                    n, c = _expand(expr, Val(M), Val(T), args...)
+                    n, c = _expand(expr, Val(M), Val(T), order, args...)
                     push!(new_expr, n)
                     any_changed |= c
                 end
                 return A.coeff*new_expr, any_changed
             else
                 # has only its expression no substitutions involved. 
-                n, c = _expand(expr, Val(M), Val(T), args...)
+                n, c = _expand(expr, Val(M), Val(T), order, args...)
                 if c 
                     return A.coeff*n, c 
                 else
@@ -210,14 +225,14 @@ function _expand(A::CCustomType, ::Val{M}, ::Val{T}, args...) where {M,T}
     elseif A.ctype_def.has_abstract  # expand the substituted expression 
         any_changed = false
         for expr in new_expr 
-            n, c = _expand(expr, Val(M), Val(T), args...)
+            n, c = _expand(expr, Val(M), Val(T), order, args...)
             push!(new_expr, n)
             any_changed |= c
         end
         return new_expr, any_changed
     else
         # has only its expression no substitutions involved. 
-        n, c = _expand(expr, Val(M), Val(T), args...)
+        n, c = _expand(expr, Val(M), Val(T), order, args...)
         if c 
             return n, c 
         else
@@ -239,10 +254,10 @@ const RationalAliases = (:rational, :Rational, :CRational, :Any, :any)
 # coeff * exp(x) ≈ sum_{n=0}^order coeff * x^n / n!
 function _expand(e::CExp, ::Val{:Taylor}, ::Val{S}, order::Int) where {S}
     S ∈ ExpAliases || return (e, false)
-    order > 0 || error("Order of Taylor expansion must be positive!")
+    ord = order > 0 ? order : 2
 
     # recurse with the SAME alias S
-    x2, _ = _expand(e.expr, Val(:Taylor), Val(S), order)
+    x2, _ = _expand(e.expr, Val(:Taylor), Val(S), ord)
 
     terms = CFunction[]
     # n = 0 term: coeff * 1
@@ -251,7 +266,7 @@ function _expand(e::CExp, ::Val{:Taylor}, ::Val{S}, order::Int) where {S}
 
     # higher-order terms
     #fac = 1
-    for n in 1:order
+    for n in 1:ord
         #fac *= n
         curr_coeff /= n
         xn = (x2 ^ n)
@@ -269,10 +284,10 @@ end
 # log(1+Δ) = sum_{n=1}^order (-1)^(n+1) Δ^n / n, scaled by l.coeff
 function _expand(l::CLog, ::Val{:Taylor}, ::Val{S}, order::Int) where {S}
     S ∈ LogAliases || return (l, false)
-    order > 0 || error("Order of Taylor expansion must be positive!")
+    ord = order > 0 ? order : 2
 
     # recurse with SAME alias
-    x2, _ = _expand(l.expr, Val(:Taylor), Val(S), order)
+    x2, _ = _expand(l.expr, Val(:Taylor), Val(S), ord)
 
     one = CAtom(l.param_info, ComplexRational(1,0,1), zeros(Int, dims(x2)))
     Δ = x2 - one
@@ -282,7 +297,7 @@ function _expand(l::CLog, ::Val{:Taylor}, ::Val{S}, order::Int) where {S}
     # n = 1
     push!(terms, curr * l.coeff)
     # n >= 2
-    for n in 2:order
+    for n in 2:ord
         curr = curr * Δ
         sgn = isodd(n) ? 1 : -1
         coef = l.coeff * ComplexRational(sgn, 0, n)
@@ -298,11 +313,11 @@ end
 
 # ---- :Rational on CRational ----
 # (A+B+…)/D  ⇒  A/D + B/D + …
-function _expand(r::CRational, ::Val{:Rational}, ::Val{S}, args...) where {S}
+function _expand(r::CRational, ::Val{:Rational}, ::Val{S}, order::Int, args...) where {S}
     S ∈ RationalAliases || return (r, false)
 
-    n2, _ = _expand(r.numer, Val(:Rational), Val(S), args...)
-    d2, _ = _expand(r.denom, Val(:Rational), Val(S), args...)
+    n2, _ = _expand(r.numer, Val(:Rational), Val(S), order, args...)
+    d2, _ = _expand(r.denom, Val(:Rational), Val(S), order, args...)
     if n2 isa CSum
         out = CFunction[]
         @inbounds for t in n2.expr

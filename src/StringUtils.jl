@@ -10,7 +10,7 @@ Contains the mapping from characters to their subscript representation for non-l
 """
 const subscript_indexes = Dict('a' => "ₐ", 'h' => "ₕ", 'i' => "ᵢ", 'j' => "ⱼ", 'k' => "ₖ", 'l' => "ₗ", 'm' => "ₘ", 'n' => "ₙ", 
     'o' => "ₒ", 'p' => "ₚ", '1' => "₁", '2' => "₂", '3' => "₃", '4' => "₄", '5' => "₅", '6' => "₆", '7' => "₇", '8' => "₈", 
-    '9' => "₉", '=' => "₌", '+' => "₊", '-' => "₋", '0' => "₀", 'x' => "ₓ", 'y' => "ᵧ", ',' => "ˏ", '∊' => "∊", ' ' => " ", 
+    '9' => "₉", '=' => "₌", '+' => "₊", '-' => "₋", '0' => "₀", 'x' => "ₓ", 'y' => "ᵧ", ',' => "ˏ", ' ' => " ", 
     '(' => "₍", ')' => "₎")
 
 """
@@ -23,7 +23,7 @@ const superscript_indexes = Dict('a' => "ᵃ", 'b' => "ᵇ", 'c' => "ᶜ", 'd' =
     'o' => "ᵒ", 'p' => "ᵖ", 'q' => "ᵠ", 'r' => "ʳ", 's' => "ˢ", 't' => "ᵗ", 'u' => "ᵘ", 'v' => "ᵛ",
     'w' => "ʷ", 'x' => "ˣ", 'y' => "ʸ", 'z' => "ᶻ", '2' => "²", '3' => "³", '4' => "⁴", '5' => "⁵", 
     '6' => "⁶", '7' => "⁷", '8' => "⁸", '9' => "⁹", '1' => "¹", '-' => "⁻", '=' => "⁼", "." => "·", 
-    '(' => "⁽", ')' => "⁾", '+' => "⁺", '0' => "⁰", 'I' => "ᴵ", 'J' => "ᴶ", 'K' => "ᴷ", 'L' => "ᴸ", ',' => "ʼ", '/' => "𝄍")
+    '(' => "⁽", ')' => "⁾", '+' => "⁺", '0' => "⁰", 'I' => "ᴵ", 'J' => "ᴶ", 'K' => "ᴷ", 'L' => "ᴸ", ',' => "ʼ", '/' => "𝄍", '∊' => "∊")
 const var_substitution = Dict("alpha" => "α", "beta" => "β", "gamma" => "γ", "delta" => "δ", "epsilon" => "ε", "zeta" => "ζ", "eta" => "η", "theta" => "θ", "iota" => "ι", "kappa" => "κ", "lambda" => "λ", "mu" => "μ", "nu" => "ν", "xi" => "ξ", "rho" => "ρ", "sigma" => "σ", "tau" => "τ", "phi" => "φ", "chi" => "χ", "psi" => "ψ", "omega" => "ω", "pi" => "π")
 const var_substitution_latex = Dict("alpha" => raw"\alpha", "beta" => raw"\beta", "gamma" => raw"\gamma", "delta" => raw"\delta", "epsilon" => raw"\epsilon", "zeta" => raw"\zeta", "eta" => raw"\eta", "theta" => raw"\theta", "iota" => raw"\iota", "kappa" => raw"\kappa", "lambda" => raw"\lambda", "mu" => raw"\mu", "nu" => raw"\nu", "xi" => raw"\xi", "rho" => raw"\rho", "sigma" => raw"\sigma", "tau" => raw"\tau", "phi" => raw"\phi", "chi" => raw"\chi", "psi" => raw"\psi", "omega" => raw"\omega", "pi" => raw"\pi",
     "α" => raw"\alpha", "β" => raw"\beta", "γ" => raw"\gamma", "δ" => raw"\delta", "ε" => raw"\epsilon", "ζ" => raw"\zeta", "η" => raw"\eta", "θ" => raw"\theta", "ι" => raw"\iota", "κ" => raw"\kappa", "λ" => raw"\lambda", "μ" => raw"\mu", "ν" => raw"\nu", "ξ" => raw"\xi", "ρ" => raw"\rho", "σ" => raw"\sigma", "τ" => raw"\tau", "φ" => raw"\phi", "χ" => raw"\chi", "ψ" => raw"\psi", "ω" => raw"\omega", "π" => raw"\pi")
@@ -215,22 +215,24 @@ function underscore_separate(s::String)
     end
 end
 
-function int_exponent2str(base::String, exponent::Int, dag::Bool=false; do_latex::Bool=false)::String
-    if exponent == 0 
-        return ""
-    else
-        exponent_str = ""
-        if exponent != 1 
-            exponent_str *= do_latex ? string(exponent) : str2sup(string(exponent))
-        end
-        if dag 
-            exponent_str *= do_latex ? "*" : "'"
-        end
-        if do_latex && length(exponent_str) > 0
-            exponent_str = "^{$exponent_str}"
-        end
-        return base*exponent_str
+@inline function _split_trailing_args(base::String)
+    if endswith(base, raw"\right)")
+        m = match(r"^(.*?)(\\left\(.*\\right\))$", base)
+        m === nothing || return (m.captures[1], m.captures[2])
     end
+    m = match(r"^(.*?)(\([^()]*\))$", base)
+    return m === nothing ? (base, "") : (m.captures[1], m.captures[2])
+end
+function int_exponent2str(base::String, exponent::Int, dag::Bool=false; do_latex::Bool=false)
+    exponent == 0 && return ""
+    exp_str = ""
+    exponent != 1 && (exp_str *= do_latex ? string(exponent) : str2sup(string(exponent)))
+    dag && (exp_str *= do_latex ? "*" : "'")
+    if do_latex && !isempty(exp_str)
+        exp_str = "^{$exp_str}"
+    end
+    core, suffix = _split_trailing_args(base)
+    return core * exp_str * suffix
 end
 function int_exponents2str(bases::Vector{String}, exponents::Vector{Int}, dag::Bool=false; do_latex::Bool=false)::String
     return join([int_exponent2str(b, x, dag; do_latex=do_latex) for (b,x) in zip(bases, exponents)])

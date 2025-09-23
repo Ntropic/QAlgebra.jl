@@ -33,7 +33,7 @@ function which_ensemble_acting(q::QAbstract, subspace_info::SubSpaceInfo, neutra
 end
 function which_ensemble_acting(q::QAtomProduct; do_abstract::Bool=false)::Vector{BitVector}
     # xor between vectors of vector of bool 
-    qspace = q.statespace
+    qspace = q.qspace
     return vecvec_or!(reduce(vecvec_or!, [which_ensemble_acting(t, qspace.subspace_info, qspace.I_ensemble_op; do_abstract=do_abstract) for t in q.expr]), 
                     which_ensemble_acting(q.coeff_fun))
 end
@@ -42,8 +42,8 @@ function which_ensemble_acting(q::QExpr; do_abstract::Bool=false)::Vector{BitVec
 end
 function which_ensemble_acting(q::QSum; do_abstract::Bool=false)::Vector{BitVector}
     which_ensembles = which_ensemble_acting(q.expr; do_abstract=do_abstract)
-    info = q.statespace.subspace_info
-    @inbounds @simd for index in iter_all_indexes(q)
+    info = q.qspace.subspace_info
+    for index in iter_all_indexes(q)
         which_ensembles[Index2Ensemble(index, info)][index.inner] = true
     end
     return which_ensembles
@@ -88,7 +88,7 @@ function which_summations_acting(q::T, where_acting::Vector{BitVector}, which_in
 end
 function which_summations_acting(q::QSum, where_acting::Vector{BitVector}, which_indexes::Vector{Vector{Int}})::Vector{BitVector}
     which_summations_acting(q.expr, where_acting, which_indexes)
-    info = q.statespace.subspace_info
+    info = q.qspace.subspace_info
     @inbounds for index in iter_all_indexes(q)
         ensemble, summation = Index2Ensemble_and_Summation(index, info)
         @assert !where_acting[ensemble][summation] "Summation index $(Index2String(index, info)) already defined in stack!"
@@ -115,7 +115,7 @@ function gather_summation_indexes!(q::QExpr, curr_inds::Vector{SubSpaceIndex}=Su
 end
 gather_summation_indexes!(q::QAtomProduct, curr_inds::Vector{SubSpaceIndex}=SubSpaceIndex[])::Vector{SubSpaceIndex} = curr_inds
 function gather_summation_indexes!(q::QSum, curr_inds::Vector{SubSpaceIndex}=SubSpaceIndex[])::Vector{SubSpaceIndex}
-    for index in iter_all_indexes(q) 
+    for index in iter_all_indexes(q)
         sorted_unique_push!(curr_inds, index)
     end 
     return curr_inds
@@ -130,7 +130,7 @@ by QSums on the right-hand-side.
 """
 function are_indexes_defined(q::QAtomProduct, where_defined::Vector{BitVector})::Bool
     # check that no true on which_ensemble_acting, that isn't also a true on where_defined => converse nonimplication cnimp(a::Bool, b::Bool) = b && !a
-    qspace = q.statespace
+    qspace = q.qspace
     if any(any, converse_nonimplication(where_defined, which_ensemble_acting(q)))
         x = converse_nonimplication(where_defined, which_ensemble_acting(q))
         error("Cannot use an undefined ensembles-index on the right hand side of a differential equation! $x")
@@ -148,7 +148,7 @@ function are_indexes_defined(q::T, where_defined::Vector{BitVector})::Bool where
     return all([are_indexes_defined(t, where_defined) for t in q.exprs])
 end
 function are_indexes_defined(q::QSum, where_defined::Vector{BitVector})::Bool
-    info = q.statespace.subspace_info
+    info = q.qspace.subspace_info
     new_where_defined = copy.(where_defined)
     @inbounds for index in iter_all_indexes(q)
         ensemble = Index2Ensemble(index, info)
@@ -164,11 +164,11 @@ end
 
 function are_indexes_defined(q::QExpr)::Bool
     # check element wise if all indexes are defined
-    where_defined::Vector{BitVector} = [falses( n) for n in q.statespace.subspace_info.how_many_by_ensemble]
+    where_defined::Vector{BitVector} = [falses( n) for n in q.qspace.subspace_info.how_many_by_ensemble]
     return all([are_indexes_defined(t, where_defined) for t in q.terms])
 end
 function are_indexes_defined(q::diff_QEq)::Bool
-    qspace = q.statespace
+    qspace = q.qspace
     # first two arguments for operators 
     # final argument for paramete/variables
     defined = which_ensemble_acting(q.left_hand_side)

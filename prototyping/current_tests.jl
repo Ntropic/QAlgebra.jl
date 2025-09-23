@@ -7,7 +7,7 @@ using BenchmarkTools
 subspace_def = SubSpaceDefinitions(h=QubitPM("beta"), i=(3, 3, QubitPauli("sigma")), b=Ladder())
 op_def = OperatorDefinitions("A(i,t)", "B(U,H,i)")
 var_def = ParameterDefinitions("alpha", "beta(t)", "gamma_i", "delta_{i,j}(t)")
-qspace = StateSpace(subspace_def, op_def, var_def, max_t_ind=0)
+qspace = QSpace(subspace_def, op_def, var_def, max_t_ind=0)
 
 
 alpha, beta, gamma, delta = base_operators(qspace, ["alpha", "beta", "gamma", "delta"], do_fun=true)

@@ -21,11 +21,9 @@ end
 end
 
 function sign_string(c::ComplexRational, do_latex::Bool=false)::Tuple{Bool, String}
-    if is_negative(c)
-        return (true, string(c, do_latex=do_latex)[2:end])
-    else
-        return (false, string(c, do_latex=do_latex))
-    end
+    neg = is_negative(c)
+    body = string(neg ? -c : c, do_latex=do_latex)
+    return neg, body
 end
 is_abs_one(c::ComplexRational)::Bool = (abs(c.a) == abs(c.c))
 function is_abs_one(c::CFunction)

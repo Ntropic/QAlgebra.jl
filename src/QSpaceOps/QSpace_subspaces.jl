@@ -10,7 +10,7 @@ struct SubSpace
     key::String                     # Original input key
     keys::Vector{String}            # Allowed keys for this subspace 
     ss_outer_ind::Int            # Which Vector to use for ss_inner_ind  (this is for accessing the string elements)
-    ss_inner_ind::Vector{Int}    # Indices to access operator values in the corresponding statespace main ind  (this is for accessing the string elements)
+    ss_inner_ind::Vector{Int}    # Indices to access operator values in the corresponding qspace main ind  (this is for accessing the string elements)
     is_ensemble_ss::Bool
     ensemble_size::Int
     num_operator_indexes::Int 
@@ -19,11 +19,11 @@ struct SubSpace
     op_set::OperatorSet             # The operator set for this subspace.
 end
 # Define the custom show for SubSpace.
-function Base.show(io::IO, statespace::SubSpace)
+function Base.show(io::IO, qspace::SubSpace)
     # Print the subspace key and allowed keys.
-    print(io, "SubSpace ", statespace.keys[1:statespace.num_operator_indexes], " , ∑", statespace.keys[statespace.num_operator_indexes+1:end], ": ")
+    print(io, "SubSpace ", qspace.keys[1:qspace.num_operator_indexes], " , ∑", qspace.keys[qspace.num_operator_indexes+1:end], ": ")
     # Use the OperatorSet's show for the op_set field.
-    show(io, statespace.op_set)
+    show(io, qspace.op_set)
 end
 
 """ 

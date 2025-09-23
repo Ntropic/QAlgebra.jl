@@ -1,14 +1,15 @@
-module QSpace
+module QSpaces
 
 using ComplexRationals
 using ..CFunctions
 using ..StringUtils
+using ..Cumulants: ReducedCumulantList
 
 export OperatorSet
 export SubSpace, SubSpaceDefinitions, SubSpaceInfo, SubSpaceIndex, outer, inner, expanded, Index2Symbol, Index2String, Index2Ensemble, Index2Ensemble_and_Summation, SummationIndex2SubSpaceIndex
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
 export Parameter, ParameterDefinitions, map_by_subspace, map_by_tindex
-export StateSpace
+export QSpace
 
 Is = Vector{Int}
 """
@@ -91,13 +92,13 @@ include("QSpaceOps/QSpace_abstract.jl")
 include("QSpaceOps/QSpace_parameters.jl")
 
 """
-    StateSpace(subspace_def::SubSpaceDefinitions, op_def::OperatorDefinitions, param_def::ParameterDefinitions; max_t_ind::Int=0) -> StateSpace
+    QSpace(subspace_def::SubSpaceDefinitions, op_def::OperatorDefinitions, param_def::ParameterDefinitions; max_t_ind::Int=0) -> QSpace
 
 Constructs a combined Hilbert and Parameter space. The Hilbert space consists of different subspaces, themselves composed of different operator sets.
 The Parameter space also defines the variables, that are needed to describe equations on the Hilbert space and abstract operators, that are not yet specified. 
 Optionally you can also allow for multiple time dimensions, which can be useful for solving nested integrals over different time parameters.
 """
-struct StateSpace
+struct QSpace
     # Subspace definitions:
     subspaces::Vector{SubSpace}
     subspace_info::SubSpaceInfo    # Info object containing references to all the indexing of outer and inner subspaces
@@ -114,9 +115,10 @@ struct StateSpace
     I_ensemble_op::Vector{Vector{Is}}      # Neutral Vector of all expanded ensemble subspaces
     c_one::CAtom                            # onelike function in CFunctions 
     c_zero::CAtom                           # zerolike function in CFunctions 
+    cumulant_cache::ReducedCumulantList
     max_t_ind::Int
 
-    function StateSpace(subspace_def::SubSpaceDefinitions, op_def::OperatorDefinitions, param_def::ParameterDefinitions; max_t_ind::Int=0)
+    function QSpace(subspace_def::SubSpaceDefinitions, op_def::OperatorDefinitions, param_def::ParameterDefinitions; max_t_ind::Int=0)
         # ==========> 1st Subspaces <==========
         subspaces = subspace_def.subspaces
         subspace_info = SubSpaceInfo(subspaces)
@@ -133,23 +135,24 @@ struct StateSpace
         # Generate the string representations
         c_one = CAtom(param_info, zeros(Int, length(params)))
         c_zero = CAtom(param_info, ComplexRational(0,0,1), zeros(Int, length(params)))
+        cumulant_cache = ReducedCumulantList(1)
         qss = new( subspaces, subspace_info,                                      # Subspaces
                 operatortypes, operatortype_info,                                 # Abstract Operators 
-                params, param_info,                                                 # Variables / Parameters
-                I_op, I_ensemble_op, c_one, c_zero, max_t_ind)                         # Pecomputed operator blueprints 
+                params, param_info,                                               # Variables / Parameters
+                I_op, I_ensemble_op, c_one, c_zero, cumulant_cache, max_t_ind)    # Precomputed operator blueprints 
         return qss
     end
 end
-# Define the custom show for StateSpace.
-function Base.show(io::IO, statespace::StateSpace)
-    # First line: StateSpace and its variables.
-    param_str = join([p.param_str for p in statespace.params], ", ")
-    println(io, "StateSpace: [" * param_str * "]")
+# Define the custom show for QSpace.
+function Base.show(io::IO, qspace::QSpace)
+    # First line: QSpace and its variables.
+    param_str = join([p.param_str for p in qspace.params], ", ")
+    println(io, "QSpace: [" * param_str * "]")
     # Then print each subspace on its own line.
-    for ss in statespace.subspaces
+    for ss in qspace.subspaces
         println(io, "   - ", string(ss))
     end
-    for op in statespace.operatortypes
+    for op in qspace.operatortypes
         println(io, "   - ", string(op))
     end
 end
@@ -188,4 +191,4 @@ function cleanup_terms(terms::Vector{Tuple{T,S}})::Vector{Tuple{T,S}} where {T<:
     resize!(cleaned, cnt)                # trim unused slots
     return cleaned
 end
-end # module QSpace
+end # module QSpaces

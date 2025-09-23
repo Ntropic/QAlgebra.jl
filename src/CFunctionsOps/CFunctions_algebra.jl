@@ -34,7 +34,7 @@ const _ScalarLike = Union{CAtom, CAbstract, CSum, CRational, CCustomType}
 +(a::T) where {T<:CFunction} = a
 
 function +(a::Ta, b::Tb) where {Ta<:CFunction, Tb<:CFunction}
-    _ensure_same_param_info(a, b)
+    #_ensure_same_param_info(a, b)
     _CSum(pinfo(a), vcat(_terms(a), _terms(b)))
 end
 
@@ -44,14 +44,14 @@ end
 function +(u::CVector, v::CVector)
     u.row == v.row || error("Vector orientations must match for addition.")
     length(u.expr) == length(v.expr) || error("Vector lengths must match.")
-    _ensure_same_param_info(u.expr[1], v.expr[1])
+    #_ensure_same_param_info(u.expr[1], v.expr[1])
     CVector(pinfo(u), [ u.coeff*ui + v.coeff*vi for (ui,vi) in zip(u.expr, v.expr) ]; row=u.row)
 end
 
 function +(A::CMatrix, B::CMatrix)
     size(A.expr) == size(B.expr) || error("Matrix sizes must match for addition.")
     m, n = size(A.expr)
-    _ensure_same_param_info(A.expr[1,1], B.expr[1,1])
+    #_ensure_same_param_info(A.expr[1,1], B.expr[1,1])
     CMatrix(pinfo(A), [ A.coeff*A.expr[i,j] + B.coeff*B.expr[i,j] for i in 1:m, j in 1:n ])
 end
 
@@ -76,14 +76,14 @@ end
 function -(u::CVector, v::CVector)
     u.row == v.row || error("Vector orientations must match for subtraction.")
     length(u.expr) == length(v.expr) || error("Vector lengths must match.")
-    _ensure_same_param_info(u.expr[1], v.expr[1])
+    #_ensure_same_param_info(u.expr[1], v.expr[1])
     CVector(pinfo(u), [ u.coeff*ui - v.coeff*vi for (ui,vi) in zip(u.expr, v.expr) ]; row=u.row)
 end
 
 function -(A::CMatrix, B::CMatrix)
     size(A.expr) == size(B.expr) || error("Matrix sizes must match for subtraction.")
     m, n = size(A.expr)
-    _ensure_same_param_info(A.expr[1,1], B.expr[1,1])
+    #_ensure_same_param_info(A.expr[1,1], B.expr[1,1])
     CMatrix(pinfo(A), [ A.coeff*A.expr[i,j] - B.coeff*B.expr[i,j] for i in 1:m, j in 1:n ])
 end
 
@@ -94,13 +94,27 @@ end
 
 # atom-level ×
 function *(a::CAtom, b::CAtom)
-    _ensure_same_param_info(a, b)
+    #_ensure_same_param_info(a, b)
     CAtom(pinfo(a), crationalize(a.coeff*b.coeff), a.var_exponents .+ b.var_exponents)
 end
+function *(a::CAtom, b::Tb) where {Tb<:CFunction}
+    #_ensure_same_param_info(a, b)
+    ca = coeff(a); cb = coeff(b)
+    @assert length(cb)==1 "Internal: multiply() called on multi-coeff CFunctions."
+    if iszero(cb[1]) || iszero(ca[1])
+        return zero_atom(a)
+    elseif isnumeric(a) 
+        return modify_coeff(b, ca[1]*cb[1])
+    else
+        # Factor out coefficients into CProd
+        return CProd(pinfo(a), ca[1]*cb[1], sort!([a/ca[1], b/cb[1]]))
+    end
+end
+*(a::Ta, b::CAtom) where {Ta<:CFunction} = b * a
 
 # abstract × abstract -> merge if same index & dag
 function *(a::CAbstract, b::CAbstract)
-    _ensure_same_param_info(a, b)
+    #_ensure_same_param_info(a, b)
     if a.index == b.index && a.dag == b.dag
         return CAbstract(a.param_info, a.coeff*b.coeff, a.index, a.exponent + b.exponent, a.dag)
     else
@@ -124,7 +138,7 @@ end
 
 # generic multiply when both are non-sums
 function *(a::Ta, b::Tb) where {Ta<:CFunction, Tb<:CFunction}
-    _ensure_same_param_info(a, b)
+    #_ensure_same_param_info(a, b)
     ca = coeff(a); cb = coeff(b)
     if length(ca) != 1 || length(cb) != 1
         throw(ArgumentError("Internal: multiply() called on multi-coeff CFunctions."))
@@ -138,7 +152,7 @@ function *(a::Ta, b::Tb) where {Ta<:CFunction, Tb<:CFunction}
 end
 
 function *(a::CProd, b::CFunction)
-    _ensure_same_param_info(a, b)
+    #_ensure_same_param_info(a, b)
     cb = coeff(b)
     if iszero(cb[1])
         return zero_atom(a)
@@ -267,7 +281,7 @@ end
 
 # abstract / abstract -> merge exponents if same index & dag
 function /(a::CAbstract, b::CAbstract)
-    _ensure_same_param_info(a, b)
+    #_ensure_same_param_info(a, b)
     if a.index == b.index && a.dag == b.dag
         return CAbstract(a.param_info, a.coeff/b.coeff, a.index, a.exponent - b.exponent, a.dag)
     else
@@ -276,7 +290,7 @@ function /(a::CAbstract, b::CAbstract)
 end
 
 /(a::CAtom, b::CAtom) = begin
-    _ensure_same_param_info(a, b)
+    #_ensure_same_param_info(a, b)
     CAtom(pinfo(a), a.coeff/b.coeff, a.var_exponents .- b.var_exponents)
 end
 
@@ -315,7 +329,7 @@ end
 /(n::Number, a::T) where {T<:CFunction} = num_atom(a, n) / a
 
 function /(a::CProd, b::_ScalarLike)
-    _ensure_same_param_info(a, b)
+    #_ensure_same_param_info(a, b)
     ind = findfirst(x -> x isa _ScalarLike, a.expr)
     if ind === nothing
         return CRational(pinfo(a), a, b, Val(:nosimp))

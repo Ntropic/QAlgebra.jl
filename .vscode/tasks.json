@@ -1,0 +1,11 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Julia Tests",
+      "type": "shell",
+      "command": "JULIA_DEPOT_PATH=./.julia julia --project=. -e 'using Pkg; Pkg.test()'",
+      "problemMatcher": []
+    }
+  ]
+}

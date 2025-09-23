@@ -1,21 +1,21 @@
 """
-    base_operators(statespace::StateSpace, name::String; do_fun::Bool=false, by_ensemble::Bool=false)
+    base_operators(qspace::QSpace, name::String; do_fun::Bool=false, by_ensemble::Bool=false)
 
-Returns variables and/or operators in the state space `statespace`.
+Returns variables and/or operators in the state space `qspace`.
 
 Time handling:
 - If an operator (subspace or abstract) is not time-dependent (`.of_time == false`), its `time_index` defaults to `-1`.
 - If it is time-dependent, `time_index` defaults to `0`, unless `name` ends with `_tN` (e.g. `"A_t3"`), in which case `time_index = N`.
 - For QExprLookup results of subspace operators, the time argument is optional: you can query with or without a `:tN` key; both map to the same expression.
 """
-function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false, by_ensemble::Bool=false)
+function base_operators(qspace::QSpace, name::String; do_fun::Bool=false, by_ensemble::Bool=false)
     # -------------------- helpers --------------------
-    _I_expr() = QExpr(statespace, QAtomProduct(statespace, CAtom(statespace.param_info, zeros(Int, length(statespace.params))), QTerm[]))
+    _I_expr() = QExpr(qspace, QAtomProduct(qspace, CAtom(qspace.param_info, zeros(Int, length(qspace.params))), QTerm[]))
 
     _qexpr_for_var(i::Int) = begin
-        vexp = zeros(Int, length(statespace.params))
+        vexp = zeros(Int, length(qspace.params))
         vexp[i] += 1
-        QExpr(statespace, QAtomProduct(statespace, CAtom(statespace.param_info, vexp), QTerm[]))
+        QExpr(qspace, QAtomProduct(qspace, CAtom(qspace.param_info, vexp), QTerm[]))
     end
 
     # parse "x_tN" once and reuse
@@ -39,7 +39,7 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
     ops_comb = Vector{Vector{Symbol}}()
     ops_vec  = QExpr[]
 
-    for (i, var) in enumerate(statespace.params)
+    for (i, var) in enumerate(qspace.params)
         pref     = string(var.param_symbol)
         pref_fmt = symbol2formatted(pref)
 
@@ -65,21 +65,21 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
 
     # ==================> CAbstract Parameters <===============================
     if name_base == name 
-        abstract_definitions = statespace.param_info.abstract_definitions
+        abstract_definitions = qspace.param_info.abstract_definitions
         for abstract_defintion in abstract_definitions
             if abstract_defintion.name == name
-                cfun = CAbstract(param_info, ComplexRational(1,0,1), abstract_defintion.index)
-                return QExpr(statespace, [QAtomProduct(statespace, cfun)])
+                cfun = CAbstract(qspace.param_info, ComplexRational(1,0,1), abstract_defintion.index)
+                return QExpr(qspace, [QAtomProduct(qspace, cfun)])
             end
         end
     end
     if name == "CAbstract"
-        abstract_definitions = statespace.param_info.abstract_definitions
+        abstract_definitions = qspace.param_info.abstract_definitions
         exprs = QExpr[]
         for abstract_defintion in abstract_definitions
             if abstract_defintion.name == name
-                cfun = CAbstract(param_info, ComplexRational(1,0,1), abstract_defintion.index)
-                push!(exprs, QExpr(statespace, [QAtomProduct(statespace, cfun)]))
+                cfun = CAbstract(qspace.param_info, ComplexRational(1,0,1), abstract_defintion.index)
+                push!(exprs, QExpr(qspace, [QAtomProduct(qspace, cfun)]))
             end
         end
         return exprs
@@ -97,11 +97,11 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
     ops_comb = Vector{Vector{Symbol}}()
     ops_vec  = QExpr[]
 
-    sub_of_time = statespace.subspace_info.of_time
-    max_t = statespace.max_t_ind
+    sub_of_time = qspace.subspace_info.of_time
+    max_t = qspace.max_t_ind
     ti = _default_time_index(sub_of_time, t_spec)  # used for non-iterating cases
 
-    for sub in statespace.subspaces
+    for sub in qspace.subspaces
         ensemble_key = by_ensemble && sub.key == outer_name
         for key in sub.keys
             do_it = ensemble_key || (key == outer_name)
@@ -110,7 +110,7 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                 base_strs = sub.op_set.ops
 
                 for (inner_key, base_op) in zip(base_strs, base_ops)
-                    curr = copy(statespace.I_op)
+                    curr = copy(qspace.I_op)
                     curr[index] = base_op
 
                     base_comb = by_ensemble ? [Symbol(inner_key), Symbol(key)] : [Symbol(inner_key)]
@@ -120,11 +120,11 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                         if do_fun && sub_of_time && t_spec === nothing
                             # Build a lookup over all times + unsuffixed->t0
                             # unsuffixed key -> t=0
-                            q0 = QExpr(statespace, QTerm(curr, 0))
+                            q0 = QExpr(qspace, QTerm(curr, 0))
                             push!(ops_comb, base_comb); push!(ops_vec, q0)
                             # all explicit times 0..max_t
                             for t in 0:max_t
-                                qt = t == 0 ? q0 : QExpr(statespace, QTerm(curr, t))
+                                qt = t == 0 ? q0 : QExpr(qspace, QTerm(curr, t))
                                 comb_t = copy(base_comb); push!(comb_t, Symbol("t$(t)"))
                                 push!(ops_comb, comb_t); push!(ops_vec, qt)
                             end
@@ -134,7 +134,7 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                             if sub_of_time && t_spec !== nothing
                                 _check_t_bounds(t_spec, max_t)
                             end
-                            return QExpr(statespace, QTerm(curr, ti))
+                            return QExpr(qspace, QTerm(curr, ti))
                         end
                     end
 
@@ -143,17 +143,17 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                         if t_spec === nothing
                             if do_fun
                                 # Add unsuffixed -> t0
-                                q0 = QExpr(statespace, QTerm(curr, 0))
+                                q0 = QExpr(qspace, QTerm(curr, 0))
                                 push!(ops_comb, base_comb); push!(ops_vec, q0)
                                 # Add all explicit times 0..max_t
                                 for t in 0:max_t
-                                    qt = t == 0 ? q0 : QExpr(statespace, QTerm(curr, t))
+                                    qt = t == 0 ? q0 : QExpr(qspace, QTerm(curr, t))
                                     comb_t = copy(base_comb); push!(comb_t, Symbol("t$(t)"))
                                     push!(ops_comb, comb_t); push!(ops_vec, qt)
                                 end
                             else
                                 # no lookup requested: default to t=0
-                                push!(ops_vec, QExpr(statespace, QTerm(curr, 0)))
+                                push!(ops_vec, QExpr(qspace, QTerm(curr, 0)))
                             end
                         else
                             _check_t_bounds(t_spec, max_t)
@@ -163,12 +163,12 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                             else
                                 # ignore combs when not returning a lookup
                             end
-                            push!(ops_vec, QExpr(statespace, QTerm(curr, t_spec)))
+                            push!(ops_vec, QExpr(qspace, QTerm(curr, t_spec)))
                         end
                     else
                         # timeless
                         push!(ops_comb, base_comb)  # harmless if do_fun=false
-                        push!(ops_vec, QExpr(statespace, QTerm(curr, -1)))
+                        push!(ops_vec, QExpr(qspace, QTerm(curr, -1)))
                     end
                 end
 
@@ -187,9 +187,9 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
     end
 
     # ===================> QAbstract Operators <=================================
-    for (key_index, operatortype) in enumerate(statespace.operatortypes)
+    for (key_index, operatortype) in enumerate(qspace.operatortypes)
         ti_default = _default_time_index(operatortype.of_time, t_spec)
-        max_t = statespace.max_t_ind
+        max_t = qspace.max_t_ind
 
         if name_base == operatortype.name
             if do_fun
@@ -197,12 +197,12 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                     # time arg present with default 0; enforce 0..max_t
                     return (subindex::Int=-1, time_index::Int=0) -> begin
                         _check_t_bounds(time_index, max_t)
-                        QExpr(statespace, QAbstract(operatortype, key_index, subindex, 1, false, time_index))
+                        QExpr(qspace, QAbstract(operatortype, key_index, subindex, 1, false, time_index))
                     end
                 else
                     # no time arg when not of_time
                     return (subindex::Int=-1) -> begin
-                        QExpr(statespace, QAbstract(operatortype, key_index, subindex, 1, false, -1))
+                        QExpr(qspace, QAbstract(operatortype, key_index, subindex, 1, false, -1))
                     end
                 end
             else
@@ -210,7 +210,7 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                 if operatortype.of_time && t_spec !== nothing
                     _check_t_bounds(t_spec, max_t)
                 end
-                return QExpr(statespace, QAbstract(operatortype, key_index, -1, 1, false, ti_default))
+                return QExpr(qspace, QAbstract(operatortype, key_index, -1, 1, false, ti_default))
             end
         elseif occursin("_", name_base)
             reduced_name_s, subindex_s = split(name_base, "_", limit=2)
@@ -220,7 +220,7 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
                 if operatortype.of_time && t_spec !== nothing
                     _check_t_bounds(t_spec, max_t)
                 end
-                return QExpr(statespace, QAbstract(operatortype, key_index, subindex, 1, false, ti_default))
+                return QExpr(qspace, QAbstract(operatortype, key_index, subindex, 1, false, ti_default))
             end
         end
     end
@@ -228,13 +228,13 @@ function base_operators(statespace::StateSpace, name::String; do_fun::Bool=false
     error("No variable, subspace component or abstract operator found for key='$name'.")
 end
 
-function base_operators(statespace::StateSpace, name::Symbol; do_fun::Bool=false, by_ensemble::Bool=false)
-    return base_operators(statespace, String(name); do_fun=do_fun, by_ensemble=by_ensemble)
+function base_operators(qspace::QSpace, name::Symbol; do_fun::Bool=false, by_ensemble::Bool=false)
+    return base_operators(qspace, String(name); do_fun=do_fun, by_ensemble=by_ensemble)
 end
 
-function base_operators(statespace::StateSpace, names::Vector{String}; do_fun::Bool=false, by_ensemble::Bool=false)
-    return [base_operators(statespace, name; do_fun=do_fun, by_ensemble=by_ensemble) for name in names]
+function base_operators(qspace::QSpace, names::Vector{String}; do_fun::Bool=false, by_ensemble::Bool=false)
+    return [base_operators(qspace, name; do_fun=do_fun, by_ensemble=by_ensemble) for name in names]
 end 
-function base_operators(statespace::StateSpace, names::Vector{Symbol}; do_fun::Bool=false, by_ensemble::Bool=false)
-    return [base_operators(statespace, name; do_fun=do_fun, by_ensemble=by_ensemble) for name in names]
+function base_operators(qspace::QSpace, names::Vector{Symbol}; do_fun::Bool=false, by_ensemble::Bool=false)
+    return [base_operators(qspace, name; do_fun=do_fun, by_ensemble=by_ensemble) for name in names]
 end 

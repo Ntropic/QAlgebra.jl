@@ -4,7 +4,7 @@ import Base: isless, sort, sort!
 # Small helpers (boolean style)
 # -------------------------------
 
-@inline function less_vec_int(a::Vector{Vector{Integer}}, b::Vector{Vector{Integer}})
+@inline function less_vec_int(a::Vector{Vector{Int}}, b::Vector{Vector{Int}})
     n = length(a)
     # @assert length(a) == length(b)  # ==> Should be a given 
     @inbounds for i in 1:n
@@ -157,7 +157,7 @@ end
 function sort(qeq::QExpr; kwargs...)
     terms = copy(qeq.terms)
     sort!(terms; kwargs...)             # uses isless(::QComposite)
-    return QExpr(qeq.statespace, terms)
+    return QExpr(qeq.qspace, terms)
 end
 
 # QExpr — in place

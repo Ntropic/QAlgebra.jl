@@ -1,12 +1,12 @@
 # Helper Functions for QComposite Constructions ==> To keep all coefficients in front  
 function separate_coeff_qcomposite(q::T)::Tuple{CFunction, QComposite} where {T <: QComposite}
-    return q.coeff_fun, modify_coeff(q, q.statespace.c_one)
+    return q.coeff_fun, modify_coeff(q, q.qspace.c_one)
 end
 function separate_coeff_qcomposite(q::QSum)::Tuple{CFunction, QComposite} 
-    return q.statespace.c_one, q 
+    return q.qspace.c_one, q 
 end
-function separate_coeff_qcomposites(qs::Vector{QComposite}, statespace::StateSpace)::Tuple{CFunction, Vector{QComposite}} 
-    c_one = statespace.c_one 
+function separate_coeff_qcomposites(qs::Vector{QComposite}, qspace::QSpace)::Tuple{CFunction, Vector{QComposite}} 
+    c_one = qspace.c_one 
     coeff_fun = c_one  
     new_vector::Vector{QComposite} = QComposite[]
     sizehint!(new_vector, length(qs))
@@ -23,54 +23,54 @@ end
 
 # contains QComposite Vector (for product), changed, go_left, new_coeff_fun
 # ======> Pair Sorting & Simplifications <===========================================================================================================
-function simplify_pair_composite(a::S, b::T, statespace::StateSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool} where {S <: QComposite, T <: QComposite}
+function simplify_pair_composite(a::S, b::T, qspace::QSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool} where {S <: QComposite, T <: QComposite}
     if b < a && commutes(a,b)
         return QComposite[b, a], true, true, false
     else
         return QComposite[a, b], false, true, false
     end
 end
-function simplify_pair_composite(a::QAtomProduct, b::QAtomProduct, statespace::StateSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool}
+function simplify_pair_composite(a::QAtomProduct, b::QAtomProduct, qspace::QSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool}
     return multiply_QAtomProducts(a, b),  true, true, false
 end 
-function simplify_pair_composite(a::QExp, b::QExp, statespace::StateSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool} 
+function simplify_pair_composite(a::QExp, b::QExp, qspace::QSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool} 
     if commutes(a,b)
         new_expr = a.expr+b.expr 
         if isnumeric(new_expr)
             if length(new_expr) == 0 
-                coeff_fun = statespace.c_one 
+                coeff_fun = qspace.c_one 
             elseif length(new_expr) == 1
                 coeff_fun = exp(new_expr.terms[1].coeff_fun)
             else
                 error("Numeric terms should be of length 0 or 1. ")
             end
-            return QComposite[IdentityQAtomProduct(statespace, coeff_fun)], true, false, true
+            return QComposite[IdentityQAtomProduct(qspace, coeff_fun)], true, false, true
         end
         return QComposite[modify_expr(a, new_expr)], true, false, false
     else
         return QComposite[a, b], false, false, false
     end
 end
-function simplify_pair_composite(a::QSum, b::QSum, statespace::StateSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool}
+function simplify_pair_composite(a::QSum, b::QSum, qspace::QSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool}
     return a*b, true, false, false
 end
-function simplify_pair_composite(a::QSum, b::QAtomProduct, statespace::StateSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool}
+function simplify_pair_composite(a::QSum, b::QAtomProduct, qspace::QSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool}
     return [modify_expr(a, a.expr * b)], true, false, false
 end
-function simplify_pair_composite(b::QAtomProduct, a::QSum, statespace::StateSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool}
+function simplify_pair_composite(b::QAtomProduct, a::QSum, qspace::QSpace)::Tuple{Vector{QComposite}, Bool, Bool, Bool}
     return [modify_expr(a, b * a.expr)], true, false, false
 end
 
 
 """
-    add_QComposite_to_QCompositeProduct(terms::Vector{QComposite}, a::QComposite, ss::StateSpace) → Vector{Tuple{ComplexRational, Vector{QComposite}}}  # sum of products
+    add_QComposite_to_QCompositeProduct(terms::Vector{QComposite}, a::QComposite, ss::QSpace) → Vector{Tuple{ComplexRational, Vector{QComposite}}}  # sum of products
 
 Append `a` and bubble it left:
 - if a pair changes (swap / multiply / unify), splice the replacement and step left
 - if no change, step left
 - branching is preserved
 """
-function add_QComposite_to_QCompositeProduct(terms::AbstractVector{<:QComposite}, a::T, ss::StateSpace)::Tuple{CFunction, Vector{QComposite}} where {T<:QComposite}
+function add_QComposite_to_QCompositeProduct(terms::AbstractVector{<:QComposite}, a::T, ss::QSpace)::Tuple{CFunction, Vector{QComposite}} where {T<:QComposite}
     seed = QComposite[terms...]
     push!(seed, a)
 
@@ -138,23 +138,21 @@ function add_QComposite_to_QCompositeProduct(terms::AbstractVector{<:QComposite}
 end
 
 function multiply_QCompositeProduct_terms(p1::AbstractVector{<:QComposite}, p2::AbstractVector{<:QComposite})
-    statespace = p1[1].statespace
+    qspace = p1[1].qspace
     c = ComplexRational(1,0,1)
     t = p1
     for a in p2 
-        dc, t =  add_QComposite_to_QCompositeProduct(t, a, statespace) 
+        dc, t =  add_QComposite_to_QCompositeProduct(t, a, qspace) 
         c *= dc
     end
     return c, t
 end
 
 function multiply_QCompositeProducts(coeff::CFunction, p1::AbstractVector{<:QComposite}, p2::AbstractVector{<:QComposite})
-    statespace = p1[1].statespace
     c, t = multiply_QCompositeProduct_terms(p1, p2)
     return [ QCompositeProduct(c * coeff , t)]
 end
 function multiply_QCompositeProducts(coeff::CFunction, p1::AbstractVector{<:QComposite}, p2::AbstractVector{<:QComposite}, ::Val{:nosimp})
-    statespace = p1[1].statespace
     c, t = multiply_QCompositeProduct_terms(p1, p2)
-    return [ QCompositeProduct(c * coeff , t, Val(:nosimp)) ]
+    return [ QCompositeProduct(c * coeff , t, Val(:nosimp)) ] # coeff stuff not done 
 end

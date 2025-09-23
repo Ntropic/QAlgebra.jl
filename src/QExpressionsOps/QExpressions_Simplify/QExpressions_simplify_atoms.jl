@@ -1,8 +1,8 @@
 #### First output is a vector of tuples each a coefficient and a QAtom product, the second indicates whether we changed the order, the third indicates whether we should stop
 # Functions return: (new_atoms, changed, go_left)
 
-@inline function simplify_pair(a::QAbstract, b::QAbstract, ss::StateSpace)
-    # Different operator subtypes: maybe repartition
+@inline function simplify_pair(a::QAbstract, b::QAbstract, ss::QSpace)
+    # Different operator subtypes: maybe reorder
     if !same_term_type(a, b)
         if commutes_QAtom(a, b, ss) && b < a
             return [(one(ComplexRational), QAtom[b, a])], true, true
@@ -54,7 +54,7 @@ end
 
 
 # QTerm × QTerm  → multiply (may branch)
-@inline function simplify_pair(x::QTerm, y::QTerm, ss::StateSpace)::Tuple{Vector{Tuple{ComplexRational, Vector{QAtom}}}, Bool, Bool}
+@inline function simplify_pair(x::QTerm, y::QTerm, ss::QSpace)::Tuple{Vector{Tuple{ComplexRational, Vector{QAtom}}}, Bool, Bool}
     if x.time_index == y.time_index 
         Ts, Cs = multiply_qterm(x, y, ss)
         out = Vector{Tuple{ComplexRational, Vector{QAtom}}}()
@@ -72,14 +72,14 @@ end
     return [(one(ComplexRational), QAtom[x, y])], false, false
 end
 
-@inline function simplify_pair(x::QAbstract, y::QTerm, ss::StateSpace)::Tuple{Vector{Tuple{ComplexRational, Vector{QAtom}}}, Bool, Bool}
+@inline function simplify_pair(x::QAbstract, y::QTerm, ss::QSpace)::Tuple{Vector{Tuple{ComplexRational, Vector{QAtom}}}, Bool, Bool}
     if commutes_QAtom(x, y, ss)
         return [(one(ComplexRational), QAtom[y, x])], true, true
     else
         return [(one(ComplexRational), QAtom[x, y])], false, false
     end
 end
-@inline function simplify_pair(x::QTerm, y::QAbstract, ss::StateSpace)::Tuple{Vector{Tuple{ComplexRational, Vector{QAtom}}}, Bool, Bool}
+@inline function simplify_pair(x::QTerm, y::QAbstract, ss::QSpace)::Tuple{Vector{Tuple{ComplexRational, Vector{QAtom}}}, Bool, Bool}
     return [(one(ComplexRational), QAtom[x, y])], false, false
 end
 
@@ -91,7 +91,7 @@ Append `a` to `terms`, then bubble it left:
 - always step back one after a change so new junctions can simplify.
 Branches are preserved (sum of products).
 """
-function add_QAtom_to_QAtomProduct(terms::Vector{QAtom}, a::QAtom, ss::StateSpace)::Vector{Tuple{ComplexRational, Vector{QAtom}}}
+function add_QAtom_to_QAtomProduct(terms::Vector{QAtom}, a::QAtom, ss::QSpace)::Vector{Tuple{ComplexRational, Vector{QAtom}}}
     seed = copy(terms)
     push!(seed, a)
 
@@ -151,7 +151,7 @@ function add_QAtom_to_QAtomProduct(terms::Vector{QAtom}, a::QAtom, ss::StateSpac
 end
 
 
-function multiply_QAtomProducts_terms(p1::Vector{QAtom}, p2::Vector{QAtom}, statespace::StateSpace)
+function multiply_QAtomProducts_terms(p1::Vector{QAtom}, p2::Vector{QAtom}, qspace::QSpace)
     # start from simplified p1 (sum of products)
     states = [(ComplexRational(1,0,1), p1) ] # (coeff, Vector{QAtom})
 
@@ -159,7 +159,7 @@ function multiply_QAtomProducts_terms(p1::Vector{QAtom}, p2::Vector{QAtom}, stat
     for a in p2
         new_states = Tuple{ComplexRational,Vector{QAtom}}[]
         for (c, t) in states
-            for (dc, nt) in add_QAtom_to_QAtomProduct(t, a, statespace)
+            for (dc, nt) in add_QAtom_to_QAtomProduct(t, a, qspace)
                 push!(new_states, (c*dc, nt))
             end
         end
@@ -176,14 +176,12 @@ Wraps `multiply_QAtomProducts_terms` into your `QComposite` type.
 Assumes scalar-like `coeff_fun` fields multiply.
 """
 function multiply_QAtomProducts(p1::QAtomProduct, p2::QAtomProduct)::Vector{QComposite}
-    ss = p1.statespace
-    if p1.separate_expectation_values != p2.separate_expectation_values
-        error("Cannot multiply QAtomProducts with different `separate_expectation_values`")
-    end
+    ss = p1.qspace
+    @assert ss === p2.qspace "QAtomProducts must belong to the same qspace"
     new_coeff_fun = p1.coeff_fun * p2.coeff_fun
-    if p1.separate_expectation_values   # don't simplify the term
-        return [ QAtomProduct(ss, new_coeff_fun, vcat(p1.expr, p2.expr), p1.separate_expectation_values) ]
+    if p1.separate_expectation_values || p2.separate_expectation_values
+        return [ QAtomProduct(ss, new_coeff_fun, vcat(p1.expr, p2.expr), true) ]
     end
     termsums = multiply_QAtomProducts_terms(p1.expr, p2.expr, ss)
-    return [ QAtomProduct(ss, c * new_coeff_fun, t, p1.separate_expectation_values) for (c, t) in termsums ]
+    return [ QAtomProduct(ss, c * new_coeff_fun, t, false) for (c, t) in termsums ]
 end

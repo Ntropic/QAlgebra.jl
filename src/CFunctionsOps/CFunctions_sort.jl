@@ -12,7 +12,7 @@ import Base: isless
 @inline eq_ordered(a::Real, b::Real) = a == b   # assumes no NaNs in your sort fields
 
 # Lexicographic compare for vectors of Ints (fast path)
-function less_vec(a::AbstractVector{<:Integer}, b::AbstractVector{<:Integer})
+function less_vec(a::AbstractVector{<:Int}, b::AbstractVector{<:Int})
     n = min(length(a), length(b))
     @inbounds for i in 1:n
         ai = a[i]; bi = b[i]

@@ -8,7 +8,7 @@ _tree_iter_sub(n::CComposite, c::CCustomType) = Iterators.flatten(((n,), _tree_i
 _tree_iter_sub(n::CMultiComposite, c::CCustomType) = Iterators.flatten(((n,), (_tree_iter_sub(ch, c) for ch in n.expr)))
 _tree_iter_sub(n::CRational,  c::CCustomType) = Iterators.flatten(((n,), _tree_iter_sub(n.numer, c), _tree_iter_sub(n.denom, c)))
 _tree_iter_sub(v::CVector,    c::CCustomType) = Iterators.flatten(((v,), (_tree_iter_sub(ch, c) for ch in v.expr)))
-_tree_iter_sub(M::CMatrix,    c::CCustomType) = Iterators.flatten(((M,), (_tree_iter_sub(ch, c) for ch in M.entries[:])))
+_tree_iter_sub(M::CMatrix,    c::CCustomType) = Iterators.flatten(((M,), (_tree_iter_sub(ch, c) for ch in M.expr[:])))
 
 
 """
@@ -40,7 +40,7 @@ _leaf_iter_sub(n::CComposite, c::CCustomType) = _leaf_iter_sub(n.expr, c)
 _leaf_iter_sub(n::CMultiComposite, c::CCustomType) = Iterators.flatten((_leaf_iter_sub(ch, c) for ch in n.expr))
 _leaf_iter_sub(n::CRational,  c::CCustomType) = Iterators.flatten((_leaf_iter_sub(n.numer, c), _leaf_iter_sub(n.denom, c)))
 _leaf_iter_sub(v::CVector,    c::CCustomType) = Iterators.flatten((_leaf_iter_sub(ch, c) for ch in v.expr))
-_leaf_iter_sub(M::CMatrix,    c::CCustomType) = Iterators.flatten((_leaf_iter_sub(ch, c) for ch in M.entries[:]))
+_leaf_iter_sub(M::CMatrix,    c::CCustomType) = Iterators.flatten((_leaf_iter_sub(ch, c) for ch in M.expr[:]))
 
 """
     leaf_iter(f::CFunction)
@@ -55,7 +55,7 @@ leaf_iter(f::CComposite) = leaf_iter(f.expr)
 leaf_iter(f::CMultiComposite) = Iterators.flatten((leaf_iter(ch) for ch in f.expr))
 leaf_iter(r::CRational) = Iterators.flatten((leaf_iter(r.numer), leaf_iter(r.denom)))
 leaf_iter(v::CVector) = Iterators.flatten((leaf_iter(ch) for ch in v.expr))
-leaf_iter(M::CMatrix) = Iterators.flatten((leaf_iter(ch) for ch in M.entries[:]))
+leaf_iter(M::CMatrix) = Iterators.flatten((leaf_iter(ch) for ch in M.expr[:]))
 function leaf_iter(c::CCustomType)
     if c.ctype_def.has_abstract 
         return _leaf_iter_sub(c.ctype_def.fun, c) 

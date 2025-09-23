@@ -27,3 +27,4 @@ Manifest.toml
 **/citation_comments.md
 **/statprof*/
 *.md
+Markdown/

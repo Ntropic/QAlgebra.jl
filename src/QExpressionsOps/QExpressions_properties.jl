@@ -1,21 +1,21 @@
-export is_t_var, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, contains_which_t_indexes, max_moment_of_terms, where_acting
-export is_unitary, is_hermitian, substitution_properties_fulfilled, same_statespace, statespace_check
-import ..CFunctions: isnumeric
+export is_t_var, is_t, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, contains_which_t_indexes, max_moment_of_terms, where_acting
+export is_unitary, is_hermitian, substitution_properties_fulfilled, same_qspace, qspace_check
+import ..CFunctions: isnumeric, CFunction, CAtom
 """ 
     isnumeric(t::QObj) -> Bool
 
 Returns true either if it is zero or it has only neutral elements for operators.
 """
-function isnumeric(op_indices::Vector{Vector{Int}}, statespace::StateSpace)::Bool
-    return statespace.I_op == op_indices
+function isnumeric(op_indices::Vector{Vector{Int}}, qspace::QSpace)::Bool
+    return qspace.I_op == op_indices
 end
-function isnumeric(t::QTerm, statespace::StateSpace)::Bool
-    return statespace.I_op == t.op_indices
+function isnumeric(t::QTerm, qspace::QSpace)::Bool
+    return qspace.I_op == t.op_indices
 end
-function isnumeric(t::QTerm, index::Int, statespace::StateSpace)::Bool
-    return statespace.I_op[index] == t.op_indices[index]
+function isnumeric(t::QTerm, index::Int, qspace::QSpace)::Bool
+    return qspace.I_op[index] == t.op_indices[index]
 end
-function isnumeric(t::QAbstract, statespace::StateSpace)::Bool
+function isnumeric(t::QAbstract, qspace::QSpace)::Bool
     return false
 end
 function isnumeric(e::QAtomProduct)
@@ -24,7 +24,7 @@ function isnumeric(e::QAtomProduct)
     elseif length(e.expr) == 0 
         return true
     else 
-        return iszero(e.coeff_fun) || all([isnumeric(e.expr[1], e.statespace) for x in e.expr]) 
+        return iszero(e.coeff_fun) || all([isnumeric(e.expr[1], e.qspace) for x in e.expr]) 
     end
 end
 function isnumeric(e::T) where T<:QComposite
@@ -59,8 +59,29 @@ function is_t_var(t::QExpr)::Bool
     # must be exactly one variable with exponent 1
     return length(inds) == 1 &&
            coeff_fun.var_exponents[inds[1]] == 1 &&
-           t.statespace.params[inds[1]].is_t
+           t.qspace.params[inds[1]].is_t
 end
+
+is_t(t::QExpr)::Bool = is_t_var(t)
+
+function is_t(prod::QAtomProduct)::Bool
+    isnumeric(prod) || return false
+    return _is_t_cfunction(prod.coeff_fun, prod.qspace)
+end
+
+is_t(::QObj)::Bool = false
+
+@inline function _is_t_cfunction(f::CAtom, qspace::QSpace)::Bool
+    isone(f.coeff) || return false
+    exps = f.var_exponents
+    idxs = findall(!iszero, exps)
+    length(idxs) == 1 || return false
+    idx = idxs[1]
+    exps[idx] == 1 || return false
+    return qspace.params[idx].is_t
+end
+
+@inline _is_t_cfunction(::CFunction, ::QSpace)::Bool = false
 
 """
     contains_non_simple_QObj(q::QObj) -> Bool 
@@ -178,7 +199,7 @@ Checks is the quantum object depends on time. Doesn't work for QAtoms!
 @inline contains_time(q::T, t_ind=0) where T<:QAtom = error("Cannot get time indexes from QAtom. Try QComposites, QExpr, of diff_QEq instead. ")
 
 @inline function contains_time(q::T, t_ind=0)::Bool where T <: QObj
-    indexes = get_t_indexes(q.statespace.param_info, t_ind)
+    indexes = get_t_indexes(q.qspace.param_info, t_ind)
     return contains_t_indexes(q, indexes)
 end
 """ 
@@ -189,13 +210,13 @@ with time indexes starting at `t_index=0` and ending at `t_index=max_t_ind`
 """
 contains_which_t_indexes(q::T) where T<:QAtom = error("Cannot get time indexes from QAtom. Try QComposites, QExpr, of diff_QEq instead. ")
 function contains_which_t_indexes(q::T)::BitVector where T <: QObj
-    max_t_index = q.statespace.max_t_ind
-    return [contains_t_indexes(q, get_t_indexes(q.statespace.param_info, t_ind)) for t_ind in 0:max_t_index] 
+    max_t_index = q.qspace.max_t_ind
+    return [contains_t_indexes(q, get_t_indexes(q.qspace.param_info, t_ind)) for t_ind in 0:max_t_index] 
 end
 
 @inline function max_moment_of_terms(q::QAtomProduct)::Int
     @assert length(q.expr) == 1 && isa(q.expr[1], QTerm) "QAtomProduct can only contain a single QTerm to specify moment of operator."
-    return sum(where_acting(q.expr[1], q.statespace))
+    return sum(where_acting(q.expr[1], q.qspace))
 end 
 @inline function max_moment_of_terms(q::T)::Int where T <: QComposite
     return max_moment_of_terms(q.expr)
@@ -245,33 +266,40 @@ iszero(q::T) where T<:QMultiComposite = iszero(q.coeff_fun) || any(iszero, q.exp
 
 ##################
 
-function where_neutral(q::QTerm, statespace::StateSpace)::BitVector
-    return [op == neut for (op, neut) in zip(q.op_indices, statespace.I_op)]
+function where_neutral(q::QTerm, qspace::QSpace)::BitVector
+    return [op == neut for (op, neut) in zip(q.op_indices, qspace.I_op)]
 end
-function where_neutral(q::QAbstract, statespace::StateSpace)::BitVector
+function where_neutral(q::QAbstract, qspace::QSpace)::BitVector
     return q.operator_type.expanded_ss_acting   # should never be modified! copy would be safer, but slower
 end
-function where_acting(q::QTerm, statespace::StateSpace)::BitVector
-    return [op != neut for (op, neut) in zip(q.op_indices, statespace.I_op)]
+function where_acting(q::QTerm, qspace::QSpace)::BitVector
+    return [op != neut for (op, neut) in zip(q.op_indices, qspace.I_op)]
 end
-function where_acting(q::QAbstract, statespace::StateSpace)::BitVector
+function where_acting(q::QAbstract, qspace::QSpace)::BitVector
     return .!q.operator_type.expanded_ss_acting  # should never be modified! copy would be safer, but slower
 end
 function where_acting(q::QAtomProduct)::BitVector
     # combine the action of all of its constituents via OR
-    statespace = q.statespace 
+    qspace = q.qspace 
     if length(q.expr) == 0
-        return falses(length(statespace.I_op))
+        return falses(length(qspace.I_op))
     else
-        return mapreduce(expr -> where_acting(expr, statespace), .|, q.expr)
+        return mapreduce(expr -> where_acting(expr, qspace), .|, q.expr)
     end
 end
 where_acting(q::QExpr)::BitVector = mapreduce(t -> where_acting(t), .|, q.terms)
 function where_acting(q::T)::BitVector where {T<:QComposite}
     return where_acting(q.expr)
 end
+function where_acting(q::QCumulant)::BitVector
+    acting = falses(length(q.qspace.I_op))
+    for idx in q.where_acting
+        acting[idx] = true
+    end
+    return acting .| where_acting(q.expr)
+end
 function where_acting(q::T)::BitVector where {T<:QMultiComposite}
-    return mapreduce(expr -> where_acting(expr, statespace), .|, q.expr)
+    return mapreduce(expr -> where_acting(expr, qspace), .|, q.expr)
 end
 function where_acting(q::QSum)::BitVector
     acting = where_acting(q.expr)
@@ -281,28 +309,28 @@ function where_acting(q::QSum)::BitVector
     return acting
 end
 
-function commutes_QAtom(q1::QAbstract, q2::QAbstract, statespace::StateSpace)::Bool   # for QAtom can check 
+function commutes_QAtom(q1::QAbstract, q2::QAbstract, qspace::QSpace)::Bool   # for QAtom can check 
     # check if all elements of where neutral are NAND
     if q1.time_index != q2.time_index
         return false 
     end
-    return statespace.operatortype_info.commute_fun(q1.key_index, q1.sub_index, q1.dag, q2.key_index, q2.sub_index, q2.dag)
+    return qspace.operatortype_info.commute_fun(q1.key_index, q1.sub_index, q1.dag, q2.key_index, q2.sub_index, q2.dag)
 end
-@inline commutes_QAtom_inds(inds::Vector{Int}, q1::QAbstract, q2::QAbstract, statespace) = commutes_QAtom(q1, q2, statespace) 
+@inline commutes_QAtom_inds(inds::Vector{Int}, q1::QAbstract, q2::QAbstract, qspace) = commutes_QAtom(q1, q2, qspace) 
 
-function commutes_QAtom(q1::QTerm, q2::QTerm, statespace::StateSpace)::Bool
+function commutes_QAtom(q1::QTerm, q2::QTerm, qspace::QSpace)::Bool
     if q1.time_index != q2.time_index
         return false 
     end
-    a_q1 = where_acting(q1, statespace)
-    a_q2 = where_acting(q2, statespace)
+    a_q1 = where_acting(q1, qspace)
+    a_q2 = where_acting(q2, qspace)
     inds = findall(a_q1 .& a_q2)
     isempty(inds) && return true
-    return commutes_QAtom_inds(inds, q1, q2, statespace)
+    return commutes_QAtom_inds(inds, q1, q2, qspace)
 end
-@inline function commutes_QAtom_inds(inds::Vector{Int}, q1::QTerm, q2::QTerm, statespace::StateSpace)::Bool
+@inline function commutes_QAtom_inds(inds::Vector{Int}, q1::QTerm, q2::QTerm, qspace::QSpace)::Bool
     @inbounds for ind in inds
-        if !statespace.subspaces[statespace.subspace_info.outer_ss_of_expanded[ind]].op_set.commutes(q1[ind], q2[ind])
+        if !qspace.subspaces[qspace.subspace_info.outer_ss_of_expanded[ind]].op_set.commutes(q1[ind], q2[ind])
             return false
         end
     end
@@ -310,17 +338,17 @@ end
 end
 
 # Add the mixed method once:
-function commutes_QAtom(qt::QTerm, qa::QAbstract, statespace::StateSpace)::Bool
+function commutes_QAtom(qt::QTerm, qa::QAbstract, qspace::QSpace)::Bool
     if qt.time_index != qa.time_index
         return false 
     end
-    a_t = where_acting(qt, statespace)
-    a_a = where_acting(qa, statespace)
+    a_t = where_acting(qt, qspace)
+    a_a = where_acting(qa, qspace)
     return !any(a_t .& a_a) 
 end
-@inline commutes_QAtom(qa::QAbstract, qt::QTerm, statespace::StateSpace) = commutes_QAtom(qt, qa, statespace::StateSpace)
-@inline commutes_QAtom_inds(inds::Vector{Int}, q1::QTerm, q2::QAbstract, statespace::StateSpace) = length(inds) == 0
-@inline commutes_QAtom_inds(inds::Vector{Int}, q1::QAbstract, q2::QTerm, statespace::StateSpace) = length(inds) == 0
+@inline commutes_QAtom(qa::QAbstract, qt::QTerm, qspace::QSpace) = commutes_QAtom(qt, qa, qspace::QSpace)
+@inline commutes_QAtom_inds(inds::Vector{Int}, q1::QTerm, q2::QAbstract, qspace::QSpace) = length(inds) == 0
+@inline commutes_QAtom_inds(inds::Vector{Int}, q1::QAbstract, q2::QTerm, qspace::QSpace) = length(inds) == 0
 
 function any_overlaps(multi_where_acting::Vector{BitVector})
     n = length(multi_where_acting)
@@ -338,13 +366,13 @@ function any_overlaps(multi_where_acting::Vector{BitVector})
     return false, added
 end
 @inline function commutes(q1::QAtomProduct, q2::QAtomProduct)::Bool
-    statespace = q1.statespace
-    acts1 = where_acting.(q1.expr, Ref(statespace))  # cache acting masks for q1 atoms
-    acts2 = where_acting.(q2.expr, Ref(statespace))  # cache acting masks for q2 atoms
+    qspace = q1.qspace
+    acts1 = where_acting.(q1.expr, Ref(qspace))  # cache acting masks for q1 atoms
+    acts2 = where_acting.(q2.expr, Ref(qspace))  # cache acting masks for q2 atoms
     @inbounds for (ai, where_a1) in zip(q1.expr, acts1)
         for (aj, where_a2) in zip(q2.expr, acts2)
             inds = findall(where_a1 .& where_a2)          # overlap indices for (ai, bj)
-            if !commutes_QAtom_inds(inds, ai, aj, statespace)
+            if !commutes_QAtom_inds(inds, ai, aj, qspace)
                 return false
             end
         end
@@ -352,12 +380,12 @@ end
     return true
 end
 function commutes(Q1::QExpr, Q2::QExpr)::Bool
-    statespace = Q1.statespace
+    qspace = Q1.qspace
     # collect non-commuting pairs
     noncomm_pairs = Tuple{Int,Int}[]
     for (i, x1) in enumerate(Q1.terms)
         for (j, x2) in enumerate(Q2.terms)
-            if !commutes(x1, x2)#, statespace)
+            if !commutes(x1, x2)#, qspace)
                 push!(noncomm_pairs, (i, j))
             end
         end
@@ -378,6 +406,13 @@ end
 function commutes(Q1::S, Q2::T) where {S<:QComposite,T<:QComposite}
     return commutes(Q1.expr, Q2.expr)
 end
+function commutes(Q1::S, Q2::T) where {S<:QComposite,T<:QAtomProduct}
+    return commutes(Q1.expr, QExpr(Q2.qspace, Q2))
+end
+function commutes(Q1::S, Q2::T) where {S<:QAtomProduct,T<:QComposite}
+    return commutes(QExpr(Q1.qspace, Q1), Q2.expr)
+end
+# for QCompositeProduct we need to track this differently. 
 
 # define internal commutes function for QMultiComposite 
 # do the internal degrees of freedom commute? 
@@ -403,20 +438,20 @@ function ==(a::QAbstract, b::QAbstract)
     return a.key_index == b.key_index && a.sub_index == b.sub_index && a.exponent == b.exponent && a.dag == b.dag && a.index_map == b.index_map && a.time_index == b.time_index
 end
 function ==(a::QAtomProduct, b::QAtomProduct)
-    return a.coeff_fun == b.coeff_fun && all([ai == bi for (ai, bi) in zip(a.expr, b.expr)]) && a.statespace == b.statespace
+    return a.coeff_fun == b.coeff_fun && all([ai == bi for (ai, bi) in zip(a.expr, b.expr)]) && a.qspace == b.qspace
 end
 
 function ==(a::QExpr, b::QExpr)
     if length(a) != length(b)
         return false
     end
-    if a.statespace != b.statespace
+    if a.qspace != b.qspace
         return false
     end
     return all([ai == bi for (ai, bi) in zip(a, b)])
 end
 function ==(a::QSum, b::QSum)
-    a.statespace == b.statespace || return false
+    a.qspace == b.qspace || return false
     a.eq_indexes == b.eq_indexes     || return false
     a.neq_blocks == b.neq_blocks || return false
     return a.expr == b.expr
@@ -474,14 +509,14 @@ function substitution_properties_fulfilled(a::QAbstract, q::QExpr)::Bool
 end
 
 ########## Statespace check infra ##############################################
-function same_statespace(a::S, b::T)::Bool where {S<:QNotAtom,T<:QNotAtom}
-    return a.statespace === b.statespace
+function same_qspace(a::S, b::T)::Bool where {S<:QNotAtom,T<:QNotAtom}
+    return a.qspace === b.qspace
 end
 # Only check at outermost call sites. Internal calls use _NOCHK.
-@inline statespace_check_if(::Val{true}, a, b) =
-    (a.statespace === b.statespace) || _statespace_throw(a, b)
-@inline statespace_check_if(::Val{false}, a, b) = nothing
+@inline qspace_check_if(::Val{true}, a, b) =
+    (a.qspace === b.qspace) || _qspace_throw(a, b)
+@inline qspace_check_if(::Val{false}, a, b) = nothing
 
-@noinline function _statespace_throw(a, b)
-    throw(AssertionError("Objects must share the same statespace; got $(summary(a)) vs $(summary(b))"))
+@noinline function _qspace_throw(a, b)
+    throw(AssertionError("Objects must share the same qspace; got $(summary(a)) vs $(summary(b))"))
 end

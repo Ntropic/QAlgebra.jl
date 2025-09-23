@@ -2,13 +2,48 @@ using Printf
 using LaTeXStrings
 import Base: string
 
-export string, latex_string, QExpr2string
+export string, latex_string, QExpr2string, cumulant_string
+
+function _compact_cumulant_string(q::QCumulant; do_latex::Bool)
+    coeff_sign, coeff_str = to_stringer(q.coeff_fun; do_latex=do_latex, braced=DO_BRACED, do_frac=true, has_op=true)
+    atom_product = QAtomProduct(q.qspace, q.atom, false)
+    atom_sign, atom_body = QComposite2string(atom_product; do_latex=do_latex, braced=true, do_frac=true, do_braket=true)
+    total_sign = xor(coeff_sign, atom_sign)
+
+    body = ""
+    if !isempty(coeff_str)
+        body *= coeff_str
+        if !isempty(atom_body)
+            body *= (do_latex ? raw" " : " ") * atom_body
+        end
+    else
+        body = atom_body
+    end
+    body = isempty(body) ? (do_latex ? "0" : "0") : body
+    suffix = do_latex ? "_{C}" : str2sup("c")
+    body *= suffix
+    return total_sign, body
+end
+
+function _expanded_cumulant_string(q::QCumulant; do_latex::Bool)
+    lhs_product = QAtomProduct(q.qspace, q.coeff_fun, [q.atom], false)
+    lhs_sign, lhs_body = QComposite2string(lhs_product; do_latex=do_latex, braced=DO_BRACED, do_frac=true, do_braket=true)
+    lhs_display = lhs_sign ? "-" * lhs_body : lhs_body
+    lhs_display = isempty(lhs_display) ? (do_latex ? "0" : "0") : lhs_display
+
+    rhs_sign, rhs_body = QExpr2string(q.expr; do_latex=do_latex, braced=DO_BRACED, do_braket=true)
+    rhs_display = rhs_sign ? "-" * rhs_body : rhs_body
+    rhs_display = isempty(rhs_display) ? (do_latex ? "0" : "0") : rhs_display
+
+    approx_symbol = do_latex ? raw" \approx " : " ≈ "
+    return lhs_display * approx_symbol * rhs_display
+end
 
 
-function qAtom2string(q::QTerm, statespace::StateSpace; do_latex::Bool=false)::String
+function qAtom2string(q::QTerm, qspace::QSpace; do_latex::Bool=false)::String
     op_indices = q.op_indices
     op_str::String = ""
-    subspaces = statespace.subspaces
+    subspaces = qspace.subspaces
     not_neutral = false
     i = 0
     for subspace in subspaces
@@ -32,7 +67,7 @@ function qAtom2string(q::QTerm, statespace::StateSpace; do_latex::Bool=false)::S
     return op_str 
 end
 
-function qAtom2string(q::QAbstract, statespace::StateSpace; do_latex::Bool=false)::String
+function qAtom2string(q::QAbstract, qspace::QSpace; do_latex::Bool=false)::String
     type = q.operator_type
     name = type.name 
     if do_latex 
@@ -84,7 +119,7 @@ function sum_symbol_str(indexes::Vector{SubSpaceIndex}, neq::Bool, info::SubSpac
 end
 function sum_symbol_str(s::QSum; do_latex::Bool=false)
     connector = do_latex ? " " : ""
-    info = s.statespace.subspace_info 
+    info = s.qspace.subspace_info 
     strings = []
     if length(s.eq_indexes) > 0 
         push!(strings, sum_symbol_str(s.eq_indexes, false, info; do_latex=do_latex))
@@ -106,14 +141,14 @@ function QComposite2string(q::QAtomProduct; do_latex::Bool=true, braced::Bool=tr
             return curr_sign, curr_str
         end
     else
-        curr_sign, curr_str = to_stringer(q.coeff_fun, braced=true, do_frac=do_frac, has_op=true)
+        curr_sign, curr_str = to_stringer(q.coeff_fun, braced=true, do_frac=do_frac, has_op=true, do_latex=do_latex)
         if !do_braket
-            operator_str = join([qAtom2string(t, q.statespace, do_latex=do_latex) for t in q.expr], "")
+            operator_str = join([qAtom2string(t, q.qspace, do_latex=do_latex) for t in q.expr], "")
         else
             if q.separate_expectation_values
-                operator_str = join([braket(qAtom2string(t, q.statespace, do_latex=do_latex), do_latex=do_latex) for t in q.expr], "")
+                operator_str = join([braket(qAtom2string(t, q.qspace, do_latex=do_latex), do_latex=do_latex) for t in q.expr], "")
             else
-                operator_str = braket(join([qAtom2string(t, q.statespace, do_latex=do_latex) for t in q.expr], ""), do_latex=do_latex)
+                operator_str = braket(join([qAtom2string(t, q.qspace, do_latex=do_latex) for t in q.expr], ""), do_latex=do_latex)
             end
         end
         connector =do_latex ? raw" " : ""
@@ -173,6 +208,24 @@ function QComposite2string(q::QCommutator; do_latex::Bool=true, braced::Bool=tru
         return do_return_braced_true(total_sign, coeff_str*raw"\left["*join(all_strings, raw",\,") * raw"\right]", return_if_braced)
     else
         return do_return_braced_true(total_sign, coeff_str*"["*join(all_strings, ", ") * "]", return_if_braced)
+    end
+end
+
+function QComposite2string(q::QCumulant; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)
+    if EXPAND_CUMULANTS
+        body = _expanded_cumulant_string(q; do_latex=do_latex)
+        if return_if_braced
+            return false, body, false
+        else
+            return false, body
+        end
+    else
+        sign, body = _compact_cumulant_string(q; do_latex=do_latex)
+        if return_if_braced
+            return sign, body, false
+        else
+            return sign, body
+        end
     end
 end
 
@@ -376,6 +429,10 @@ function string(eq::QExpr)::String
     total_string = curr_sign ? "-" * curr_string : curr_string
     return total_string
 end
+function string(eq::QCumulant)::String
+    sign, total_string = QComposite2string(eq; do_latex=false, braced=DO_BRACED)
+    return sign ? "-" * total_string : total_string
+end
 function string(eq::QAtomProduct)::String
     # add default variables for do_Frac, braced and so on. take care of this by writing a single function called by every string and latex string function 
     sign, total_string = QComposite2string(eq; do_latex=false, braced=DO_BRACED)
@@ -399,6 +456,10 @@ function latex_string(eq::QExpr)::String
     total_string = curr_sign ? "-" * curr_string : curr_string
     return total_string
 end
+function latex_string(eq::QCumulant)::String
+    sign, total_string = QComposite2string(eq; do_latex=true, braced=DO_BRACED)
+    return sign ? "-" * total_string : total_string
+end
 function latex_string(eq::QAtomProduct)::String
     # add default variables for do_Frac, braced and so on. take care of this by writing a single function called by every string and latex string function 
     sign, total_string = QComposite2string(eq; do_latex=true, braced=DO_BRACED)
@@ -417,6 +478,35 @@ function show(io::IO, ::MIME"text/latex", x::QExpr)
     print(io, latexstring(latex_string(x)))
 end
 
+function show(io::IO, x::QCumulant)
+    print(io, string(x))
+end
+function show(io::IO, ::MIME"text/latex", x::QCumulant)
+    print(io, latexstring(latex_string(x)))
+end
+
+"""
+    cumulant_string(q::QCumulant; do_latex=false, expanded=EXPAND_CUMULANTS) -> String 
+    cumulant_string(q::QExpr; do_latex=false, expanded=EXPAND_CUMULANTS) -> String 
+
+Prints the cumulant approximation (expanded or compact) and the operator it approximates. 
+"""
+function cumulant_string(q::QCumulant; do_latex::Bool=false, expanded::Bool=EXPAND_CUMULANTS)
+    if expanded
+        return _expanded_cumulant_string(q; do_latex=do_latex)
+    else
+        sign, body = _compact_cumulant_string(q; do_latex=do_latex)
+        return sign ? "-" * body : body
+    end
+end
+
+function cumulant_string(q::QExpr; do_latex::Bool=false, expanded::Bool=EXPAND_CUMULANTS)
+    length(q.terms) == 1 || error("cumulant_string expects a QExpr with exactly one term; got $(length(q.terms)).")
+    term = q.terms[1]
+    term isa QCumulant || error("cumulant_string only supports QExpr whose single term is a QCumulant; got $(typeof(term)).")
+    return cumulant_string(term; do_latex=do_latex, expanded=expanded)
+end
+
 function show(io::IO, x::QAtomProduct)
     print(io, string(x))
 end
@@ -430,4 +520,3 @@ end
 function show(io::IO, ::MIME"text/latex", q::diff_QEq)
     print(io, latexstring(latex_string(q)))
 end
-

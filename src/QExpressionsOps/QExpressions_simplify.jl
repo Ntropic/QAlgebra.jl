@@ -40,7 +40,7 @@ function same_term_type(t1::S, t2::T)::Bool where {S<:QComposite, T<:QComposite}
 end
 
 function combine_term_sum(t1::QAtomProduct, t2::QAtomProduct)::QAtomProduct
-    return QAtomProduct(t1.statespace, t1.coeff_fun + t2.coeff_fun, t1.expr)
+    return QAtomProduct(t1.qspace, t1.coeff_fun + t2.coeff_fun, t1.expr)
 end
 function combine_term_sum(s1::QSum, s2::QSum)::QSum
     return modify_expr(s1, s1.expr + s2.expr)
@@ -80,7 +80,7 @@ function simplify_QExpr(terms::Vector{QComposite})::Vector{QComposite}
     return combined_terms
 end
 function simplify_QExpr(q::QExpr)::QExpr 
-    return QExpr(q.statespace, simplify_QExpr(q.terms))
+    return QExpr(q.qspace, simplify_QExpr(q.terms))
 end
 
 #####################################################################################################################
@@ -161,10 +161,10 @@ function simplify(q::QExp)::Vector{QComposite}
 end 
 
 function simplify(q::QExpr)::QExpr
-    return QExpr(q.statespace, simplify) #simplify_QExpr(mapreduce(simplify, vcat, q.terms))) # don't also simplify its elements. they should already be simplified! 
+    return QExpr(q.qspace, simplify) #simplify_QExpr(mapreduce(simplify, vcat, q.terms))) # don't also simplify its elements. they should already be simplified! 
 end
 function simplify(q::diff_QEq)::diff_QEq
     simp_rhs = simplify(q.expr)
-    return diff_QEq(q.statespace, q.left_hand_side, simp_rhs, q.do_braket)
+    return diff_QEq(q.qspace, q.left_hand_side, simp_rhs, q.do_braket)
 end
 """

@@ -1,4 +1,4 @@
-issquare(n::Integer) = n ≥ 0 && isqrt(n)^2 == n
+issquare(n::Int) = n ≥ 0 && isqrt(n)^2 == n
 
 # √ of a rational if it’s a rational square; else nothing
 function sqrt_rational(q::Rational{Int})

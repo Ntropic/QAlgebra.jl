@@ -1,13 +1,14 @@
 module QExpressions
-using ..QSpace
+using ..QSpaces
 using ..CFunctions
+import ..CFunctions: expand
 using ..StringUtils
 using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, /, ^, product, iszero, copy
-using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED, vecvec_or, vecvec_or!, findfirstfreeafterbefore, sorted_unique_push!
+using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED, EXPAND_CUMULANTS, vecvec_or, vecvec_or!, findfirstfreeafterbefore, sorted_unique_push!
 using ..CFunctions: isnumeric
-export QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, diff_QEq, base_operators, d_dt #simplify
-export @define, @define_basics, QExpr2CFunction
+export QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, QCumulant, diff_QEq, base_operators, d_dt #simplify
+export @define, @define_basics, QExpr2CFunction, Cumulant, cumulant_string
 
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
@@ -59,7 +60,7 @@ abstract type QParent <: QObj end
     QTerm
 
 A `QTerm` represents a single term in a quantum expression. It contains:
-    - `op_indices`: A vector of indices representing the operators in the term, which are also defined in a StateSpace.
+    - `op_indices`: A vector of indices representing the operators in the term, which are also defined in a QSpace.
 """
 struct QTerm <: QAtom
     op_indices::Vector{Is}
@@ -126,30 +127,32 @@ A `QExpr` represents a quantum equation, consisting of a Vector of quantum Expre
 It also contains a reference to the state space in which the equation is defined.
 """
 struct QExpr <: QParent
-    statespace::StateSpace
+    qspace::QSpace
     terms::Vector{QComposite}              #AbstractVector{<:QComposite}   
-    function QExpr(statespace::StateSpace, terms::AbstractVector{<:QComposite})
+    function QExpr(qspace::QSpace, terms::AbstractVector{<:QComposite})
         if isempty(terms) 
             # add neotral zero term
-            zero_term = QAtomProduct(statespace, statespace.c_zero, QAtom[])
+            zero_term = QAtomProduct(qspace, qspace.c_zero, QAtom[])
             terms = [zero_term]
         end
-        new(statespace, terms)
+        new(qspace, terms)
     end
-    function QExpr(statespace::StateSpace, prod::T) where T<:QComposite
-        new(statespace, QComposite[prod])
+    function QExpr(qspace::QSpace, prod::T) where T<:QComposite
+        new(qspace, QComposite[prod])
     end
-    function QExpr(statespace::StateSpace, terms::QAtom)
-        new(statespace, QComposite[QAtomProduct(statespace,terms)])
+    function QExpr(qspace::QSpace, terms::QAtom)
+        new(qspace, QComposite[QAtomProduct(qspace,terms)])
     end
 end
 length(q::QExpr) = length(q.terms)
 each_term(q::QExpr) = q.terms
 each_coeff(q::QExpr)::Vector{CFunction} = flatmap_to(each_coeff, each_term(q), CFunction)
-multiply_coeff(q::QExpr, coeff::CFunction) = QExpr(q.statespace, [multiply_coeff(s, coeff) for s in q.terms])
+multiply_coeff(q::QExpr, coeff::CFunction) = QExpr(q.qspace, [multiply_coeff(s, coeff) for s in q.terms])
 
 include("QExpressionsOps/QExpressions_composites.jl")
 include("QExpressionsOps/QExpressions_helper.jl") 
+include("QExpressionsOps/QExpressions_expand.jl")
+include("QExpressionsOps/QExpressions_cumulants.jl")
 
 """
     diff_QEq
@@ -163,38 +166,37 @@ It represents time derivative of an operator expectation value, and wraps the sy
 # Fields
 - `left_hand_side::QTerm`: The LHS operator being differentiated.
 - `expr::QExpr`: The RHS symbolic expression.
-- `statespace::StateSpace`: The StateSpace in which the equation is defined.
+- `qspace::QSpace`: The QSpace in which the equation is defined.
 - `do_braket::Bool`: Whether to use do_braket notation ⟨⋯⟩ (default = `true`).
 """
 struct diff_QEq <: QParent
-    statespace::StateSpace
+    qspace::QSpace
     left_hand_side::QAtomProduct
     expr::QExpr 
     do_braket::Bool
 end
 
 """
-    diff_QEq(lhs::QTerm, rhs::QExpr, statespace::StateSpace; do_braket=true)
+    diff_QEq(lhs::QTerm, rhs::QExpr, qspace::QSpace; do_braket=true)
 
 Construct a [`diff_QEq`](@ref) that represents the time derivative of ⟨lhs⟩ = rhs.
 
 Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
-function diff_QEq(statespace::StateSpace, left_hand_side::QAtomProduct, expr::QExpr; do_braket::Bool=true)
-    @assert !(iscomplex(expr)) "Differential requires simple QSums, i.e. no QSums in QComposites (such as QExp, QLog...) and no nested QSums (multiple and complex indexing at the same level is possible, and immediate nesting is automatically simplified to composite indexes)."
+function diff_QEq(qspace::QSpace, left_hand_side::QAtomProduct, expr::QExpr; do_braket::Bool=true)
+    @assert !(contains_non_simple(expr)) "Differential requires simple QSums, i.e. no QSums in QComposites (such as QExp, QLog...) and no nested QSums (multiple and complex indexing at the same level is possible, and immediate nesting is automatically simplified to composite indexes)."
     if !contains_abstract(left_hand_side) && !contains_abstract(expr)
-        return repartition(neq(diff_QEq(statespace, left_hand_side, expr, do_braket)))
+        return reorder(neq(diff_QEq(qspace, left_hand_side, expr, Val(:nosimp); do_braket=do_braket)))
     else
-        return diff_QEq(statespace, left_hand_side, expr, do_braket)
+        return diff_QEq(qspace, left_hand_side, expr, Val(:nosimp); do_braket=do_braket)
     end
-    return diff
 end
-function diff_QEq(statespace::StateSpace, left_hand_side::QAtomProduct, expr::QExpr, ::Val{:nosimp}; do_braket::Bool=true) # no optimization
-    return diff_QEq(statespace, left_hand_side, expr, do_braket)
+function diff_QEq(qspace::QSpace, left_hand_side::QAtomProduct, expr::QExpr, ::Val{:nosimp}; do_braket::Bool=true)
+    return diff_QEq(qspace, left_hand_side, expr, do_braket)
 end
 
 """
-    d_dt(statespace::StateSpace, expr)
+    d_dt(qspace::QSpace, expr)
 
 Evaluate the time derivative of an expression `expr` in the context of the given state space `ss`.
 
@@ -206,10 +208,10 @@ The function then returns a `diff_QEq` constructed from the left-hand side QTerm
 """
 function d_dt(left_hand::Union{QAtomProduct,QExpr}, right_hand::QExpr)::diff_QEq
     # Check if expr is an equality.
-    qstate = right_hand.statespace
+    qstate = right_hand.qspace
 
     if left_hand isa QExpr
-        if left_hand.statespace != qstate
+        if left_hand.qspace != qstate
             error("Left and right sides of the equation must be in the same state space.")
         end
         if length(left_hand.terms) != 1
@@ -261,10 +263,8 @@ include("QExpressionsOps/QSum_modify.jl")
 
 include("QExpressionsOps/QExpressions_welldefined.jl")
 include("QExpressionsOps/QExpressions_substitute.jl")
-include("QExpressionsOps/QExpressions_repartition.jl")
-include("QExpressionsOps/QExpressions_repartition_summation.jl")
-
-include("QExpressionsOps/QExpressions_cumulants.jl")
+include("QExpressionsOps/QExpressions_reorder.jl")
+include("QExpressionsOps/QSum_decollision.jl")
 
 import ..CFunctions: define_cabstract, define_ctype, list_cabstracts, list_ctypes, c_abstract_exists
 
@@ -284,8 +284,8 @@ function QExpr2CFunction(q::QExpr)::CFunction
 end 
 
 """
-    @define statespace, name
-    @define statespace, name, fun
+    @define qspace, name
+    @define qspace, name, fun
 
 Two forms:
 
@@ -302,7 +302,7 @@ Two forms:
        Name(qs::QExpr...)
        Name(coeff::ComplexRational, qs::QExpr...)
 """
-macro define(statespace, name, fun=nothing)
+macro define(qspace, name, fun=nothing)
     # Normalize the binding name to a Symbol (for variables & method names)
     n_sym = name isa Symbol ? name : Symbol(name)
     n_str = String(n_sym)   # for registration APIs
@@ -314,12 +314,12 @@ macro define(statespace, name, fun=nothing)
         return esc(quote
             # Register and build a QExpr for the new abstract
             const $(n_sym)::QExpr = begin
-                define_cabstract($statespace.param_info, $n_str)
+                define_cabstract($qspace.param_info, $n_str)
                 # Build the QExpr representing this abstract
-                let __ab__ = $statespace.param_info.abstract_definitions[end]
-                    QExpr($statespace, [
-                        QAtomProduct($statespace,
-                                     CAbstract($statespace.param_info,
+                let __ab__ = $qspace.param_info.abstract_definitions[end]
+                    QExpr($qspace, [
+                        QAtomProduct($qspace,
+                                     CAbstract($qspace.param_info,
                                                $CR1,
                                                __ab__.index))
                     ])
@@ -331,28 +331,28 @@ macro define(statespace, name, fun=nothing)
         # 2) @define ss Name fun
         # fun is provided by the caller; don’t eval it in the macro. Convert at runtime.
         return esc(quote
-            const $(ctype_sym) = define_ctype($statespace.param_info, $n_str, QExpr2CFunction($fun))
+            const $(ctype_sym) = define_ctype($qspace.param_info, $n_str, QExpr2CFunction($fun))
             if $(ctype_sym).has_abstract
                 # Constructor 3: Name(qs::QExpr...)
                 function $(n_sym)(qs::QExpr...)
                     c_exprs::Vector{CFunction} = QExpr2CFunction.(collect(qs))
-                    return QExpr($statespace, QAtomProduct($statespace, CCustomType($statespace.param_info, $CR1, c_exprs, $(ctype_sym)), QTerm[]))
+                    return QExpr($qspace, QAtomProduct($qspace, CCustomType($qspace.param_info, $CR1, c_exprs, $(ctype_sym)), QTerm[]))
                 end
             else
-                $(n_sym)::QExpr = QExpr($statespace, QAtomProduct($statespace, CCustomType($statespace.param_info, $CR1, CFunction[$(ctype_sym).fun], $(ctype_sym)), QTerm[]))
+                $(n_sym)::QExpr = QExpr($qspace, QAtomProduct($qspace, CCustomType($qspace.param_info, $CR1, CFunction[$(ctype_sym).fun], $(ctype_sym)), QTerm[]))
             end
             $(n_sym)
         end)
     end
 end
-macro define_basics(statespace, var=:q)
+macro define_basics(qspace, var=:q)
     return esc(quote
-        var0 = @define($statespace, var)
-        @define($statespace, sin, 1//(2*1im) * (exp(1im*var0) - exp(-1im*var0)))
-        @define($statespace, cos, 1//2 * (exp(1im*var0) + exp(-1im*var0)))
+        var0 = @define($qspace, var)
+        @define($qspace, sin, 1//(2*1im) * (exp(1im*var0) - exp(-1im*var0)))
+        @define($qspace, cos, 1//2 * (exp(1im*var0) + exp(-1im*var0)))
     end)
 end
 
-list_cabstracts(statespace::StateSpace) = list_cabstracts(statespace.param_info)
-list_ctypes(statespace::StateSpace) = list_ctypes(statespace.param_info)
+list_cabstracts(qspace::QSpace) = list_cabstracts(qspace.param_info)
+list_ctypes(qspace::QSpace) = list_ctypes(qspace.param_info)
 end

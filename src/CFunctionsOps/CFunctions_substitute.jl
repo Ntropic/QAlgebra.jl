@@ -105,9 +105,9 @@ end
 
 function _sub(v::CVector, abstract::AbstractCAbstract, value::CFunction)
     any_changed = false
-    newkids = similar(v.entries)
-    @inbounds for i in eachindex(v.entries)
-        newkids[i], ch = _sub(v.entries[i], abstract, value)
+    newkids = similar(v.expr)
+    @inbounds for i in eachindex(v.expr)
+        newkids[i], ch = _sub(v.expr[i], abstract, value)
         any_changed |= ch
     end
     any_changed || return (v, false)
@@ -116,7 +116,7 @@ end
 
 function _sub(M::CMatrix, abstract::AbstractCAbstract, value::CFunction)
     any_changed = false
-    entries = M.entries
+    entries = M.expr
     flat = Vector{CFunction}(undef, length(entries))
     # linear index over entries
     k = 1

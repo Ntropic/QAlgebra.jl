@@ -1,7 +1,7 @@
 @testset "QAlgebra Tests" begin
 
     # === SETUP ===
-    qspace = StateSpace("alpha", "beta(t)", "gamma_i", "delta_i", h=QubitPM(), i=(3, QubitPauli()), b=Ladder())
+    qspace = QSpace("alpha", "beta(t)", "gamma_i", "delta_i", h=QubitPM(), i=(3, QubitPauli()), b=Ladder())
 
     var_dict, op_dict, abstract_dict = base_operators(qspace)
 
@@ -19,8 +19,8 @@
 
     # === TESTS ===
 
-    @testset "StateSpace Construction" begin
-        @test qspace isa StateSpace
+    @testset "QSpace Construction" begin
+        @test qspace isa QSpace
     end
 
     @testset "Base Operators Extraction" begin

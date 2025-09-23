@@ -404,3 +404,4 @@ end
 
 # Return parameter mapping vector for switching from t_index2 to t_index1.
 map_by_tindex(t_index1::Int, t_index2::Int, pinfo::ParameterInfo) = pinfo.t_index_transform[t_index1+1, t_index2+1]
+# from t_index2 to t_index1 

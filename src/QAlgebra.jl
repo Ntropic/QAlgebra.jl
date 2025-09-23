@@ -4,7 +4,8 @@ using Preferences
 # === Default Coefficient Preferences ===
 const DEFAULT_COEFF_PREFS = Dict(
     :FLIP_IF_FIRST_TERM_NEGATIVE  => true,
-    :DO_BRACED => true
+    :DO_BRACED => true,
+    :EXPAND_CUMULANTS => false
     )
 
 """ 
@@ -27,15 +28,20 @@ end
 # These are initialized immediately at module load time
 FLIP_IF_FIRST_TERM_NEGATIVE  = get_default(:FLIP_IF_FIRST_TERM_NEGATIVE )
 DO_BRACED = get_default(:DO_BRACED)
+EXPAND_CUMULANTS = get_default(:EXPAND_CUMULANTS)
 
 """
     set_flip_if_first_term_negative(mode::Bool)
 Sets a new default value for the first mode and saves it persistently.
 First mode specifies whether braced terms with a leading negative are flipped or only if all terms are negative.
 """
+@inline function _update_pref!(name::Symbol, value)
+    set_default(name, value)
+    @eval $(Symbol(name)) = $value
+end
+
 function set_flip_if_first_term_negative(mode::Bool)
-    set_default(:FLIP_IF_FIRST_TERM_NEGATIVE , mode)
-    @eval $(Symbol(:FLIP_IF_FIRST_TERM_NEGATIVE)) = $mode
+    _update_pref!(:FLIP_IF_FIRST_TERM_NEGATIVE, mode)
 end
 
 """
@@ -43,13 +49,23 @@ end
 Sets a new default value for :DO_BRACED. Toggles whether terms are grouped when printing them, into groups with common coefficients. 
 """
 function set_do_braced(mode::Bool)
-    set_default(:DO_BRACED, mode)
-    @eval $(Symbol(:DO_BRACED)) = $mode
+    _update_pref!(:DO_BRACED, mode)
+end
+
+"""
+    set_expand_cumulants(mode::Bool)
+
+Set a new default for whether cumulants print in expanded form (`true`) or compact form (`false`).
+The preference persists via `Preferences.jl`.
+"""
+function set_expand_cumulants(mode::Bool)
+    _update_pref!(:EXPAND_CUMULANTS, mode)
 end
 
 
 
-export get_default, set_flip_if_first_term_negative, set_do_braced, FLIP_IF_FIRST_TERM_NEGATIVE , DO_BRACED
+export get_default, set_flip_if_first_term_negative, set_do_braced, set_expand_cumulants,
+       FLIP_IF_FIRST_TERM_NEGATIVE , DO_BRACED, EXPAND_CUMULANTS
 
 include("Helper.jl")
 
@@ -62,36 +78,38 @@ include("CFunctions.jl")
 using .CFunctions
 export CFunction, CAbstractDefinition, CTypeDefinition, ParameterInfo, add_cabstract!, add_ctype!, CAbstract, CCustomType, CAtom, CSum, CRational, CProd, CExp, CLog
 export CMatrix, CVector, CPower
-export repartition, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
+export reorder, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
 export coeff, var_exponents, expand, substitute
 export contains_non_simple_CFunction
 export define_cabstract, define_ctype, list_cabstracts, list_ctypes
 export which_ensemble_acting
 
+include("Cumulants.jl")
+using .Cumulants
+
 include("QSpace.jl")
-using .QSpace
+using .QSpaces
 export OperatorSet
 export SubSpace, SubSpaceDefinitions 
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
 export Parameter, ParameterInfo, ParameterDefinitions
-export StateSpace
+export QSpace
 export QubitPauli, QubitPM, Ladder
 
 include("QExpressions.jl")
 using .QExpressions
-export QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QAtomProduct, QSum, Sum, ∑, QCompositeProduct, diff_QEq, d_dt
+export QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QCumulant, QAtomProduct, QSum, Sum, ∑, QCompositeProduct, diff_QEq, d_dt
 export QCommutator, QExp, QLog, QPower, power, QRoot, root #, simplify
-export Dag, Commutator, same_statespace
+export Dag, Commutator, same_qspace
 export is_t_var, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, max_moment_of_terms, contains_which_t_indexes, where_acting
 export is_unitary, is_hermitian, substitution_properties_fulfilled
 export base_operators, QExprLookup 
 export string, latex_string
 export term
-export @define, @define_basics, QExpr2CFunction
+export @define, @define_basics, QExpr2CFunction, Cumulant, cumulant_string
 
 export contains_abstract, are_indexes_defined, which_summations_acting, which_summations_to_root
 export Substitution, --> 
-export repartition!,repartition, neq, flatsums, complexsums
+export reorder, reorder_full, reorder_time, neq, flatsums, complexsums
 export QExpr2string   # remove later 
 end # module QAlgebra
-
