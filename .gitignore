@@ -28,3 +28,4 @@ Manifest.toml
 **/statprof*/
 *.md
 Markdown/
+.julia_depot/
