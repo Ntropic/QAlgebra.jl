@@ -30,16 +30,17 @@ FLIP_IF_FIRST_TERM_NEGATIVE  = get_default(:FLIP_IF_FIRST_TERM_NEGATIVE )
 DO_BRACED = get_default(:DO_BRACED)
 EXPAND_CUMULANTS = get_default(:EXPAND_CUMULANTS)
 
-"""
-    set_flip_if_first_term_negative(mode::Bool)
-Sets a new default value for the first mode and saves it persistently.
-First mode specifies whether braced terms with a leading negative are flipped or only if all terms are negative.
-"""
 @inline function _update_pref!(name::Symbol, value)
     set_default(name, value)
     @eval $(Symbol(name)) = $value
 end
 
+"""
+    set_flip_if_first_term_negative(mode::Bool)
+
+Sets a new default value for the first mode and saves it persistently.
+First mode specifies whether braced terms with a leading negative are flipped or only if all terms are negative.
+"""
 function set_flip_if_first_term_negative(mode::Bool)
     _update_pref!(:FLIP_IF_FIRST_TERM_NEGATIVE, mode)
 end
@@ -90,7 +91,7 @@ using .Cumulants
 include("QSpace.jl")
 using .QSpaces
 export OperatorSet
-export SubSpace, SubSpaceDefinitions 
+export Ensemble, SubSpace, SubSpaceDefinitions 
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
 export Parameter, ParameterInfo, ParameterDefinitions
 export QSpace
@@ -98,8 +99,8 @@ export QubitPauli, QubitPM, Ladder
 
 include("QExpressions.jl")
 using .QExpressions
-export QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QCumulant, QAtomProduct, QSum, Sum, ∑, QCompositeProduct, diff_QEq, d_dt
-export QCommutator, QExp, QLog, QPower, power, QRoot, root #, simplify
+export QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QCumulant, QAtomProduct, permutation, QSum, Sum, ∑, QCompositeProduct, diffQEq, d_dt
+export QCommutator, QExp, QLog, QPower, power, QRoot, root, Expectation, ExpectQAtomProducts
 export Dag, Commutator, same_qspace
 export is_t_var, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, max_moment_of_terms, contains_which_t_indexes, where_acting
 export is_unitary, is_hermitian, substitution_properties_fulfilled
@@ -112,4 +113,8 @@ export contains_abstract, are_indexes_defined, which_summations_acting, which_su
 export Substitution, --> 
 export reorder, reorder_full, reorder_time, neq, flatsums, complexsums
 export QExpr2string   # remove later 
+
+include("QEqSets.jl")
+using .QEqSets
+export diffQEqSet, ExpectQAtomProducts, ExpectedValues
 end # module QAlgebra

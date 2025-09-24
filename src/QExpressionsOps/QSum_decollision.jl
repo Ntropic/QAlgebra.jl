@@ -1,4 +1,12 @@
 export decollision_QSum
+
+"""
+    decollision_QSum(q::QSum) -> Vector{QComposite}
+
+Resolve collisions between summation indexes by relabelling clashing
+indices and repartitioning coefficients. The returned vector contains the
+collision-free terms that replace the original `QSum`.
+"""
 # Repartitioning for collision free QSum indexing: in a  QSum:
 # 0th initialize empty where_defined
 # 1st create subsitutions in case of collision of current indexes with where_defined

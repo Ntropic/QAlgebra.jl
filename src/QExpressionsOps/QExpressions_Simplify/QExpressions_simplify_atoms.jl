@@ -180,8 +180,8 @@ function multiply_QAtomProducts(p1::QAtomProduct, p2::QAtomProduct)::Vector{QCom
     @assert ss === p2.qspace "QAtomProducts must belong to the same qspace"
     new_coeff_fun = p1.coeff_fun * p2.coeff_fun
     if p1.separate_expectation_values || p2.separate_expectation_values
-        return [ QAtomProduct(ss, new_coeff_fun, vcat(p1.expr, p2.expr), true) ]
+        return [ QAtomProduct(ss, new_coeff_fun, vcat(p1.expr, p2.expr), true, p1.braket || p2.braket) ]
     end
     termsums = multiply_QAtomProducts_terms(p1.expr, p2.expr, ss)
-    return [ QAtomProduct(ss, c * new_coeff_fun, t, false) for (c, t) in termsums ]
+    return [ QAtomProduct(ss, c * new_coeff_fun, t, false, p1.braket || p2.braket) for (c, t) in termsums ]
 end

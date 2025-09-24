@@ -1,9 +1,23 @@
 import Base: exp, log, sqrt
 
-export QAtomProduct, QSum, Sum, ∑, QCommutator, QCompositeProduct, QExp, QLog, QPower, power, QRoot, root
+export QAtomProduct, QAtomOrdered, OrderedQAtomProduct, permutation, QSum, Sum, ∑, QCommutator, QCompositeProduct, QExp, QLog, QPower, power, QRoot, root
+
+@inline function _identity_permutation(n::Int)::Vector{Int}
+    perm = collect(1:n)
+    return perm
+end
+
+@inline function _to_qatom_vector(expr::AbstractVector{<:QAtom})::Vector{QAtom}
+    n = length(expr)
+    out = Vector{QAtom}(undef, n)
+    @inbounds for i in 1:n
+        out[i] = expr[i]
+    end
+    return out
+end
 
 
-""" 
+"""
     QAtomProduct
 
 A product of QAtom expressions, i.e. qTerms or QAbstract.
@@ -11,34 +25,77 @@ It contains:
     - `qspace`      : The quantum space in which the product is defined.
     - `coeff_fun`   : The function of parameters for the Operator product
     - `expr`        : A vector of qAtoms (qTerms or QAbstract) that are multiplied together.
+    - `separate_expectation_values` : Flag indicating whether expectation values factorise within cumulants.
+    - `braket`       : Indicates whether the product should be rendered inside expectation brackets ⟨⋯⟩.
 """
 struct QAtomProduct <: QComposite
     qspace::QSpace         # State space of the product.
     coeff_fun::CFunction            # function of scalar parameters => has +,-,*,/,^ defined 
     expr::Vector{QAtom}             # Vector of qAtoms (qTerms or QAbstract).
     separate_expectation_values::Bool 
-    
-    function QAtomProduct(qspace::QSpace, coeff::T, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false) where T <: CFunction
-        return new(qspace, coeff, expr, separate_expectation_values)
+    braket::Bool
+
+    function QAtomProduct(qspace::QSpace, coeff::T, expr::AbstractVector{<:QAtom}=QAtom[], separate_expectation_values::Bool=false, braket::Bool=false) where T <: CFunction
+        expr_vec = _to_qatom_vector(expr)
+        return new(qspace, coeff, expr_vec, separate_expectation_values, braket)
     end
     function QAtomProduct(qspace::QSpace, coeff::T, expr::S, separate_expectation_values::Bool=false) where {T <: CFunction, S <: QAtom}
-        return new(qspace, coeff, [expr], separate_expectation_values)
+        return QAtomProduct(qspace, coeff, QAtom[expr], separate_expectation_values)
     end
     function QAtomProduct(qspace::QSpace, expr::AbstractVector{<:QAtom}= QAtom[], separate_expectation_values::Bool=false) 
-        return new(qspace, qspace.c_one, expr, separate_expectation_values)
+        return QAtomProduct(qspace, qspace.c_one, expr, separate_expectation_values)
     end
     function QAtomProduct(qspace::QSpace, expr::S, separate_expectation_values::Bool=false) where {S <: QAtom}
-         new(qspace, qspace.c_one, [expr], separate_expectation_values)
+        return QAtomProduct(qspace, qspace.c_one, QAtom[expr], separate_expectation_values)
     end
 end
+
 modify_expr(q::QAtomProduct, expr::Vector{QAtom})::Vector{QComposite} =
-    QComposite[QAtomProduct(q.qspace, q.coeff_fun, expr, q.separate_expectation_values)]
-modify_coeff_expr(q::QAtomProduct, coeff::CFunction, expr::Vector{QAtom})::QAtomProduct = QAtomProduct(q.qspace, coeff, expr, q.separate_expectation_values)
-modify_coeff(q::QAtomProduct, coeff::CFunction)::QAtomProduct = QAtomProduct(q.qspace, coeff, q.expr, q.separate_expectation_values)
+    QComposite[QAtomProduct(q.qspace, q.coeff_fun, expr, q.separate_expectation_values, q.braket)]
+modify_expr(q::QAtomProduct, expr::Vector{QAtom}, ::Val{:nosimp})::Vector{QComposite} =
+    QComposite[QAtomProduct(q.qspace, q.coeff_fun, expr, q.separate_expectation_values, q.braket)]
+modify_coeff_expr(q::QAtomProduct, coeff::CFunction, expr::Vector{QAtom})::QAtomProduct =
+    QAtomProduct(q.qspace, coeff, expr, q.separate_expectation_values, q.braket)
+modify_coeff(q::QAtomProduct, coeff::CFunction)::QAtomProduct =
+    QAtomProduct(q.qspace, coeff, q.expr, q.separate_expectation_values, q.braket)
 each_term(q::QAtomProduct) = q.expr
 each_coeff(q::QAtomProduct)::Vector{CFunction} = [q.coeff_fun]
 get_coeff(q::QComposite) = q.coeff_fun
 multiply_coeff(q::QComposite, coeff::CFunction) = modify_coeff(q, get_coeff(q)*coeff)
+set_braket(q::QAtomProduct, val::Bool=true) = QAtomProduct(q.qspace, q.coeff_fun, q.expr, q.separate_expectation_values, val)
+
+struct QAtomOrdered <: QComposite
+    qspace::QSpace
+    coeff_fun::CFunction
+    op_indices::Vector{QAtom}
+    permutation::Vector{Int}
+    function QAtomOrdered(qspace::QSpace, coeff_fun::CFunction, op_indices::Vector{QAtom}, permutation::Vector{Int})
+        length(op_indices) == length(permutation) || error("Permutation length does not match operator count.")
+        return new(qspace, coeff_fun, copy(op_indices), copy(permutation))
+    end
+end
+
+permutation(q::QAtomOrdered) = q.permutation
+
+"""
+    OrderedQAtomProduct(q::QAtomProduct; lt=isless)
+
+Return a `QAtomOrdered` where the operators of `q` are sorted according to `lt`.
+The permutation field records how the sorted ordering maps back to the original
+operator sequence.
+"""
+function OrderedQAtomProduct(q::QAtomProduct; lt=isless)
+    n = length(q.expr)
+    if n == 0
+        return QAtomOrdered(q.qspace, q.coeff_fun, QAtom[], Int[])
+    end
+    perm = sortperm(q.expr; lt=lt)
+    ordered_atoms = Vector{QAtom}(undef, n)
+    @inbounds for i in 1:n
+        ordered_atoms[i] = q.expr[perm[i]]
+    end
+    return QAtomOrdered(q.qspace, q.coeff_fun, ordered_atoms, perm)
+end
 
 
 """
@@ -83,6 +140,10 @@ modify_expr(q::QSum, expr::QExpr, ::Val{:nodecollision}) =
     QComposite[QSum(q.qspace, expr, q.eq_indexes, q.neq_blocks)]
 modify_expr(q::QSum, expr::Vector{QComposite}, ::Val{:nodecollision}) =
     QComposite[QSum(q.qspace, QExpr(q.qspace, expr), q.eq_indexes, q.neq_blocks)]
+modify_expr(q::QSum, expr::QExpr, ::Val{:nosimp}) =
+    QComposite[QSum(q.qspace, expr, q.eq_indexes, q.neq_blocks)]
+modify_expr(q::QSum, expr::Vector{QComposite}, ::Val{:nosimp}) =
+    QComposite[QSum(q.qspace, QExpr(q.qspace, expr, Val(:nosimp)), q.eq_indexes, q.neq_blocks)]
 modify_expr(q::QSum, expr::QExpr) = _QSum(q.qspace, expr, q.eq_indexes, q.neq_blocks)
 modify_expr(q::QSum, expr::Vector{QComposite}) = _QSum(q.qspace, QExpr(q.qspace, expr), q.eq_indexes, q.neq_blocks)
 modify_expr_indexing(q::QSum, expr::QExpr, eq_indexes::Vector{SubSpaceIndex}, neq_blocks::Vector{Vector{SubSpaceIndex}}) =
@@ -176,10 +237,11 @@ Base.sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=f
  
 
 
-""" 
-    QCompositeProduct
+"""
+    QCompositeProduct(qspace, coeff_fun, exprs)
 
-Represents a product of QComposites. 
+Product of quantum composites collected as a single node. Simplifies scalar
+coefficients while leaving the nested structure intact.
 """
 struct QCompositeProduct <: QMultiComposite
     qspace::QSpace         # State space of the product.
@@ -211,6 +273,13 @@ modify_coeff_expr(q::QCompositeProduct, coeff_fun::CFunction, expr::Vector{QComp
 modify_coeff_expr(q::QCompositeProduct, coeff_fun::CFunction, expr::Vector{QComposite}, ::Val{:nosimp}) = _QCompositeProduct(q.qspace, coeff_fun, expr, Val(:nosimp))
 modify_coeff(q::QCompositeProduct, coeff_fun::CFunction)::QCompositeProduct = QCompositeProduct(q.qspace, coeff_fun, q.expr)
 
+"""
+    QCommutator(qspace, exprs; coeff_fun=qspace.c_one)
+
+Composite holding two `QExpr` factors representing a commutator. The actual
+commutator algebra is implemented in [`Commutator`](@ref); this struct simply
+stores the symbolic tuple `[A, B]` with an optional scalar prefactor.
+"""
 struct QCommutator <: QMultiComposite
     qspace::QSpace
     coeff_fun::CFunction
@@ -227,6 +296,8 @@ function QCommutator(qspace::QSpace, q1::QExpr, q2::QExpr)::Vector{QComposite}
     return QComposite[QCommutator(qspace, qspace.c_one, QExpr(qspace, QComposite[q1, q2]))]
 end
 modify_expr(q::QCommutator, expr::Vector{QExpr}) = QComposite[QCommutator(q.qspace, q.coeff_fun, expr)]
+modify_expr(q::QCommutator, expr::Vector{QExpr}, ::Val{:nosimp}) =
+    QComposite[QCommutator(q.qspace, q.coeff_fun, expr)]
 modify_coeff_expr(q::QCommutator, coeff_fun::CFunction, expr::Vector{QExpr}) = QComposite[QCommutator(q.qspace, coeff_fun, expr)]
 modify_coeff(q::QCommutator, coeff_fun::CFunction)::QCommutator = QCommutator(q.qspace, coeff_fun, q.expr)
 each_term(q::QMultiComposite) = q.expr
@@ -235,6 +306,12 @@ each_term(q::QComposite) = [q.expr]
 each_coeff(q::QComposite)::Vector{CFunction} = CFunction[q.coeff_fun; each_coeff(q.expr)]
 
 ### Non-simple qFunctions 
+"""
+    QExp(qspace, coeff_fun, expr)
+
+Composite for the symbolic exponential `coeff_fun * exp(expr)` used inside
+`QExpr` terms without expanding the series.
+"""
 struct QExp <: QComposite
     qspace::QSpace
     coeff_fun::CFunction
@@ -249,14 +326,29 @@ function _QExp(qspace::QSpace, coeff_fun::CFunction, expr::QExpr)::Vector{QCompo
     end
     return QComposite[QExp(qspace, coeff_fun, simplify_QExpr(expr))]
 end
+function _QExp(qspace::QSpace, coeff_fun::CFunction, expr::QExpr, ::Val{:nosimp})::Vector{QComposite}
+    if length(expr) == 1 && isa(expr[1], QLog)
+        return QComposite[expr[1].expr]
+    elseif isnumeric(expr)
+        sum_of_coeff_funs = sum(qi.coeff_fun for qi in expr)
+        return QComposite[modify_coeff(expr[1], coeff_fun * exp(sum_of_coeff_funs))]
+    end
+    return QComposite[QExp(qspace, coeff_fun, expr)]
+end
 function exp(q::QExpr)::QExpr
     return QExpr(q.qspace, _QExp(q.qspace, q.qspace.c_one, q))
 end
 modify_expr(q::QExp, expr::QExpr) = _QExp(q.qspace, q.coeff_fun, expr)
+modify_expr(q::QExp, expr::QExpr, ::Val{:nosimp}) = _QExp(q.qspace, q.coeff_fun, expr, Val(:nosimp))
 modify_coeff_expr(q::QExp, coeff_fun::CFunction, expr::QExpr) = _QExp(q.qspace, coeff_fun, expr)
 modify_coeff(q::QExp, coeff_fun::CFunction) = QExp( q.qspace, coeff_fun, q.expr)
 iszero(q::QExp) = iszero(q.coeff_fun) 
 
+"""
+    QLog(qspace, coeff_fun, expr)
+
+Composite representing `coeff_fun * log(expr)`.
+"""
 struct QLog <: QComposite
     qspace::QSpace
     coeff_fun::CFunction
@@ -272,14 +364,30 @@ function _QLog(qspace::QSpace, coeff_fun::CFunction, expr::QExpr)::Vector{QCompo
     end
     return QComposite[QLog(qspace, coeff_fun, simplify_QExpr(expr))]
 end
+function _QLog(qspace::QSpace, coeff_fun::CFunction, expr::QExpr, ::Val{:nosimp})::Vector{QComposite}
+    if length(expr) == 1 && isa(expr[1], QExp)
+        return QComposite[expr[1].expr * coeff_fun]
+    end
+    if isnumeric(expr)
+        sum_of_coeff_funs = sum(qi.coeff_fun for qi in expr)
+        return QComposite[modify_coeff(expr[1], coeff_fun * log(sum_of_coeff_funs))]
+    end
+    return QComposite[QLog(qspace, coeff_fun, expr)]
+end
 function log(q::QExpr)::QExpr
     return QExpr(q.qspace, _QLog(q.qspace, q.qspace.c_one, q))
 end
 modify_expr(q::QLog, expr::QExpr) = _QLog(q.qspace, q.coeff_fun, expr)
+modify_expr(q::QLog, expr::QExpr, ::Val{:nosimp}) = _QLog(q.qspace, q.coeff_fun, expr, Val(:nosimp))
 modify_coeff_expr(q::QLog, coeff_fun::CFunction, expr::QExpr) = _QLog(q.qspace, coeff_fun, expr)
 modify_coeff(q::QLog, coeff_fun::CFunction)::QLog = QLog(q.qspace, coeff_fun, q.expr)
 iszero(q::QLog) = iszero(q.coeff_fun) #|| isone(q.expr) => that should be autosimplified
 
+"""
+    QPower(qspace, coeff_fun, n, expr)
+
+Symbolic integer power `coeff_fun * expr^n` kept in unevaluated form.
+"""
 struct QPower <: QCompositeN
     qspace::QSpace
     coeff_fun::CFunction
@@ -293,7 +401,15 @@ function _QPower(qspace::QSpace, coeff_fun::CFunction, n::Int, expr::QExpr)::Vec
     end
     return QComposite[QPower(qspace, coeff_fun, n, expr)]
 end
+function _QPower(qspace::QSpace, coeff_fun::CFunction, n::Int, expr::QExpr, ::Val{:nosimp})::Vector{QComposite}
+    if isnumeric(expr)
+        sum_of_coeff_funs = sum(qi.coeff_fun for qi in expr)
+        return QComposite[modify_coeff(expr[1], coeff_fun * power(sum_of_coeff_funs, n))]
+    end
+    return QComposite[QPower(qspace, coeff_fun, n, expr)]
+end
 modify_expr(q::QPower, expr::QExpr) = _QPower(q.qspace, q.coeff_fun, q.n, expr)
+modify_expr(q::QPower, expr::QExpr, ::Val{:nosimp}) = _QPower(q.qspace, q.coeff_fun, q.n, expr, Val(:nosimp))
 modify_coeff_expr(q::QPower, coeff_fun::CFunction, expr::QExpr)::QPower = _QPower(q.qspace, coeff_fun, q.n, expr)
 modify_coeff(q::QPower, coeff_fun::CFunction) = QPower(q.qspace, coeff_fun, q.n, q.expr)
 
@@ -316,6 +432,11 @@ function power(q::QExpr, n::Int; force_symbolic::Bool=false)::QExpr
 end
 
 
+"""
+    QRoot(qspace, coeff_fun, n, expr)
+
+Symbolic n-th root `coeff_fun * expr^(1/n)` left unevaluated.
+"""
 struct QRoot <: QCompositeN
     qspace::QSpace
     coeff_fun::CFunction
@@ -327,6 +448,13 @@ function _QRoot(qspace::QSpace, coeff_fun::CFunction, n::Int, expr::QExpr)::Vect
         sum_of_coeff_funs = sum(qi.coeff_fun for qi in expr)
         return QComposite[modify_coeff(expr[1], coeff_fun * root(sum_of_coeff_funs, n))]
     end 
+    return QComposite[QRoot(qspace, coeff_fun, n, expr)]
+end
+function _QRoot(qspace::QSpace, coeff_fun::CFunction, n::Int, expr::QExpr, ::Val{:nosimp})::Vector{QComposite}
+    if isnumeric(expr)
+        sum_of_coeff_funs = sum(qi.coeff_fun for qi in expr)
+        return QComposite[modify_coeff(expr[1], coeff_fun * root(sum_of_coeff_funs, n))]
+    end
     return QComposite[QRoot(qspace, coeff_fun, n, expr)]
 end
 """ 
@@ -344,5 +472,20 @@ function sqrt(q::QExpr)::QExpr
     return QExpr(q.qspace, _QRoot(q.qspace, q.qspace.c_one, 2, q))
 end
 modify_expr(q::QRoot, expr::QExpr) = _QRoot(q.qspace, q.coeff_fun, q.n, expr)
+modify_expr(q::QRoot, expr::QExpr, ::Val{:nosimp}) = _QRoot(q.qspace, q.coeff_fun, q.n, expr, Val(:nosimp))
 modify_coeff_expr(q::QRoot, coeff_fun::CFunction, expr::QExpr)::QRoot = QRoot(coeff_fun, q.n, expr)
 modify_coeff(q::QRoot, coeff_fun::CFunction) = QRoot(q.qspace, coeff_fun, q.n, q.expr)
+
+"""
+    ExpectedValues(obj)
+
+Return a copy of `obj` where every `QAtomProduct` is wrapped in an expectation value.
+Works on individual products, composite expressions, differential equations and
+collections thereof. Non-composite quantum objects are returned unchanged.
+"""
+Expectation(q::QAtomProduct) = q.braket ? q : set_braket(q, true)
+Expectation(q::QExpr) = QExpr(q.qspace, [Expectation(term) for term in q.terms])
+Expectation(q::QSum) = modify_expr(q, Expectation(q.expr), Val(:nodecollision))[1]
+Expectation(q::QComposite) = modify_expr(q, Expectation(q.expr), Val(:nosimp))[1]
+Expectation(q::QMultiComposite) = modify_expr(q, Expectation.(q.expr), Val(:nosimp))[1]
+Expectation(q::QAtom) = q

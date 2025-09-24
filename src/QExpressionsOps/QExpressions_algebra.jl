@@ -417,6 +417,14 @@ Outermost call checks that both share the same qspace.
 (Commutator(Q1::QExpr, Q2::QExpr)::QExpr) = _comm(Q1, Q2)
 (Commutator(Q1::QExpr, Q2::T)::QExpr) where {T<:QComposite} = _comm(Q1, Q2)
 (Commutator(Q1::T, Q2::QExpr)::QExpr) where {T<:QComposite} = _comm(Q1, Q2)
+"""
+    Commutator(A, B) -> Vector{QComposite}
+
+Compute the commutator `[A, B] = AB - BA` for two composite operators or
+expressions that live in the same `QSpace`. The result is returned as a vector
+of `QComposite` terms that can be converted into a `QExpr` or appended to an
+existing expression.
+"""
 function Commutator(Q1::S, Q2::T)::Vector{QComposite} where {S<:QComposite,T<:QComposite}
     return _comm(Q1, Q2)
 end
@@ -504,6 +512,13 @@ end
 # ==============================
 # Daggers (single-arg; no pairwise checks)
 # ==============================
+"""
+    Dag(expr) -> Union{QExpr,Vector{QComposite}}
+
+Return the Hermitian adjoint of `expr`. Acts element-wise on products,
+sums, and higher composites, reversing operator order and taking complex
+conjugates of coefficients while preserving the ambient `QSpace`.
+"""
 function Dag(qspace::QSpace, t::QTerm)::Vector{Tuple{QTerm,ComplexRational}}
     new_op_inds::Vector{Vector{Tuple{ComplexRational,Is}}} = []
     curr_op_inds = t.op_indices
@@ -547,12 +562,13 @@ function Dag(p::QAtomProduct)::Vector{QAtomProduct}
     end
     coeff_fun = p.coeff_fun
     new_atom_products::Vector{QAtomProduct} = []
+    base_braket = p.braket
     for combo in Iterators.product(terms...)
         curr_atoms = [a[1] for a in combo]
         curr_coeff = [a[2] for a in combo]
         coeff = reduce(*, curr_coeff)
         if !iszero(coeff)
-            push!(new_atom_products, QAtomProduct(p.qspace, coeff_fun * coeff, curr_atoms, p.separate_expectation_values))
+            push!(new_atom_products, QAtomProduct(p.qspace, coeff_fun * coeff, curr_atoms, p.separate_expectation_values, base_braket))
         end
     end
     return new_atom_products

@@ -3,9 +3,10 @@ using Documenter
 
 
 makedocs(;
-    modules=[QAlgebra, QAlgebra.CFunctions],
+    modules=[QAlgebra, QAlgebra.CFunctions, QAlgebra.QExpressions, QAlgebra.QSpaces],
     sitename="QAlgebra.jl Documentation",
     format = Documenter.HTML(prettyurls = get(ENV, "CI", nothing) == "true"),
+    checkdocs = :exports,
     pages=[
         "Home" => "index.md",
         "API Reference" => [

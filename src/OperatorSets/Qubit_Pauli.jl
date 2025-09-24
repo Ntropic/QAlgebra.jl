@@ -18,7 +18,7 @@ const PAULI_COEFF_TABLE = crationalize.([
 Creates the OperatorSet for a qubit using Pauli operators (``\sigma_I``, ``\sigma_x``, ``\sigma_y``, ``\sigma_z``).
 """
 function QubitPauli(symbol::String="")::OperatorSet
-    ops = ["I", "x", "y", "z"]
+    ops = ["x", "y", "z"]
     base_pauli = [[2], [3], [4]]
 
     symbol_str, symbol_latex = symbol2formatted(symbol, do_hat=true)
@@ -51,15 +51,15 @@ function QubitPauli(symbol::String="")::OperatorSet
         ind = inds[1]
         if do_symbol
             if formatted
-                return symbol_str * str2sup(ops[ind]) * str2sub(sym) 
+                return symbol_str * str2sup(ops[ind-1]) * str2sub(sym) 
             else
                 return symbol_str * "_" * sym 
             end
         else
             if formatted
-                return ops[ind] * str2sub(sym) 
+                return ops[ind-1] * str2sub(sym) 
             else
-                return ops[ind] * "_" * sym
+                return ops[ind-1] * "_" * sym
             end
         end
     end
@@ -68,12 +68,12 @@ function QubitPauli(symbol::String="")::OperatorSet
         ind = inds[1]
         curr_str::String = raw""
         if do_symbol
-            curr_str *= raw"{"*symbol_latex*raw"}^{" * ops[ind] * "}"
+            curr_str *= raw"{"*symbol_latex*raw"}^{" * ops[ind-1] * "}"
             if length(sym) > 0
                 curr_str *= raw"_{" * sym * raw"}"
             end
         else
-            curr_str *= raw"\hat{" * ops[ind] * "}"
+            curr_str *= raw"\hat{" * ops[ind-1] * "}"
             if length(sym) > 0 
                 curr_str *= raw"_{" * sym * "}"
             end

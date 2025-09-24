@@ -80,7 +80,7 @@ function simplify_QExpr(terms::Vector{QComposite})::Vector{QComposite}
     return combined_terms
 end
 function simplify_QExpr(q::QExpr)::QExpr 
-    return QExpr(q.qspace, simplify_QExpr(q.terms))
+    return QExpr(q.qspace, simplify_QExpr(q.terms), Val(:nosimp))
 end
 
 #####################################################################################################################
@@ -137,7 +137,7 @@ Simplifies `QExpr`-based symbolic quantum expressions by recursively reducing in
 - `QComposite`: Simplifies its internal expression and returns a new `QComposite`.
 - `QExpr`: Flattens and simplifies terms, then combines like terms where possible.
 - `QSum`: Simplifies its expression array and returns a new `QSum`.
-- `diff_QEq`: Replaces its right-hand side with a simplified version.
+- `diffQEq`: Replaces its right-hand side with a simplified version.
 
 Returns either a single simplified object or a list of canonical components depending on input type.
 
@@ -164,8 +164,8 @@ end
 function simplify(q::QExpr)::QExpr
     return QExpr(q.qspace, simplify) #simplify_QExpr(mapreduce(simplify, vcat, q.terms))) # don't also simplify its elements. they should already be simplified! 
 end
-function simplify(q::diff_QEq)::diff_QEq
+function simplify(q::diffQEq)::diffQEq
     simp_rhs = simplify(q.expr)
-    return diff_QEq(q.qspace, q.left_hand_side, simp_rhs, q.do_braket)
+    return diffQEq(q.qspace, q.left_hand_side, simp_rhs)
 end
 """

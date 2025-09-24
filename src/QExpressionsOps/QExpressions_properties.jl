@@ -145,7 +145,7 @@ function contains_abstract(term::QAtomProduct)::Bool
     return any(t -> isa(t, QAbstract), term.expr)
 end
 
-function contains_abstract(term::diff_QEq)::Bool 
+function contains_abstract(term::diffQEq)::Bool 
     return contains_abstract(term.expr) && contains_abstract(term.left_hand_side)
 end
 
@@ -167,7 +167,7 @@ function contains_c_indexes(q::M, indexes::Vector{Int})::Bool where M <: QMultiC
     return contains_c_indexes(q.coeff_fun) || any(t -> contains_c_indexes(x, indexes), q.expr)
 end
 contains_c_indexes(q::QSum, indexes::Vector{Int})::Bool = any(q -> contains_c_indexes(q, indexes), q.expr) 
-contains_c_indexes(q::diff_QEq, indexes::Vector{Int})::Bool = contains_c_indexes(q.expr, indexes)
+contains_c_indexes(q::diffQEq, indexes::Vector{Int})::Bool = contains_c_indexes(q.expr, indexes)
 
 
 contains_t_indexes(q::QExpr, indexes::Vector{Int})::Bool = any(q -> contains_t_indexes(q, indexes), q.terms) 
@@ -182,7 +182,7 @@ function contains_t_indexes(q::M, indexes::Vector{Int})::Bool where M <: QMultiC
     return contains_c_indexes(q.coeff_fun) || any(t -> contains_t_indexes(x, indexes), q.expr)
 end
 contains_t_indexes(q::QSum, indexes::Vector{Int})::Bool = any(q -> contains_t_indexes(q, indexes), q.expr) 
-contains_t_indexes(q::diff_QEq, indexes::Vector{Int})::Bool = contains_t_indexes(q.expr, indexes) || contains_t_indexes(q.left_hand_side)
+contains_t_indexes(q::diffQEq, indexes::Vector{Int})::Bool = contains_t_indexes(q.expr, indexes) || contains_t_indexes(q.left_hand_side)
 function get_t_indexes(param_info::ParameterInfo, t_ind::Int=-1)::Vector{Int} 
     if t_ind == -1 
         return param_info.indexes_of_t
@@ -196,7 +196,7 @@ end
 
 Checks is the quantum object depends on time. Doesn't work for QAtoms!
 """
-@inline contains_time(q::T, t_ind=0) where T<:QAtom = error("Cannot get time indexes from QAtom. Try QComposites, QExpr, of diff_QEq instead. ")
+@inline contains_time(q::T, t_ind=0) where T<:QAtom = error("Cannot get time indexes from QAtom. Try QComposites, QExpr, of diffQEq instead. ")
 
 @inline function contains_time(q::T, t_ind=0)::Bool where T <: QObj
     indexes = get_t_indexes(q.qspace.param_info, t_ind)
@@ -208,7 +208,7 @@ end
 Returns a Boolean Vector of whether each time index is present in the QObj, 
 with time indexes starting at `t_index=0` and ending at `t_index=max_t_ind`  
 """
-contains_which_t_indexes(q::T) where T<:QAtom = error("Cannot get time indexes from QAtom. Try QComposites, QExpr, of diff_QEq instead. ")
+contains_which_t_indexes(q::T) where T<:QAtom = error("Cannot get time indexes from QAtom. Try QComposites, QExpr, of diffQEq instead. ")
 function contains_which_t_indexes(q::T)::BitVector where T <: QObj
     max_t_index = q.qspace.max_t_ind
     return [contains_t_indexes(q, get_t_indexes(q.qspace.param_info, t_ind)) for t_ind in 0:max_t_index] 
@@ -227,7 +227,7 @@ end
 @inline function max_moment_of_terms(q::QExpr)::Int 
     return maximum(max_moment_of_terms(t) for t in q.terms)
 end
-@inline function max_moment_of_terms(q::diff_QEq)::Int 
+@inline function max_moment_of_terms(q::diffQEq)::Int 
     return max(max_moment_of_terms(q.left_hand_side), max_moment_of_terms(q.expr))
 end
 
@@ -438,7 +438,9 @@ function ==(a::QAbstract, b::QAbstract)
     return a.key_index == b.key_index && a.sub_index == b.sub_index && a.exponent == b.exponent && a.dag == b.dag && a.index_map == b.index_map && a.time_index == b.time_index
 end
 function ==(a::QAtomProduct, b::QAtomProduct)
-    return a.coeff_fun == b.coeff_fun && all([ai == bi for (ai, bi) in zip(a.expr, b.expr)]) && a.qspace == b.qspace
+    return a.coeff_fun == b.coeff_fun && all([ai == bi for (ai, bi) in zip(a.expr, b.expr)]) &&
+           a.qspace == b.qspace && a.separate_expectation_values == b.separate_expectation_values &&
+           a.braket == b.braket
 end
 
 function ==(a::QExpr, b::QExpr)

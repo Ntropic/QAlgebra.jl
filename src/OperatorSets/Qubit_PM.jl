@@ -30,8 +30,8 @@ const PM_HOW_MANY = Int[1  1  1  1;
 Creates the OperatorSet for a qubit using Raising and Lowering operators (``\sigma_+``, ``\sigma_-``, ``\sigma_z``, ``\sigma_I``).
 """
 function QubitPM(symbol::String="")::OperatorSet
-    ops = ["I", "p", "m", "z"]
-    ops_str = ["I", "+", "-", "z"]
+    ops = ["p", "m", "z"]
+    ops_str = ["+", "-", "z"]
     base_pm = [[2], [3], [4]]
     pm_dag_inds = [[1], [3], [2], [4]]
 
@@ -61,15 +61,15 @@ function QubitPM(symbol::String="")::OperatorSet
         ind = inds[1]
         if do_symbol
             if formatted
-                return symbol_str * str2sup(ops[ind]) * str2sub(sym) 
+                return symbol_str * str2sup(ops[ind-1]) * str2sub(sym) 
             else
                 return symbol_str * "_" * sym 
             end
         else
             if formatted
-                return ops[ind] * str2sub(sym) 
+                return ops[ind-1] * str2sub(sym) 
             else
-                return ops[ind] * "_" * sym
+                return ops[ind-1] * "_" * sym
             end
         end
     end
@@ -78,12 +78,12 @@ function QubitPM(symbol::String="")::OperatorSet
         ind = inds[1]
         curr_str::String = raw""
         if do_symbol
-            curr_str *= symbol_latex*raw"^{" * ops_str[ind] * "}"
+            curr_str *= symbol_latex*raw"^{" * ops_str[ind-1] * "}"
             if length(sym) > 0
                 curr_str *= raw"_{" * sym * "}"
             end
         else
-            curr_str *= raw"\hat{" * ops[ind] * "}"
+            curr_str *= raw"\hat{" * ops[ind-1] * "}"
             if length(sym) > 0 
                 curr_str *= raw"_{" * sym * "}"
             end

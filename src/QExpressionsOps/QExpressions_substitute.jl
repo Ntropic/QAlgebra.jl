@@ -254,7 +254,7 @@ function substitute_qAtom(target::QAbstract, sp::Substitution)::Vector{QAtomProd
 end
 
 # General unresolved substitution type
-function substitute(target::T, sp::Substitution_index)::T where T <: Union{QExpr, diff_QEq}
+function substitute(target::T, sp::Substitution_index)::T where T <: Union{QExpr, diffQEq}
     sp_neq = _resolve_index_substitution(sp, target.qspace.subspace_info) # figure out subspace_info along the way 
     return substitute(target, sp_neq) 
 end
@@ -269,7 +269,7 @@ Apply a substitution `sp::Substitution` (alias `Substitution`) to different targ
 
 Optionally, property checks can be enabled via `checks=true`.
 """
-function substitute(target::T, sp::Substitution)::T where T <: Union{QExpr, diff_QEq}
+function substitute(target::T, sp::Substitution)::T where T <: Union{QExpr, diffQEq}
     substitution_properties_fulfilled(sp)
     target.qspace === sp.qspace || error("Statespace mismatch between target and Substitution.")
     return _substitute(target, sp) 
@@ -319,14 +319,14 @@ function _substitute(targ::T, sp::Substitution) where {T<:QMultiComposite}
     return modify_expr(targ, map(only, substituted))
 end
 
-# diff_QEq → diff_QEq
-function _substitute(target::diff_QEq, sp::Substitution)::diff_QEq
+# diffQEq → diffQEq
+function _substitute(target::diffQEq, sp::Substitution)::diffQEq
     lhs = _substitute(target.left_hand_side, sp) 
     if length(lhs) != 1
         error("Substitution of $(sp.from) with $(sp.to) in $target did not result in a single term.")
     end
     rhs = _substitute(target.expr, sp, false)
-    return diff_QEq(target.qspace, lhs[1], rhs, do_braket=target.do_braket)
+    return diffQEq(target.qspace, lhs[1], rhs)
 end
 
 # --- substitution contexts --------------------------------------------------------
@@ -372,7 +372,7 @@ end
 
 # --- time index substitution -------------------------------------------------------
 
-function substitute(target::T, sp::Substitution_t; checks::Bool=false)::T where T <: Union{QExpr, diff_QEq}
+function substitute(target::T, sp::Substitution_t; checks::Bool=false)::T where T <: Union{QExpr, diffQEq}
     ctx = _time_context(target.qspace, sp, checks)
     return _substitute(target, ctx)
 end
@@ -389,10 +389,10 @@ function _substitute(target::QExpr, ctx::TimeSubContext, )::QExpr
     return changed ? QExpr(target.qspace, new_terms) : target
 end
 
-function _substitute(target::diff_QEq, ctx::TimeSubContext)::diff_QEq
+function _substitute(target::diffQEq, ctx::TimeSubContext)::diffQEq
     new_lhs = _substitute( target.left_hand_side, ctx)
     new_rhs = _substitute( target.expr, ctx)
-    return diff_QEq(target.qspace, new_lhs, new_rhs; do_braket=target.do_braket)
+    return diffQEq(target.qspace, new_lhs, new_rhs)
 end
 
 function _substitute(term::QTerm, ctx::TimeSubContext)::QTerm
@@ -448,7 +448,7 @@ end
 
 # --- index substitution -----------------------------------------------------------
 
-function substitute(target::T, sp::_ResolvedIndexSubstitution)::T where T <: Union{QExpr, diff_QEq}
+function substitute(target::T, sp::_ResolvedIndexSubstitution)::T where T <: Union{QExpr, diffQEq}
     ctx = _index_context(target.qspace, sp)
     return _substitute(target, ctx)
 end
@@ -461,10 +461,10 @@ function _substitute(target::QExpr, ctx::IndexSubContext, )::QExpr
     end
     return QExpr(target.qspace, new_terms)
 end
-function _substitute(target::diff_QEq, ctx::IndexSubContext)::diff_QEq
+function _substitute(target::diffQEq, ctx::IndexSubContext)::diffQEq
     new_lhs = _substitute(target.left_hand_side, ctx)
     new_rhs = _substitute(target.expr, ctx)
-    return diff_QEq(target.qspace, new_lhs, new_rhs; do_braket=target.do_braket)
+    return diffQEq(target.qspace, new_lhs, new_rhs)
 end
 
 function _substitute(term::QTerm, ctx::IndexSubContext)::QTerm

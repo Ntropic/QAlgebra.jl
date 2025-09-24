@@ -5,15 +5,17 @@ import Base: isless, sort, sort!
 # -------------------------------
 
 @inline function less_vec_int(a::Vector{Vector{Int}}, b::Vector{Vector{Int}})
-    n = length(a)
-    # @assert length(a) == length(b)  # ==> Should be a given 
-    @inbounds for i in 1:n
-        ai = a[i]; bi = b[i]
+    na = length(a)
+    nb = length(b)
+    n = min(na, nb)
+    @inbounds for offset in 0:n-1
+        ai = a[na - offset]
+        bi = b[nb - offset]
         if ai != bi
             return ai < bi
         end
     end
-    return false
+    return na < nb
 end
 
 @inline function compare_isless(x, y)
@@ -43,7 +45,7 @@ qatom_tag(::QAbstract) = 1
 # QTerm: compare op_indices lexicographically
 function isless(a::QTerm, b::QTerm)::Bool
     a.time_index == b.time_index || return a.time_index < b.time_index
-    isless(a.op_indices, b.op_indices)
+    return less_vec_int(a.op_indices, b.op_indices)
 end
 
 # QAbstract: compare (key_index, sub_index, exponent, dag)
@@ -111,7 +113,9 @@ end
 # QAtomProduct: coeff first, then atoms (length + pairwise)
 function isless_same(a::QAtomProduct, b::QAtomProduct)
     if !(a.coeff_fun == b.coeff_fun)
-        return compare_isless(a.coeff_fun, b.coeff_fun)  # relies on CFunction.isless
+        lt = compare_isless(a.coeff_fun, b.coeff_fun)
+        gt = compare_isless(b.coeff_fun, a.coeff_fun)
+        lt != gt && return lt
     end
     la = length(a.expr); lb = length(b.expr)
     la != lb && return la < lb

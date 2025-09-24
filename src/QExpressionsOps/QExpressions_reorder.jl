@@ -2,6 +2,30 @@ import ..CFunctions: repartition
 using ..QSpaces: map_by_tindex
 export reorder, reorder_full, reorder_time
 
+"""
+    reorder(obj::QObj; kwargs...) -> QObj
+
+Reorder subsystem indexes of `obj` into a canonical layout. Concrete methods
+dispatch on the expression type and optional modes.
+"""
+function reorder end
+
+"""
+    reorder_full(eq::diffQEq) -> diffQEq
+
+Legacy variant that also permutes summation indexes outside their ensemble
+blocks. Only defined for differential equations.
+"""
+function reorder_full end
+
+"""
+    reorder_time(obj::QObj) -> QObj
+
+Pack time indexes so that active slots start at `t₀`, mirroring coefficient
+remapping performed by substitutions.
+"""
+function reorder_time end
+
 struct IndexOrder
     op_order::Vector{Int}
     op_inverse::Vector{Int}
@@ -246,7 +270,7 @@ function reorder(q::QObj, mode::Val{M}, where_defined::Vector{BitVector}, orders
     return q
 end
 
-function reorder(q::diff_QEq, mode::Val{M}) where M
+function reorder(q::diffQEq, mode::Val{M}) where M
     where_defined_lhs = which_ensemble_acting(q.left_hand_side)
     orders = build_reorder_orders(q.qspace, where_defined_lhs)
     order = get_index_order(orders, mode)
@@ -259,18 +283,18 @@ function reorder(q::diff_QEq, mode::Val{M}) where M
     end
 
     expr = reorder(q.expr, mode, where_defined_lhs, orders; add_at_sum=true)
-    return diff_QEq(q.qspace, lhs, expr, Val(:nosimp); do_braket=q.do_braket)
+    return diffQEq(q.qspace, lhs, expr, Val(:nosimp))
 end
 
 """
-    reorder(eq::diff_QEq) -> diff_QEq
+    reorder(eq::diffQEq) -> diffQEq
 
 Reorder the ensemble indexes of `eq` so that already-defined (non-summation) indexes
 stay on the left and remaining summation indexes are packed next to them. The
 returned equation preserves the original structure, updating both the left-hand
 side operator and the right-hand side expression.
 """
-function reorder(q::diff_QEq)::diff_QEq
+function reorder(q::diffQEq)::diffQEq
     return reorder(q, Val(:base))
 end
 """
@@ -287,13 +311,13 @@ function reorder(q::QExpr)::QExpr
     return reorder(q, Val(:base), where_defined, orders; add_at_sum=true)
 end
 """
-    reorder_full(eq::diff_QEq) -> diff_QEq
+    reorder_full(eq::diffQEq) -> diffQEq
 
 Apply the legacy full reordering, which also shifts summation indexes out of
 their dedicated block. This mirrors the original behaviour of `repartition` and
 is only exposed for differential equations.
 """
-function reorder_full(q::diff_QEq)::diff_QEq
+function reorder_full(q::diffQEq)::diffQEq
     return reorder(q, Val(:full))
 end
 
@@ -384,13 +408,13 @@ function reorder_time(q::QExpr)::QExpr
 end
 
 """
-    reorder_time(eq::diff_QEq) -> diff_QEq
+    reorder_time(eq::diffQEq) -> diffQEq
 
 Reorder the time indexes in a differential equation, prioritising indexes already
 present on the left-hand side before packing remaining indexes on the right-hand side.
 The structure of the equation is preserved.
 """
-function reorder_time(q::diff_QEq)::diff_QEq
+function reorder_time(q::diffQEq)::diffQEq
     qspace = q.qspace
     lhs_usage = contains_which_t_indexes(q.left_hand_side)
     rhs_usage = contains_which_t_indexes(q.expr)
@@ -404,5 +428,5 @@ function reorder_time(q::diff_QEq)::diff_QEq
     ctx === nothing && return q
     new_lhs = _reorder_time(q.left_hand_side, ctx)
     new_rhs = _reorder_time(q.expr, ctx)
-    return diff_QEq(qspace, new_lhs, new_rhs, Val(:nosimp); do_braket=q.do_braket)
+    return diffQEq(qspace, new_lhs, new_rhs, Val(:nosimp))
 end

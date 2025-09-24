@@ -11,7 +11,7 @@ flatsums(q::QSum, has_sum::Bool=false)::Bool = has_sum ? false : flatsums(q.expr
 flatsums(q::QAtomProduct, has_sum::Bool=false) = true 
 (flatsums(q::T, has_sum::Bool=false)::Bool) where {T<:QMultiComposite} = all(flatsums.(q.expr, has_sum))  
 flatsums(q::QExpr, has_sum::Bool=false)::Bool = all(flatsums.(q.terms, has_sum))  
-flatsums(q::diff_QEq)::Bool = flatsums(q.expr)
+flatsums(q::diffQEq)::Bool = flatsums(q.expr)
 
 
 """ 
@@ -24,7 +24,7 @@ complexsums(q::QSum, in_complex::Bool=false)::Bool = in_complex ? true : complex
 complexsums(q::QAtomProduct, in_complex::Bool=false) = false 
 (complexsums(q::T, in_complex::Bool=false)::Bool) where {T<:QMultiComposite} = any(complexsums.(q.expr, true))  
 complexsums(q::QExpr, in_complex::Bool=false)::Bool = any(complexsums.(q.terms, in_complex))  
-complexsums(q::diff_QEq)::Bool = complexsums(q.expr)
+complexsums(q::diffQEq)::Bool = complexsums(q.expr)
 
 
 
@@ -86,7 +86,7 @@ function term_equal_indexes(q::QAtomProduct, index1::SubSpaceIndex, index2::SubS
     for (combo, coeff_combo) in zip(combinations, coeff_combinations)
         new_expr = collect(combo)
         factor = prod(coeff_combo)
-        new_prod = QAtomProduct(q.qspace, new_coeff_fun*factor, new_expr)
+        new_prod = QAtomProduct(q.qspace, new_coeff_fun*factor, new_expr, q.separate_expectation_values, q.braket)
         push!(simplified_products, new_prod)
     end
     return true, simplified_products
@@ -417,11 +417,11 @@ function neq(q::T, where_defined::Vector{BitVector})::T where {T<:QMultiComposit
     return only(modify_expr(q, neq.(q.expr, where_defined)))
 end
 
-function neq(q::diff_QEq)
+function neq(q::diffQEq)
     if !contains_abstract(q.left_hand_side)
         where_acting = which_ensemble_acting(q.left_hand_side)
         new_rhs = neq(q.expr, where_acting)
-        return diff_QEq(q.qspace, q.left_hand_side, new_rhs, q.do_braket)
+        return diffQEq(q.qspace, q.left_hand_side, new_rhs, Val(:nosimp))
     else
         error("Cannot neq a differential Equation with a QAbstract on the left hand side.")
     end

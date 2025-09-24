@@ -237,7 +237,9 @@ function build_subspace_index_maps(parameters::Vector{Parameter}, ensemble_index
     return result
 end
 
-function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info::SubSpaceInfo, used_symbols::Set{Symbol}, max_t_ind::Int)::Tuple{Vector{Parameter}, ParameterInfo}
+function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info::SubSpaceInfo,
+                                         subspaces::Vector{SubSpace}, used_symbols::Set{Symbol},
+                                         max_t_ind::Int)::Tuple{Vector{Parameter}, ParameterInfo}
     # --- start from a local copy and auto-add t if not present ---
     var_param = copy(vd.var_param)
     if all(name != "t" for (name, _of_t, _idxs) in var_param) && !(:t in used_symbols)
@@ -267,23 +269,36 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
         outer_subsystem_inds = -ones(Int, length(index_str_syms))
         for (i, index_sym) in enumerate(index_str_syms)
             subsystem_ind = nothing
-            for outer_ind in 1:length(subspace_info.outer_labels_symbols)
-                if index_sym in subspace_info.inner_labels_symbols[outer_ind]
+            for (outer_ind, outer_labels_symbol) in enumerate(subspace_info.outer_labels_symbols)
+                if index_sym in subspace_info.inner_labels_symbols[outer_ind] || index_sym == outer_labels_symbol
                     subsystem_ind = outer_ind
+                    if !(subsystem_ind in subspace_info.where_ensembles)
+                        error("The index $index_sym is a subsystem index, but not an Ensemble subsystem index.")
+                    end
                 end
             end
             if subsystem_ind === nothing
                 ensemble_indexes = subspace_info.inner_labels[subspace_info.where_ensembles]
                 error("Index $index_sym is not affiliated with a subsystem. The defined ensemble subsystems have the indexes $ensemble_indexes.")
             end
-            if !(subsystem_ind in subspace_info.where_ensembles)
-                error("Index $index_sym is not an ensemble index.")
-            end
             outer_subsystem_inds[i] = subsystem_ind
         end
 
         if !contiguous_blocks(outer_subsystem_inds)
             error("Ensemble indexes must be contiguous. Indexes belonging to the same ensemble must be grouped.")
+        end
+
+        if !isempty(index_str_syms)
+            unique_outers = unique(filter(x->x>0, outer_subsystem_inds))
+            if !isempty(unique_outers)
+                param_sym = Symbol(param_name)
+                for outer_ind in unique_outers
+                    ensemble_cfg = subspaces[outer_ind].ensemble
+                    if ensemble_cfg !== nothing && !(param_sym in ensemble_cfg.parameter_groups)
+                        push!(ensemble_cfg.parameter_groups, param_sym)
+                    end
+                end
+            end
         end
 
         blocks, block_lengths = find_blocks(outer_subsystem_inds)

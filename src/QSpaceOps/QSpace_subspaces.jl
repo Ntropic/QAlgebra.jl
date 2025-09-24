@@ -1,3 +1,63 @@
+"""
+    Ensemble(num_operator_indexes, num_sum_indexes, operator_set; kwargs...)
+
+Container for ensemble subspace metadata. The first two positional arguments define how many operator indexes
+and summation indexes are reserved for the ensemble, while `operator_set` specifies the associated `OperatorSet`.
+Optionally one may declare the number of physically instantiated modes via `num_modes`; by default it is set to
+`-1` to signal that the ensemble only reserves the subspace indexes without committing to a concrete system size.
+
+Additional fields track parameter groups, samples and a sampling distribution:
+  - `parameter_groups` collects the symbols (e.g. `:gamma`) of all parameter groups associated with this ensemble.
+    It is initialised empty and populated during `QSpace` construction.
+  - `samples` stores points in the parameter space as a vector of real vectors (internally converted to `Float64`).
+    It starts empty and can be filled later when sampling data becomes available.
+  - `distribution` acts as a placeholder for a probability distribution object or sampling routine.
+
+Unless explicitly provided, all optional collections are initialised as empty containers so that they can be
+appended to in-place at a later stage.
+"""
+mutable struct Ensemble
+    num_operator_indexes::Int
+    num_sum_indexes::Int
+    operator_set::OperatorSet
+    num_modes::Int
+    parameter_groups::Vector{Symbol}
+    samples::Vector{Vector{Float64}}
+    distribution::Any
+    qspace_ref::Union{Nothing,WeakRef}
+    function Ensemble(num_operator_indexes::Integer, num_sum_indexes::Integer, operator_set::OperatorSet;
+                      num_modes::Integer=-1,
+                      parameter_groups::Vector{Symbol}=Symbol[],
+                      samples::Vector{<:AbstractVector{<:Real}}=Vector{Vector{Float64}}(),
+                      distribution=nothing,
+                      qspace_ref::Union{Nothing,WeakRef}=nothing)
+        sample_store = Vector{Vector{Float64}}()
+        if !isempty(samples)
+            for sample in samples
+                push!(sample_store, Float64.(sample))
+            end
+        end
+        return new(Int(num_operator_indexes), Int(num_sum_indexes), operator_set, Int(num_modes),
+                   copy(parameter_groups), sample_store, distribution, qspace_ref)
+    end
+    function Ensemble(num_operator_indexes::Integer, operator_set::OperatorSet; kwargs...)
+        return Ensemble(num_operator_indexes, 0, operator_set; kwargs...)
+    end
+    function Ensemble(; num_operator_indexes::Integer, num_sum_indexes::Integer=0, operator_set::OperatorSet, kwargs...)
+        return Ensemble(num_operator_indexes, num_sum_indexes, operator_set; kwargs...)
+    end
+end
+
+function Base.show(io::IO, ensemble::Ensemble)
+    print(io, "Ensemble: ")
+    print(io, "operators=" , ensemble.num_operator_indexes)
+    print(io, ", summations=" , ensemble.num_sum_indexes)
+    print(io, ", num_modes=" , ensemble.num_modes)
+    if !isempty(ensemble.parameter_groups)
+        print(io, ", parameter_groups=" , ensemble.parameter_groups)
+    end
+end
+
 """ 
     SubSpace(key::String, keys::Vector{String}, ss_outer_ind::Int, ss_inner_ind::Vector{Int}, op_set::OperatorSet, ensemble::Bool, fermion::Bool)
 
@@ -9,6 +69,7 @@ struct SubSpace
     keys_symbols::Vector{Symbol}
     key::String                     # Original input key
     keys::Vector{String}            # Allowed keys for this subspace 
+    keys_latex::Vector{String}
     ss_outer_ind::Int            # Which Vector to use for ss_inner_ind  (this is for accessing the string elements)
     ss_inner_ind::Vector{Int}    # Indices to access operator values in the corresponding qspace main ind  (this is for accessing the string elements)
     is_ensemble_ss::Bool
@@ -17,6 +78,7 @@ struct SubSpace
     num_sum_indexes::Int
     particle_type::String
     op_set::OperatorSet             # The operator set for this subspace.
+    ensemble::Union{Nothing,Ensemble}
 end
 # Define the custom show for SubSpace.
 function Base.show(io::IO, qspace::SubSpace)
@@ -26,11 +88,44 @@ function Base.show(io::IO, qspace::SubSpace)
     show(io, qspace.op_set)
 end
 
+const _ALPHABET = [c for c in 'a':'z']
+
+function _numeric_labels(base::String, num_op::Int, num_sum::Int)
+    total = num_op + num_sum
+    labels_symbol = Symbol[]
+    labels = String[]
+    labels_latex = String[]
+    for idx in 0:(total-1)
+        push!(labels_symbol, Symbol(base * string(idx)))
+        
+        push!(labels, base * str2sub(string(idx)))
+        push!(labels_latex, base * "_{" * string(idx), "}") 
+    end
+    return labels_symbol, labels, labels_latex
+end
+
+function _alphabetic_labels(base_char::Char, total::Int)
+    labels = String[]
+    start_idx = findfirst(==(base_char), _ALPHABET)
+    if start_idx === nothing
+        error("Not a valid index: $base_char. ")
+    end
+    idx = start_idx
+    while length(labels) < total
+        push!(labels, string(_ALPHABET[idx]))
+        idx += 1
+        if idx > length(_ALPHABET)
+            error("Exceeded index range by reaching $(_ALPHABET[idx-1]). ")
+        end
+    end
+    return labels
+end
+
 """ 
     SubSpaceDefinitions(; kwargs...)
 
-SubSpaceDefinitions is a struct that processes the definition of the quantum subspaces, patth keyword arguments, the key being the Symbol used to identify the subspace, 
-    and the argument either being an OperatorType or a Tuple specifying the number of ensemble indexes and summation indexes.
+SubSpaceDefinitions is a struct that processes the definition of the quantum subspaces, patth keyword arguments, the key being the Symbol used to identify the subspace,
+    and the argument either being an `OperatorSet` for simple subspaces or an `Ensemble` describing the ensemble configuration.
 """
 struct SubSpaceDefinitions 
     subspaces::Vector{SubSpace}  # Vector of all sub
@@ -43,36 +138,58 @@ struct SubSpaceDefinitions
         used_symbols = Set{Symbol}()
         key_counter = 0
         core_keys::Vector{Symbol} = collect(keys(kwargs))
+        reserved_outer = Set{String}(String.(core_keys))
         for (outer_ind, (key_symbol, val)) in enumerate(kwargs) 
             is_ensemble_ss = false
-            if isa(val, Tuple) 
+            ensemble_cfg::Union{Nothing,Ensemble} = nothing
+            if isa(val, Ensemble)
+                ensemble_cfg = val
                 is_ensemble_ss = true
-                num_operator_indexes, num_sum_indexes, op_set = val  # unpacking
+            elseif isa(val, OperatorSet)
+                # handled below
+            else
+                error("Invalid subspace definition for $key_symbol: expected an OperatorSet or Ensemble, got $(typeof(val)).")
+            end
+
+            if is_ensemble_ss
+                @assert ensemble_cfg !== nothing
+                num_operator_indexes = ensemble_cfg.num_operator_indexes
+                num_sum_indexes = ensemble_cfg.num_sum_indexes
+                op_set = ensemble_cfg.operator_set
                 ensemble_size = num_operator_indexes + num_sum_indexes
             else
-                ensemble_size, op_set = 1, val 
+                ensemble_size = 1
+                op_set = val
                 num_operator_indexes = 1
                 num_sum_indexes = 0
             end
+
+            isa(op_set, OperatorSet) || error("Invalid subspace definition for $key_symbol: expected an OperatorSet or Ensemble.")
             key = String(key_symbol) 
+            reserved_current = Set{String}(reserved_outer)
+            delete!(reserved_current, key)
             if length(key) == 1
                 key_char = key[1]
-                keys = String[string(key_char+i) for i in 0:ensemble_size-1]
+                keys = _alphabetic_labels(key_char, ensemble_size)
                 keys_symbols = Symbol.(keys) 
-                if any(x->x in used_symbols, keys_symbols) 
-                    keys = String[key*string(i) for i in 1:ensemble_size]
-                    keys_symbols = Symbol.(keys)
+                keys_latex = keys
+                if any(sym-> sym in used_symbols, keys_symbols)
+                    keys_symbols, keys, keys_latex = _numeric_labels(key, num_operator_indexes, num_sum_indexes)
                 end
             else 
                 keys = String[key*string(i) for i in 1:ensemble_size]
                 keys_symbols = Symbol.(keys)
+                keys_latex = keys
+                if any(sym-> sym in used_symbols, keys_symbols)
+                    keys_symbols, keys, keys_latex = _numeric_labels(key, num_operator_indexes, num_sum_indexes)
+                end
             end
             if any(x->x in used_symbols, keys_symbols) 
                 error("Symbol $key already used")
             end 
             curr_inds = key_counter .+ collect(1:ensemble_size)
-            curr_subspace = SubSpace(key_symbol, keys_symbols, key, keys, outer_ind, curr_inds, is_ensemble_ss, 
-                        ensemble_size, num_operator_indexes, num_sum_indexes, op_set.particle_type, op_set) 
+            curr_subspace = SubSpace(key_symbol, keys_symbols, key, keys, keys_latex, outer_ind, curr_inds, is_ensemble_ss, 
+                        ensemble_size, num_operator_indexes, num_sum_indexes, op_set.particle_type, op_set, ensemble_cfg) 
             key_counter += ensemble_size
             push!(subspaces, curr_subspace)
             union!(used_symbols, keys_symbols)

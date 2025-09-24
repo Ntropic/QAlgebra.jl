@@ -18,6 +18,30 @@ import ..QAlgebra: vecvec_or, vecvec_or!, sort_unique!, variants_C
 const CR_ZERO = ComplexRational(0,0,1)
 const CR_ONE  = ComplexRational(1,0,1)
 
+"""
+    max_exponents(f::CFunction) -> Vector{Int}
+
+Return, for each variable, the maximum exponent appearing anywhere inside `f`.
+Useful when precomputing powers prior to numerical evaluation.
+"""
+function max_exponents end
+
+"""
+    build_xpows(x, max_exp) -> Vector{Vector}
+
+Precompute `x[j]^k` for `k = 0:max_exp[j]`, returning lookup tables suitable for
+[`evaluate`](@ref).
+"""
+function build_xpows end
+
+"""
+    evaluate(f::CFunction, args...) -> Number
+
+Numerically evaluate the coefficient expression `f`. Additional arguments accept
+either raw variable values or precomputed power tables.
+"""
+function evaluate end
+
 
 """
     CFunction
@@ -149,9 +173,22 @@ struct ParameterInfo <: AbstractParameterInfo
 end
 
 ######################################################################################################################################################
+"""
+    list_cabstracts(param_info::ParameterInfo) -> Vector{CAbstractDefinition}
+
+Return all abstract symbols registered in the provided [`ParameterInfo`](@ref).
+Useful for inspection and documentation purposes.
+"""
 function list_cabstracts(param_info::ParameterInfo)
     return param_info.abstract_definitions
 end
+"""
+    define_cabstract(param_info::ParameterInfo, name) -> CAbstractDefinition
+
+Register a new abstract coefficient symbol identified by `name`. The symbol is
+stored inside `param_info` and can later be referenced when constructing
+`CAbstract` terms.
+"""
 function define_cabstract(param_info::ParameterInfo,  name::Union{Symbol, String})::CAbstractDefinition
     name_str, name_latex = symbol2formatted(String(name))
     for (i, abstract_def) in enumerate(param_info.abstract_definitions)
@@ -176,9 +213,23 @@ function c_abstract_exists(param_info::ParameterInfo, name::Union{Symbol, String
     return false 
 end
 
+"""
+    list_ctypes(param_info::ParameterInfo) -> Vector{CTypeDefinition}
+
+Return every custom coefficient type defined for the given parameter info.
+Each entry describes the presentation and implementation of a registered
+function such as `cos` or user-defined variants.
+"""
 function list_ctypes(param_info::ParameterInfo)
     return param_info.custom_ctype
 end
+"""
+    define_ctype(param_info::ParameterInfo, name, fun) -> CTypeDefinition
+
+Register a custom coefficient function `name` whose body is given by `fun`
+(a `CFunction`). The new type is available for constructing `CCustomType`
+instances and is tracked inside `param_info`.
+"""
 function define_ctype(param_info::ParameterInfo, name::Union{Symbol,String}, fun::CFunction)::CTypeDefinition
     CName, Name, base = variants_C(name)
     name_sym = Symbol(base)
@@ -210,6 +261,22 @@ function define_ctype(param_info::ParameterInfo, name::Union{Symbol,String}, fun
     push!(param_info.custom_ctype, c_type_def)
     return c_type_def
 end
+
+"""
+    add_cabstract!(param_info::ParameterInfo, name) -> CAbstractDefinition
+
+Convenience wrapper around [`define_cabstract`](@ref) that mutates
+`param_info` in place and returns the created abstract symbol definition.
+"""
+add_cabstract!(param_info::ParameterInfo, name::Union{Symbol,String}) = define_cabstract(param_info, name)
+
+"""
+    add_ctype!(param_info::ParameterInfo, name, fun) -> CTypeDefinition
+
+Convenience wrapper around [`define_ctype`](@ref), registering a new custom
+coefficient function and returning its definition object.
+"""
+add_ctype!(param_info::ParameterInfo, name::Union{Symbol,String}, fun::CFunction) = define_ctype(param_info, name, fun)
 
 
 
@@ -243,8 +310,24 @@ struct CAbstract <: AbstractCAbstract
         return new(param_info, coeff, index, exponent, dag, param_info.abstract_definitions[index])
     end
 end
+"""
+    coeff(f::CFunction) -> Vector{ComplexRational}
+
+Return the scalar coefficients present in `f`. For atomic objects this is the
+single leading coefficient; for structured expressions the result collects the
+scalars contributed by each branch.
+"""
+function coeff end
 coeff(a::CAbstract) = [a.coeff]
 exponent(a::CAbstract) = a.exponent
+"""
+    var_exponents(f::CFunction) -> Vector{Int}
+
+Return the polynomial exponents associated with each variable in `f`. Composite
+objects delegate to their children, while purely numeric constructs return a
+zero vector.
+"""
+function var_exponents end
 var_exponents(a::CAbstract) = zeros(Int, a.param_info.dims)
 isdag(a::CAbstract) = a.dag
 modify_coeff(a::CAbstract, c::ComplexRational) = CAbstract(a.param_info, c, a.index, a.exponent, a.dag)
@@ -379,6 +462,14 @@ length(q::CSum) = length(q.expr)
 repartition(f::CSum, var_tuples::Vector{Tuple{Int, Int}}) = _CSum(f.param_info, repartition.(f.expr, Ref(var_tuples)) )
 var_exponents(a::CSum) = min.(var_exponents.(a.expr)...)
 
+"""
+    CProd(expr::AbstractVector{<:CFunction})
+    CProd(coeff::ComplexRational, expr::AbstractVector{<:CFunction})
+
+Product of coefficient expressions. The constructor performs light
+simplification (flattening nested products and combining scalars) unless the
+`Val(:nosimp)` variant is used.
+"""
 struct CProd <: CMultiComposite
     param_info::ParameterInfo
     coeff::ComplexRational
@@ -441,6 +532,13 @@ end
 var_exponents(a::CRational) = var_exponents(a.numer)
 
 
+"""
+    CExp(expr::CFunction)
+    CExp(coeff::ComplexRational, expr::CFunction)
+
+Symbolic exponential `coeff * exp(expr)` used for closed-form coefficient
+expressions. Construction simplifies simple logarithmic inverses automatically.
+"""
 struct CExp <: CComposite
     param_info::ParameterInfo
     coeff::ComplexRational
@@ -475,6 +573,13 @@ repartition(q::CExp, var_tuples::Vector{Tuple{Int, Int}}) = CExp(q.param_info, q
 var_exponents(a::CExp) = zeros(Int, a.param_info.dims)
 
 
+"""
+    CLog(expr::CFunction)
+    CLog(coeff::ComplexRational, expr::CFunction)
+
+Symbolic logarithm `coeff * log(expr)` with light simplification (e.g.
+`log(exp(x)) → x`).
+"""
 struct CLog <: CComposite
     param_info::ParameterInfo
     coeff::ComplexRational
@@ -616,9 +721,33 @@ reverse(q::CSum) = CSum(reverse(q.expr))
 """
     contains_non_simple_CFunction(c::CFunction) -> Bool 
 
-Does the expression contain non simple classical functions, such as CExp, CLog, CProd? 
+Return `true` if `c` contains non-trivial constructs such as `CExp`, `CLog`, or
+`CProd`, and `false` for plain atoms.
 """
+function contains_non_simple_CFunction end
 contains_non_simple_CFunction(c::T) where {T<: CFunction} = true
+
+"""
+    stringer(f::CFunction; kwargs...) -> Tuple{Bool,String}
+
+Internal formatter returning the sign flag and body string for a coefficient
+expression. Used by [`to_stringer`](@ref) and [`to_string`](@ref).
+"""
+function stringer end
+
+"""
+    to_stringer(f::CFunction; kwargs...) -> Tuple{Bool,String}
+
+Wrapper around [`stringer`](@ref) that applies default formatting options.
+"""
+function to_stringer end
+
+"""
+    to_string(f::CFunction; kwargs...) -> String
+
+Render `f` as a plain-text string using the coefficient formatting preferences.
+"""
+function to_string end
 contains_non_simple_CFunction(c::CAtom)::Bool = false 
 contains_non_simple_CFunction(c::CSum)::Bool = any(contains_non_simple_CFunction, c.expr)
 # Not sure if CRational should be counted here?! -> Design choices 

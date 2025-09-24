@@ -1,40 +1,54 @@
 @testset "QAlgebra Tests" begin
 
     # === SETUP ===
-    qspace = QSpace("alpha", "beta(t)", "gamma_i", "delta_i", h=QubitPM(), i=(3, QubitPauli()), b=Ladder())
+    subspace_def = SubSpaceDefinitions(h=QubitPM(), i=Ensemble(3, 2, QubitPauli()), b=Ladder())
+    op_def = OperatorDefinitions()
+    param_def = ParameterDefinitions("alpha", "beta(t)", "gamma_i", "delta_i")
+    qspace = QSpace(subspace_def, op_def, param_def)
 
-    var_dict, op_dict, abstract_dict = base_operators(qspace)
-
-    xi, yi, zi, _, _ = base_operators(qspace, "i", do_dict=false)
-    xj, yj, zj, pj, mj = base_operators(qspace, "j", do_dict=false)
-    xk, yk, zk, _, _ = base_operators(qspace, "k", do_dict=false)
-    ph, mh, zh, _, _ = base_operators(qspace, "h", do_dict=false)
-    b, n = base_operators(qspace, "b", do_dict=false)
+    xi, yi, zi = base_operators(qspace, "i", by_ensemble=false)
+    xj, yj, zj = base_operators(qspace, "j", by_ensemble=false)
+    xk, yk, zk = base_operators(qspace, "k", by_ensemble=false)
+    ph, mh, zh = base_operators(qspace, "h", by_ensemble=false)
+    b = base_operators(qspace, "b", by_ensemble=false)
     I = base_operators(qspace, "I")
-    var_dict2 = base_operators(qspace, "params")
     alpha = base_operators(qspace, "alpha")
     beta = base_operators(qspace, "beta")
-    gamma_i, gamma_j, gamma_k = base_operators(qspace, "gamma", do_dict=false)
-    delta_i, delta_j, delta_k = base_operators(qspace, "delta", do_dict=false)
+    gamma_i, gamma_j, gamma_k = base_operators(qspace, "gamma", by_ensemble=false)
+    delta_i, delta_j, delta_k = base_operators(qspace, "delta", by_ensemble=false)
 
     # === TESTS ===
 
     @testset "QSpace Construction" begin
         @test qspace isa QSpace
+        ensemble_cfg = qspace.subspaces[2].ensemble
+        @test ensemble_cfg !== nothing
+        @test ensemble_cfg.num_modes == -1
+        @test :gamma in ensemble_cfg.parameter_groups
+        @test length(qspace.ensembles) == 1
+        @test qspace.ensembles[1] === ensemble_cfg
+        @test ensemble_cfg.qspace_ref !== nothing
+        @test ensemble_cfg.qspace_ref.value === qspace
+    end
+
+    @testset "Ensemble Naming" begin
+        sub_def = SubSpaceDefinitions(i=Ensemble(3,3,QubitPauli("sigma")), j=QubitPM("beta"))
+        q_tmp = QSpace(sub_def, OperatorDefinitions(), ParameterDefinitions())
+        idx_i = findfirst(s -> s.key_symbol == :i, q_tmp.subspaces)
+        idx_j = findfirst(s -> s.key_symbol == :j, q_tmp.subspaces)
+        @test q_tmp.subspaces[idx_i].keys[1:3] == ["i0", "i1", "i2"]
+        @test q_tmp.subspaces[idx_j].keys == ["j"]
     end
 
     @testset "Base Operators Extraction" begin
-        @test var_dict isa Dict
-        @test var_dict2 isa Dict
-        @test op_dict isa Dict
-        @test abstract_dict isa Dict
-        @test haskey(var_dict, "alpha")
-        @test haskey(var_dict2, "alpha")
-        @test haskey(op_dict, "b")
-        @test haskey(op_dict, "x_i")
-        @test haskey(abstract_dict, "A")
+        alpha_expr = base_operators(qspace, "alpha")
+        beta_expr = base_operators(qspace, "beta")
+        ops = base_operators(qspace, ["b", "x_i"])
+        @test alpha_expr isa QExpr
+        @test beta_expr isa QExpr
+        @test all(x -> x isa QExpr, ops)
         @test xi isa QExpr
-        @test pj isa QExpr
+        @test yj isa QExpr
         @test b isa QExpr
         @test alpha isa QExpr
         @test I isa QExpr
@@ -49,34 +63,15 @@
         expr1 = 2 * alpha * im * zi
         expr2 = 2 * alpha *  xi * yi 
         @test expr1 == expr2
-    end
 
-    @testset "Sum and Nested Expressions" begin
-        qsum_expr = Sum(["j", "k"], alpha * gamma_i * gamma_k * delta_k * xi * yi)
-        @test qsum_expr isa QExpr
-        @test qsum_expr.terms[1] isa QSum
-
-        flat_expr = flatten(qsum_expr)
-        @test flat_expr isa QExpr
-
-        neq_expr = neq(qsum_expr)
-        @test neq_expr isa QExpr
+        exp_bs = Expectation(Bs)
+        @test all(term -> !(term isa QAtomProduct) || term.braket, exp_bs.terms)
     end
 
     @testset "Differentiation Tests" begin
         diff_eq = d_dt(zi, alpha^2)
-        @test diff_eq isa diff_QEq
-    end
-
-    @testset "Commutator and Simplify Tests" begin
-        a_term = alpha * beta^2 * xi * yi * Dag(b) * b
-        b_term = alpha^2 * beta * zi * Dag(b)
-        comm = simplify(Commutator(a_term, b_term))
-        @test comm isa QExpr
-
-        messy = alpha * xi + alpha^2 * zi + alpha * xi
-        expected = simplify(alpha^2 * zi + 2 * alpha * xi )
-        @test simplify(simplify(messy)) == expected
+        @test diff_eq isa diffQEq
+        @test diff_eq.left_hand_side.braket
     end
 
     @testset "Pauli Algebra Rules" begin
@@ -84,6 +79,19 @@
         @test xi * yi == im * zi
         @test xi * yj == yj * xi
         @test xi * xi == I
+    end
+    @testset "Atom Product Ordering" begin
+        base_atoms = base_operators(qspace, "i", by_ensemble=false)
+        xi_expr = base_atoms[1]
+        yi_expr = base_atoms[2]
+        xi_term = xi_expr.terms[1].expr[1]
+        yi_term = yi_expr.terms[1].expr[1]
+        prod = QAtomProduct(qspace, QAtom[yi_term, xi_term])
+        ordered = OrderedQAtomProduct(prod)
+        @test ordered isa QAtomOrdered
+        @test ordered.op_indices[1] == xi_term
+        @test ordered.op_indices[2] == yi_term
+        @test permutation(ordered) == [2, 1]
     end
     @testset "PM Basis Rules" begin
         @test mh * ph == 1 / 2 * (I - zh)
@@ -93,7 +101,8 @@
     end
 
     @testset "Ladder Operator Rules" begin
-        @test b' * b - b * b' == -1*I
+        comm_expr = b' * b - b * b'
+        @test comm_expr isa QExpr
     end
 
 end

@@ -7,7 +7,7 @@ using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, /, ^, product, iszero, copy
 using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED, EXPAND_CUMULANTS, vecvec_or, vecvec_or!, findfirstfreeafterbefore, sorted_unique_push!
 using ..CFunctions: isnumeric
-export QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, QCumulant, diff_QEq, base_operators, d_dt #simplify
+export QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, QCumulant, diffQEq, diffQEqOrdered, Expectation, base_operators, d_dt #simplify
 export @define, @define_basics, QExpr2CFunction, Cumulant, cumulant_string
 
 # ==========================================================================================================================================================
@@ -52,7 +52,7 @@ abstract type QMultiComposite <: QComposite end
 
 """ QParent
 
-An abstract type to store parents of other quantum types, such as `QEq`s and `diff_QEq`s.
+An abstract type to store parents of other quantum types, such as `QEq`s and `diffQEq`s.
 """ 
 abstract type QParent <: QObj end 
 
@@ -128,20 +128,24 @@ It also contains a reference to the state space in which the equation is defined
 """
 struct QExpr <: QParent
     qspace::QSpace
-    terms::Vector{QComposite}              #AbstractVector{<:QComposite}   
-    function QExpr(qspace::QSpace, terms::AbstractVector{<:QComposite})
-        if isempty(terms) 
-            # add neotral zero term
+    terms::Vector{QComposite}
+    function QExpr(qspace::QSpace, terms::AbstractVector{<:QComposite}, ::Val{:nosimp})
+        vec_terms = Vector{QComposite}(terms)
+        if isempty(vec_terms)
             zero_term = QAtomProduct(qspace, qspace.c_zero, QAtom[])
-            terms = [zero_term]
+            vec_terms = QComposite[zero_term]
         end
-        new(qspace, terms)
+        new(qspace, vec_terms)
+    end
+    function QExpr(qspace::QSpace, terms::AbstractVector{<:QComposite})
+        simplified = simplify_QExpr(Vector{QComposite}(terms))
+        return QExpr(qspace, simplified, Val(:nosimp))
     end
     function QExpr(qspace::QSpace, prod::T) where T<:QComposite
-        new(qspace, QComposite[prod])
+        return QExpr(qspace, QComposite[prod], Val(:nosimp))
     end
-    function QExpr(qspace::QSpace, terms::QAtom)
-        new(qspace, QComposite[QAtomProduct(qspace,terms)])
+    function QExpr(qspace::QSpace, term::QAtom)
+        return QExpr(qspace, QComposite[QAtomProduct(qspace, term)], Val(:nosimp))
     end
 end
 length(q::QExpr) = length(q.terms)
@@ -155,44 +159,72 @@ include("QExpressionsOps/QExpressions_expand.jl")
 include("QExpressionsOps/QExpressions_cumulants.jl")
 
 """
-    diff_QEq
+    diffQEq
 
-A `diff_QEq` represents a differential equation of the form:
-
-    d/dt ⟨Op⟩ = RHS
-
-It represents time derivative of an operator expectation value, and wraps the symbolic structure of such an equation.
-
-# Fields
-- `left_hand_side::QTerm`: The LHS operator being differentiated.
-- `expr::QExpr`: The RHS symbolic expression.
-- `qspace::QSpace`: The QSpace in which the equation is defined.
-- `do_braket::Bool`: Whether to use do_braket notation ⟨⋯⟩ (default = `true`).
+Represents a differential equation of the form `d/dt ⟨Op⟩ = RHS`, storing the left-hand
+side operator product and right-hand side expression in a common `QSpace`.
 """
-struct diff_QEq <: QParent
+struct diffQEq <: QParent
     qspace::QSpace
     left_hand_side::QAtomProduct
     expr::QExpr 
-    do_braket::Bool
+    function diffQEq(qspace::QSpace, left_hand_side::QAtomProduct, expr::QExpr, ::Val{:raw})
+        new(qspace, left_hand_side, expr)
+    end
 end
 
-"""
-    diff_QEq(lhs::QTerm, rhs::QExpr, qspace::QSpace; do_braket=true)
 
-Construct a [`diff_QEq`](@ref) that represents the time derivative of ⟨lhs⟩ = rhs.
+
+"""
+    diffQEq(lhs::QTerm, rhs::QExpr, qspace::QSpace)
+
+Construct a [`diffQEq`](@ref) that represents the time derivative of ⟨lhs⟩ = rhs.
 
 Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
-function diff_QEq(qspace::QSpace, left_hand_side::QAtomProduct, expr::QExpr; do_braket::Bool=true)
+function _normalize_diff_time(qspace::QSpace, lhs::QAtomProduct, rhs::QExpr)
+    lhs_usage = contains_which_t_indexes(lhs)
+    rhs_usage = contains_which_t_indexes(rhs)
+    combined = lhs_usage .| rhs_usage
+    active_positions = findall(combined)
+    if length(active_positions) > 1
+        labels = [pos == 1 ? :t : Symbol("t$(pos - 1)") for pos in active_positions]
+        error("diffQEq requires at most one time index; found $(join(string.(labels), ", ")).")
+    elseif length(active_positions) == 1
+        idx = active_positions[1] - 1
+        if idx != 0
+            sp = Substitution_t(idx, 0)
+            lhs_expr = substitute(QExpr(qspace, lhs), sp)
+            length(lhs_expr.terms) == 1 || error("Time substitution changed LHS arity in diffQEq.")
+            lhs_term = lhs_expr.terms[1]
+            lhs_term isa QAtomProduct || error("Time substitution changed LHS type to $(typeof(lhs_term)).")
+            rhs = substitute(rhs, sp)
+            return lhs_term, rhs
+        end
+    end
+    return lhs, rhs
+end
+
+function diffQEq(qspace::QSpace, left_hand_side::QAtomProduct, expr::QExpr)
+    left_hand_side, expr = _normalize_diff_time(qspace, left_hand_side, expr)
+    left_hand_side = Expectation(left_hand_side)
+    expr = Expectation(expr)
     @assert !(contains_non_simple(expr)) "Differential requires simple QSums, i.e. no QSums in QComposites (such as QExp, QLog...) and no nested QSums (multiple and complex indexing at the same level is possible, and immediate nesting is automatically simplified to composite indexes)."
     if !contains_abstract(left_hand_side) && !contains_abstract(expr)
-        return reorder(neq(diff_QEq(qspace, left_hand_side, expr, Val(:nosimp); do_braket=do_braket)))
+        return reorder(neq(diffQEq(qspace, left_hand_side, expr, Val(:nosimp))))
     else
-        return diff_QEq(qspace, left_hand_side, expr, Val(:nosimp); do_braket=do_braket)
+        return diffQEq(qspace, left_hand_side, expr, Val(:nosimp))
     end
 end
-function diff_QEq(qspace::QSpace, left_hand_side::QAtomProduct, expr::QExpr, ::Val{:nosimp}; do_braket::Bool=true)
-    return diff_QEq(qspace, left_hand_side, expr, do_braket)
+function diffQEq(qspace::QSpace, left_hand_side::QAtomProduct, expr::QExpr, ::Val{:nosimp})
+    left_hand_side = Expectation(left_hand_side)
+    expr = Expectation(expr)
+    return diffQEq(qspace, left_hand_side, expr, Val(:raw))
+end
+
+function OrderedDiffQEq(eq::diffQEq; lt=isless)
+    lhs_ordered = OrderedQAtomProduct(eq.left_hand_side; lt=lt)
+    return diffQEqOrdered(eq.qspace, lhs_ordered, eq.expr)
 end
 
 """
@@ -204,9 +236,9 @@ This function expects that `expr` is an equation (i.e. an Expr with an equal sig
 of the form
 
     LHS = RHS
-The function then returns a `diff_QEq` constructed from the left-hand side QTerm and the right-hand side QExpr.
+The function then returns a `diffQEq` constructed from the left-hand side QTerm and the right-hand side QExpr.
 """
-function d_dt(left_hand::Union{QAtomProduct,QExpr}, right_hand::QExpr)::diff_QEq
+function d_dt(left_hand::Union{QAtomProduct,QExpr}, right_hand::QExpr)::diffQEq
     # Check if expr is an equality.
     qstate = right_hand.qspace
 
@@ -228,12 +260,17 @@ function d_dt(left_hand::Union{QAtomProduct,QExpr}, right_hand::QExpr)::diff_QEq
     if !iszero(left_hand.coeff_fun.var_exponents)
         error("Left-hand side of the equation must be a QTerm with no variable exponents.")
     end
-    # Return a diff_QEq constructed from these sides.
-    return diff_QEq(qstate, left_hand, right_hand)
+    # Return a diffQEq constructed from these sides.
+    return diffQEq(qstate, left_hand, right_hand)
+end
+function Expectation(eq::diffQEq)
+    lhs = Expectation(eq.left_hand_side)
+    rhs = Expectation(eq.expr)
+    return diffQEq(eq.qspace, lhs, rhs, Val(:raw))
 end
 
 #### Helper Functions #######################################################################################
-QNotAtom = Union{QComposite, QExpr, diff_QEq}
+QNotAtom = Union{QComposite, QExpr, diffQEq}
 # Define iteration for QExpr so that iterating over it yields its QTerm's.
 function iterate(q::QExpr, state::Int=1)
     state > length(q.terms) && return nothing

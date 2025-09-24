@@ -103,7 +103,8 @@ function base_operators(qspace::QSpace, name::String; do_fun::Bool=false, by_ens
 
     for sub in qspace.subspaces
         ensemble_key = by_ensemble && sub.key == outer_name
-        for key in sub.keys
+        for key_symbol in sub.keys_symbols
+            key = String(key_symbol)
             do_it = ensemble_key || (key == outer_name)
             if do_it
                 base_ops  = sub.op_set.base_ops

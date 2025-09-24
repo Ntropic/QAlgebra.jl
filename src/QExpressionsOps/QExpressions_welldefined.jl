@@ -123,7 +123,7 @@ end
 
 
 """ 
-    are_indexes_defined(q::diff_QEq)::Bool
+    are_indexes_defined(q::diffQEq)::Bool
 
 Checks if all indexes n the differential equation are properly specified, either by the left-hand-side or 
 by QSums on the right-hand-side.
@@ -167,7 +167,7 @@ function are_indexes_defined(q::QExpr)::Bool
     where_defined::Vector{BitVector} = [falses( n) for n in q.qspace.subspace_info.how_many_by_ensemble]
     return all([are_indexes_defined(t, where_defined) for t in q.terms])
 end
-function are_indexes_defined(q::diff_QEq)::Bool
+function are_indexes_defined(q::diffQEq)::Bool
     qspace = q.qspace
     # first two arguments for operators 
     # final argument for paramete/variables

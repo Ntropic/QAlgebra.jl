@@ -4,9 +4,10 @@ using ComplexRationals
 using ..CFunctions
 using ..StringUtils
 using ..Cumulants: ReducedCumulantList
+using Base: WeakRef, GC
 
 export OperatorSet
-export SubSpace, SubSpaceDefinitions, SubSpaceInfo, SubSpaceIndex, outer, inner, expanded, Index2Symbol, Index2String, Index2Ensemble, Index2Ensemble_and_Summation, SummationIndex2SubSpaceIndex
+export Ensemble, SubSpace, SubSpaceDefinitions, SubSpaceInfo, SubSpaceIndex, outer, inner, expanded, Index2Symbol, Index2String, Index2Ensemble, Index2Ensemble_and_Summation, SummationIndex2SubSpaceIndex
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
 export Parameter, ParameterDefinitions, map_by_subspace, map_by_tindex
 export QSpace
@@ -66,22 +67,11 @@ struct OperatorSet
 end
 #function OperatorSet
 function Base.show(io::IO, os::OperatorSet)
-    op_str = ""
-    for i in 1:length(os.ops)
-        for j in 1:os.len
-            # place the i in j'th position 
-            z = zeros(Int, os.len)
-            z[j] = i
-            op_str *= os.op2str(z, "p")
-        end
-        if i == os.neutral_element
-            op_str *= " (identity)"
-        end
-        if i < length(os.ops)
-            op_str *= ", "
-        end
+    op_strs = String[]
+    for curr_ind in os.base_ops
+        push!(op_strs, os.op2str(curr_ind, "p"))
     end
-    print(io, os.name, " (", os.particle_type, "):  " * op_str)
+    print(io, os.name, " (", os.particle_type, "):  " * join(op_strs, ","))
 end
 include("OperatorSets/Qubit_Pauli.jl")
 include("OperatorSets/Qubit_PM.jl")
@@ -98,10 +88,11 @@ Constructs a combined Hilbert and Parameter space. The Hilbert space consists of
 The Parameter space also defines the variables, that are needed to describe equations on the Hilbert space and abstract operators, that are not yet specified. 
 Optionally you can also allow for multiple time dimensions, which can be useful for solving nested integrals over different time parameters.
 """
-struct QSpace
+mutable struct QSpace
     # Subspace definitions:
     subspaces::Vector{SubSpace}
     subspace_info::SubSpaceInfo    # Info object containing references to all the indexing of outer and inner subspaces
+    ensembles::Vector{Ensemble}
 
     # Abstract operators
     operatortypes::Vector{OperatorType}
@@ -130,32 +121,75 @@ struct QSpace
         operatortype_info = OperatorTypeInfo(operatortypes, commute_fun=op_def.commute_fun, check_n=op_def.check_n) 
 
         # ==========> 3rd Parameters <==========
-        params, param_info = ParameterDefinitions2Parameters(param_def, subspace_info, used_symbols, max_t_ind)
+        params, param_info = ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
     
         # Generate the string representations
         c_one = CAtom(param_info, zeros(Int, length(params)))
         c_zero = CAtom(param_info, ComplexRational(0,0,1), zeros(Int, length(params)))
         cumulant_cache = ReducedCumulantList(1)
-        qss = new( subspaces, subspace_info,                                      # Subspaces
+        ensembles = Ensemble[ss.ensemble for ss in subspaces if ss.ensemble !== nothing]
+
+        qss = new( subspaces, subspace_info, ensembles,                           # Subspaces
                 operatortypes, operatortype_info,                                 # Abstract Operators 
                 params, param_info,                                               # Variables / Parameters
                 I_op, I_ensemble_op, c_one, c_zero, cumulant_cache, max_t_ind)    # Precomputed operator blueprints 
+
+        GC.@preserve qss begin
+            for ens in ensembles
+                ens.qspace_ref = WeakRef(qss)
+            end
+        end
+
         return qss
     end
 end
 # Define the custom show for QSpace.
 function Base.show(io::IO, qspace::QSpace)
-    # First line: QSpace and its variables.
-    param_str = join([p.param_str for p in qspace.params], ", ")
-    println(io, "QSpace: [" * param_str * "]")
-    # Then print each subspace on its own line.
-    for ss in qspace.subspaces
-        println(io, "   - ", string(ss))
+    # Header line
+    if length(qspace.params) < 12
+        param_str = join([p.param_str for p in qspace.params], ",")
+    else
+        max_val = maximum(qspace.param_info.outer_group_by_index)
+        indexes = Int[] 
+        for i in 1:max_val
+            push!(indexes, findfirst(==(i), qspace.param_info.outer_group_by_index))
+        end
+        param_str = join([qspace.params[i].param_str for i in indexes], ",")
     end
+    println(io, "QSpace: [" * param_str * "]")
+
+    # Build LHS and RHS strings for each subspace
+    lhs_list = String[]
+    rhs_list = Any[]
+    for ss in qspace.subspaces
+        prefix = ss.is_ensemble_ss ? "Ensemble: " : "Subspace: "
+        op_keys = ss.keys[1:ss.num_operator_indexes]
+        lhs = prefix * join(op_keys, ",")
+        if ss.num_sum_indexes > 0
+            sum_keys = ss.keys[ss.num_operator_indexes+1:end]
+            lhs *= ", ∑ " * join(sum_keys, ",")
+        end
+        push!(lhs_list, lhs)
+        push!(rhs_list, ss.op_set)
+    end
+
+    # Find maximum lhs length
+    maxlen = maximum(length, lhs_list)
+
+    # Print aligned
+    for (lhs, rhs) in zip(lhs_list, rhs_list)
+        padded_lhs = rpad(lhs, maxlen)
+        print(io, "   - ", padded_lhs, " → ")
+        show(io, rhs)
+        println(io)
+    end
+
+    # Operator types
     for op in qspace.operatortypes
         println(io, "   - ", string(op))
     end
 end
+
 
 ## Test 
 #xi, yi, zi = base_operators("i", qs)
