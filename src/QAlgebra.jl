@@ -99,8 +99,8 @@ export QubitPauli, QubitPM, Ladder
 
 include("QExpressions.jl")
 using .QExpressions
-export QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QCumulant, QAtomProduct, permutation, QSum, Sum, ∑, QCompositeProduct, diffQEq, d_dt
-export QCommutator, QExp, QLog, QPower, power, QRoot, root, Expectation, ExpectQAtomProducts
+export QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QCumulant, QAtomProduct, permutation, QSum, ∑, QCompositeProduct, diffQEq, d_dt
+export QCommutator, QExp, QLog, QPower, power, QRoot, root, Expectation
 export Dag, Commutator, same_qspace
 export is_t_var, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, max_moment_of_terms, contains_which_t_indexes, where_acting
 export is_unitary, is_hermitian, substitution_properties_fulfilled
@@ -116,5 +116,5 @@ export QExpr2string   # remove later
 
 include("QEqSets.jl")
 using .QEqSets
-export diffQEqSet, ExpectQAtomProducts, ExpectedValues
+export diffQEqSet
 end # module QAlgebra

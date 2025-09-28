@@ -253,17 +253,21 @@ function reorder(q::QSum, mode::Val{M}, where_defined::Vector{BitVector}, orders
 
     inner = reorder(q.expr, mode, new_where_defined, new_orders; add_at_sum=true)
 
-    new_eq = SubSpaceIndex[remap_subspace_index(index, info, new_order) for index in q.eq_indexes]
-    sort!(new_eq, by=expanded)
-
-    new_blocks = Vector{Vector{SubSpaceIndex}}()
-    for blk in q.neq_blocks
-        remapped = SubSpaceIndex[remap_subspace_index(index, info, new_order) for index in blk]
-        sort!(remapped, by=expanded)
-        push!(new_blocks, remapped)
+    new_indexes = SubSpaceIndex[]
+    new_constraints = BitVector[]
+    for (ensemble_idx, block) in enumerate(q.blocks)
+        perm = new_order.w_orders[ensemble_idx]
+        for (i, index) in enumerate(block.indexes)
+            remapped = remap_subspace_index(index, info, new_order)
+            push!(new_indexes, remapped)
+            row = block.constraints[i]
+            @assert length(row) == length(perm) "Constraint row length mismatch during QSum reordering."
+            push!(new_constraints, BitVector(row[perm]))
+        end
     end
 
-    return only(modify_expr_indexing(q, inner, new_eq, new_blocks, Val(:nodecollision)))
+    blocks = _build_blocks(q.qspace, new_indexes, new_constraints)
+    return only(_QSum(q.qspace, inner, blocks))
 end
 
 function reorder(q::QObj, mode::Val{M}, where_defined::Vector{BitVector}, orders::ReorderOrders; add_at_sum::Bool) where M

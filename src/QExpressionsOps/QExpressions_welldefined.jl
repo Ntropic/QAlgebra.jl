@@ -31,14 +31,36 @@ function which_ensemble_acting(q::QAbstract, subspace_info::SubSpaceInfo, neutra
         error("Which ensemble acting should be applied to abstractless expressions! ")
     end
 end
+
+@inline function _empty_where_defined(qspace::QSpace)::Vector{BitVector}
+    return [falses(n) for n in qspace.subspace_info.how_many_by_ensemble]
+end
+
 function which_ensemble_acting(q::QAtomProduct; do_abstract::Bool=false)::Vector{BitVector}
     # xor between vectors of vector of bool 
     qspace = q.qspace
-    return vecvec_or!(reduce(vecvec_or!, [which_ensemble_acting(t, qspace.subspace_info, qspace.I_ensemble_op; do_abstract=do_abstract) for t in q.expr]), 
-                    which_ensemble_acting(q.coeff_fun))
+    accum = _empty_where_defined(qspace)
+    for atom in q.expr
+        vecvec_or!(accum, which_ensemble_acting(atom, qspace.subspace_info, qspace.I_ensemble_op; do_abstract=do_abstract))
+    end
+    try
+        vecvec_or!(accum, which_ensemble_acting(q.coeff_fun))
+    catch err
+        if err isa ErrorException && occursin("CAbstract", err.msg)
+            # Coefficient contains abstract parameters; treat as non-acting.
+        else
+            rerethrow = err
+            throw(rerethrow)
+        end
+    end
+    return accum
 end
 function which_ensemble_acting(q::QExpr; do_abstract::Bool=false)::Vector{BitVector}
-    return reduce(vecvec_or, [which_ensemble_acting(t, do_abstract=do_abstract) for t in q.terms])
+    accum = _empty_where_defined(q.qspace)
+    for term in q.terms
+        vecvec_or!(accum, which_ensemble_acting(term, do_abstract=do_abstract))
+    end
+    return accum
 end
 function which_ensemble_acting(q::QSum; do_abstract::Bool=false)::Vector{BitVector}
     which_ensembles = which_ensemble_acting(q.expr; do_abstract=do_abstract)
@@ -53,7 +75,20 @@ function which_ensemble_acting(q::QComposite; do_abstract::Bool=false)::Vector{B
     return vecvec_or!(which_ensemble_acting(q.expr, do_abstract=do_abstract),  which_ensemble_acting(q.coeff_fun))
 end
 function which_ensemble_acting(q::QMultiComposite; do_abstract::Bool=false)::Vector{BitVector}
-    return vecvec_or!(reduce(vecvec_or!, [which_ensemble_acting(x, do_abstract=do_abstract) for x in q.expr]), which_ensemble_acting(q.coeff_fun))
+    accum = _empty_where_defined(q.qspace)
+    for expr in q.expr
+        vecvec_or!(accum, which_ensemble_acting(expr, do_abstract=do_abstract))
+    end
+    try
+        vecvec_or!(accum, which_ensemble_acting(q.coeff_fun))
+    catch err
+        if err isa ErrorException && occursin("CAbstract", err.msg)
+            # Ignore abstract coefficients when determining acting ensembles.
+        else
+            throw(err)
+        end
+    end
+    return accum
 end
 
 """ 

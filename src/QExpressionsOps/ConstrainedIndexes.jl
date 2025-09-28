@@ -1,0 +1,323 @@
+"""
+    NeqConstraint(lhs, rhs)
+
+Inequality constraint between two summation indexes. Accepts any `SumIndexInput`
+at construction; indexes are normalised to `SubSpaceIndex` objects when a
+`QSpace` is available.
+"""
+struct NeqConstraint{T<:SumIndexInput}
+    lhs::T
+    rhs::T
+end
+function neq(lhs::T, rhs::T) where {T<:SumIndexInput}  # convenience constructor
+    return NeqConstraint(lhs, rhs)
+end
+function neqconstraint_of_SubSpaceIndex(qspace::QSpace, constraint::NeqConstraint)::NeqConstraint{SubSpaceIndex}
+    lhs = _to_subspace_index(qspace, constraint.lhs)
+    rhs = _to_subspace_index(qspace, constraint.rhs)
+    @assert lhs.outer == rhs.outer "Neq-constraints must be of the same ensemble subspace, got outer subspace indexes $(lhs.outer) and $(rhs.outer) for indexes constraints $(constraint.lhs) and $(constraint.rhs)." 
+    return NeqConstraint{SubSpaceIndex}(lhs, rhs)
+end
+
+# build an all-true constraint row for a given index
+function process_sumindex_and_constraint(qspace::QSpace, idx::SubSpaceIndex)
+    subspace = qspace.subspaces[idx.outer]
+    @assert subspace.is_ensemble_ss "Summation indexes must be ensemble indexes "
+    @assert subspace.num_operator_indexes < idx.inner "You need to sum using a summation index, "
+    return trues(subspace.ensemble_size)
+end
+
+function sort_indexes_and_constraints_into_ensemble_blocks(qspace::QSpace, indexes::Vector{SubSpaceIndex}, neq::Bool, constraints::Vector{NeqConstraint{SubSpaceIndex}})::Vector{ConstrainedIndexBlock}
+    subspace_info = qspace.subspace_info 
+    where_ensembles = subspace_info.where_ensembles
+    how_many_by_ensemble = subspace_info.how_many_by_ensemble
+    non_sum = subspace_info.how_many_non_sum_by_ensemble
+    # initialize empty blocks for the ensembles
+    blocks::Vector{ConstrainedIndexBlock} = [ConstrainedIndexBlock(outer, ensemble_size, how_many_non_sum) for (outer, ensemble_size, how_many_non_sum) in zip(where_ensembles, how_many_by_ensemble, non_sum)]
+    for idx in indexes 
+        ensemble_ind, summation_ind = Index2Ensemble_and_Summation(idx, subspace_info)
+        # checks 
+        if summation_ind < 1
+            subspace = qspace.subspaces[idx.outer]
+            available = subspace.keys[non_sum[ensemble_ind]+1:end]
+            if !isempty(available)
+                error("Index $(Index2String(idx, subspace_info)) is not a summation index. Available summation keys: $available.")
+            else
+                error("No summation indexes defined for ensemble $(subspace.key).");
+            end
+        end
+        if neq
+            push_index_falses!(blocks[ensemble_ind], idx, summation_ind)
+        else
+            push_index_trues!(blocks[ensemble_ind], idx, summation_ind)
+        end
+    end
+    if neq && !isempty(constraints)
+        error("You shouldn't define non-equality via neq=true and define inequality constraints.")
+    else
+        for constraint in constraints
+            lhs, rhs = constraint.lhs, constraint.rhs
+            ensemble_lhs = subspace_info.ensemble_index_by_outer_index[lhs.outer] 
+            @assert ensemble_lhs != 0 "Neq-constraints must be of an ensemble subspace. got subspace index $(lhs.outer) for $(Index2String(lhs, subspace_info))." 
+            how_many_non_sum = non_sum[ensemble_lhs]
+            if constraint.lhs.inner <= how_many_non_sum && constraint.lhs.inner <= how_many_non_sum + ensemble_lhs      
+                subspace = qspace.subspaces[lhs.outer]
+                available = subspace.keys[non_sum[ensemble_lhs]+1:end]
+                if !isempty(available)
+                    error("Index $(Index2String(lhs, subspace_info)) and $(Index2String(rhs, subspace_info)) are not summation indexes. Available summation keys: $available.")
+                else
+                    error("No summation indexes defined for ensemble $(subspace.key).");
+                end
+            else # Apply to block 
+                apply_neq!(blocks[ensemble_lhs], constraint)
+            end
+        end
+    end
+    return blocks 
+end
+
+
+# =================================================> Index & Constraint Blocks <=============================================================
+
+
+struct ConstrainedIndexBlock
+    outer::Int
+    ensemble_size::Int
+    how_many_non_sum::Int
+    indexes::Vector{SubSpaceIndex}
+    constraints::Vector{BitVector}
+    function ConstrainedIndexBlock(outer::Int, ensemble_size::Int, how_many_non_sum::Int, indexes::Vector{SubSpaceIndex}=SubSpaceIndex[], constraints::Vector{BitVector}=BitVector[])
+        # assume lengths are equal! 
+        return new(outer, ensemble_size, how_many_non_sum, indexes, constraints)
+    end
+end
+Base.length(block::ConstrainedIndexBlock) = length(block.indexes)
+Base.getindex(block::ConstrainedIndexBlock, i::Int) = block.indexes[i]
+
+function push_index_trues!(block::ConstrainedIndexBlock, idx::SubSpaceIndex, summation::Int)::ConstrainedIndexBlock # assume idx belongs into this block! 
+    # find correct location in block.indexes where to insert idx (bubble sort)
+    i = bubble_insert_index!(block.indexes, idx)
+    insert!(block.constraints, i, trues(block.ensemble_size))
+    return block
+end
+function push_index_falses!(block::ConstrainedIndexBlock, idx::SubSpaceIndex, summation::Int)::ConstrainedIndexBlock # assume idx belongs into this block! 
+    # find correct location in block.indexes where to insert idx (bubble sort)
+    i = bubble_insert_index!(block.indexes, idx)
+    insert!(block.constraints, i, falses(block.ensemble_size))
+    return block
+end
+function apply_neq!(block::ConstrainedIndexBlock, constraint::NeqConstraint{SubSpaceIndex})::ConstrainedIndexBlock
+    block_index_lhs = findfirst(x -> x == (constraint.lhs), block.indexes)
+    block_index_rhs = findfirst(x -> x == (constraint.rhs), block.indexes)
+    # one of them needs to be an index, for each that is an index we remove the others outer from the constraints (i.e. make it false )
+    done = false 
+    if !isnothing(block_index_lhs)
+        block.constraints[block_index_lhs][constraint.rhs.inner] = false
+        done = true
+    end
+    if !isnothing(block_index_rhs)
+        block.constraints[block_index_rhs][constraint.lhs.inner] = false 
+        done = true 
+    end
+    @assert done "None of the indexes described in Neq-Condition was present in block."
+    return block 
+end
+
+function merge_blocks(blocks_a::Vector{ConstrainedIndexBlock}, blocks_b::Vector{ConstrainedIndexBlock})
+    @assert length(blocks_a) == length(blocks_b) "Blocks need to be acting on the same set of Ensemble subspaces, and have to have the same number of blocks."
+    merged = Vector{ConstrainedIndexBlock}(undef, length(blocks_a))
+    @inbounds for (i, (a, b)) in enumerate(zip(blocks_a, blocks_b))
+        if isempty(a.indexes)
+            merged[i] = b
+            continue
+        elseif isempty(b.indexes)
+            merged[i] = a
+            continue
+        end
+
+        @assert a.outer == b.outer "Ensemble mismatch-. outer differs."
+        @assert a.ensemble_size == b.ensemble_size  "Ensemble size mismatch."
+        @assert a.how_many_non_sum == b.how_many_non_sum  "Non-sum count mismatch."
+
+        # start from a’s sorted unique base
+        combined_indexes     = copy(a.indexes)
+        combined_constraints = [copy(c) for c in a.constraints]
+
+        # check previous conditions for neq condition transitivity
+        for (bi, bc) in zip(b.indexes, b.constraints)
+            for (ai, ac) in zip(a.indexes, a.constraints)
+                if xor(bc[ai.inner], ac[bi.inner])
+                    error("Inconsistent inequality conditions. Cannot merge blocks. ")
+                end
+            end
+        end   
+
+        # insert b’s indexes one by one
+        for (idx, constr) in zip(b.indexes, b.constraints)
+            pos = bubble_insert_index!(combined_indexes, idx)
+            insert!(combined_constraints, pos, copy(constr))
+        end
+        merged[i] = ConstrainedIndexBlock(a.outer, a.ensemble_size, a.how_many_non_sum, combined_indexes, combined_constraints,)
+    end
+
+    return merged
+end
+
+
+
+# Helpers for print functions !!!
+# ================================================>  Some final helpers <==================================================================================
+
+# flatten all block indexes into a single vector in block order
+function _flatten_indexes(blocks::Vector{ConstrainedIndexBlock})::Vector{SubSpaceIndex}
+    # concatenate all indexes across blocks preserving order
+    total = sum(length(block) for block in blocks)
+    result = Vector{SubSpaceIndex}(undef, total)
+    cursor = 1
+    for block in blocks
+        for idx in block.indexes
+            result[cursor] = idx
+            cursor += 1
+        end
+    end
+    return result
+end
+# collect every constraint row from all blocks into one vector
+function _flatten_constraints(blocks::Vector{ConstrainedIndexBlock})::Vector{BitVector}
+    # collect every constraint row in block order
+    rows = BitVector[]
+    for block in blocks
+        for row in block.constraints
+            push!(rows, BitVector(row))
+        end
+    end
+    return rows
+end
+# bubble insert and return insertion index
+function bubble_insert_index!(v::Vector{SubSpaceIndex}, x::SubSpaceIndex)::Int
+    push!(v, x)
+    i = length(v)
+    while i > 1 && isless(v[i], v[i-1])
+        v[i], v[i-1] = v[i-1], v[i]
+        i -= 1
+    end
+    if (i > 1 && v[i] == v[i-1]) # || (i < length(v) && v[i] == v[i+1]) # => right hand side check not needed due to isless comparison 
+        throw(ArgumentError("Duplicate index $(x) found in constrained index block."))
+    end
+    return i
+end
+
+function _build_blocks(qspace::QSpace, indexes::Vector{SubSpaceIndex}, constraints::Vector{BitVector})::Vector{ConstrainedIndexBlock}
+    info = qspace.subspace_info
+    where_ensembles = info.where_ensembles
+    ensemble_sizes = info.how_many_by_ensemble
+    non_sum = info.how_many_non_sum_by_ensemble
+    n_ensembles = length(where_ensembles)
+    temp_indexes = [SubSpaceIndex[] for _ in 1:n_ensembles]
+    temp_constraints = [BitVector[] for _ in 1:n_ensembles]
+
+    @assert length(indexes) == length(constraints) "Index and constraint vectors must match in length."
+
+    @inbounds for (idx, row) in zip(indexes, constraints)
+        ensemble = info.ensemble_index_by_outer_index[idx.outer]
+        ensemble != 0 || error("Index $(Index2String(idx, info)) does not belong to an ensemble subspace.")
+        push!(temp_indexes[ensemble], idx)
+        push!(temp_constraints[ensemble], BitVector(row))
+    end
+
+    blocks = Vector{ConstrainedIndexBlock}(undef, n_ensembles)
+    @inbounds for ensemble in 1:n_ensembles
+        idxs = temp_indexes[ensemble]
+        rows = temp_constraints[ensemble]
+        if !isempty(idxs)
+            perm = sortperm(idxs; by=expanded)
+            idxs = idxs[perm]
+            rows = rows[perm]
+        end
+        blocks[ensemble] = ConstrainedIndexBlock(where_ensembles[ensemble], ensemble_sizes[ensemble], non_sum[ensemble], idxs, rows)
+    end
+    return blocks
+end
+
+
+const NeqAction = Tuple{SubSpaceIndex, Int}
+const NeqBranch = Tuple{ConstrainedIndexBlock, BitVector, Vector{NeqAction}}
+
+# Push this into QSum_modify
+"""
+    neq_expand(block, where_defined) -> Vector{NeqBranch}
+
+Enumerate all ways to resolve allowed equalities for `block` against the provided
+`where_defined` mask. Each returned tuple contains:
+  * a cloned block with updated constraint rows,
+  * a copy of `where_defined` describing the remaining available ensemble slots,
+  * the list of equality actions `(index, column)` applied while descending this branch.
+"""
+function neq_expand(block::ConstrainedIndexBlock, where_defined::BitVector)::Vector{NeqBranch}
+    length(where_defined) == block.ensemble_size || error("where_defined length must equal block ensemble size.")
+    results = NeqBranch[]
+    _neq_expand!(results, _clone_block(block), copy(where_defined), 1, NeqAction[])
+    return results
+end
+
+function _neq_expand!(results::Vector{NeqBranch}, block::ConstrainedIndexBlock, where_defined::BitVector, row_idx::Int, actions::Vector{NeqAction})::Nothing
+    if row_idx > length(block.indexes)
+        push!(results, (block, copy(where_defined), copy(actions)))
+        return nothing
+    end
+
+    row = block.constraints[row_idx]
+    idx = block.indexes[row_idx]
+    candidates = Int[]
+    max_col = idx.inner - 1
+    max_col < 1 || @inbounds for col in 1:max_col
+        if row[col] && where_defined[col]
+            push!(candidates, col)
+        end
+    end
+
+    @inbounds for col in candidates
+        eq_block = _clone_block(block)
+        eq_where = copy(where_defined)
+        eq_idx = eq_block.indexes[row_idx]
+        deleteat!(eq_block.indexes, row_idx)
+        deleteat!(eq_block.constraints, row_idx)
+        for row in eq_block.constraints
+            row[eq_idx.inner] = true
+        end
+        eq_where[col] = false
+        eq_where[idx.inner] = false
+        new_actions = copy(actions)
+        push!(new_actions, (eq_idx, col))
+        _neq_expand!(results, eq_block, eq_where, row_idx, new_actions)
+    end
+
+    next_block = _clone_block(block)
+    if !isempty(candidates)
+        row_next = next_block.constraints[row_idx]
+        for col in candidates
+            row_next[col] = false
+        end
+    end
+    _neq_expand!(results, next_block, where_defined, row_idx + 1, actions)
+    return nothing
+end
+
+# Helper to copy blocks <=============================== Remove dependency of these functions
+@inline function _swap_constraint_columns!(rows::Vector{BitVector}, a::Int, b::Int)
+    a == b && return
+    @inbounds for row in rows
+        row[a], row[b] = row[b], row[a]
+    end
+end
+
+function _clone_block(block::ConstrainedIndexBlock)::ConstrainedIndexBlock
+    return ConstrainedIndexBlock(
+        block.outer,
+        block.ensemble_size,
+        block.how_many_non_sum,
+        copy(block.indexes),
+        BitVector[BitVector(row) for row in block.constraints],
+    )
+end
+clone_blocks(blocks::Vector{ConstrainedIndexBlock}) = [_clone_block(block) for block in blocks]

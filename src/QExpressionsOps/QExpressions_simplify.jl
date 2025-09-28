@@ -20,8 +20,24 @@ function same_term_type(t1::QAtomProduct, t2::QAtomProduct)::Bool  # different c
     return true
 end
 
+@inline function _same_block(a::ConstrainedIndexBlock, b::ConstrainedIndexBlock)::Bool
+    length(a.indexes) == length(b.indexes) || return false
+    @inbounds for (idx_a, idx_b) in zip(a.indexes, b.indexes)
+        idx_a.expanded == idx_b.expanded || return false
+    end
+    length(a.constraints) == length(b.constraints) || return false
+    @inbounds for (row_a, row_b) in zip(a.constraints, b.constraints)
+        row_a == row_b || return false
+    end
+    return true
+end
+
 function same_term_type(s1::QSum, s2::QSum)::Bool
-    return s1.eq_indexes == s2.eq_indexes && s1.neq_blocks == s2.neq_blocks
+    length(s1.blocks) == length(s2.blocks) || return false
+    @inbounds for (blk1, blk2) in zip(s1.blocks, s2.blocks)
+        _same_block(blk1, blk2) || return false
+    end
+    return true
 end
 function same_term_type(e1::QExpr, e2::QExpr)::Bool
     return all(same_term_type.(e1.expr, e2.expr))

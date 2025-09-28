@@ -105,4 +105,37 @@
         @test comm_expr isa QExpr
     end
 
+    @testset "NeqConstraint Integration" begin
+        expr_sum = xi + yi
+        constraint = neq(:l, :m)
+
+        sum_direct = ∑([:l, :m], expr_sum, constraint)
+        sum_base = Base.sum([:l, :m], expr_sum, constraint)
+
+        @test sum_direct isa QExpr
+        @test sum_base isa QExpr
+        base_cons = sum_base.terms[1].blocks[1].constraints
+        @test sum_direct.terms[1].blocks[1].constraints == base_cons
+
+        qsum = sum_direct.terms[1]
+        block = qsum.blocks[1]
+        @test length(block.indexes) == 2
+        lhs_inner = block.ensemble_indexes[1]
+        rhs_inner = block.ensemble_indexes[2]
+        @test block.constraints[1][lhs_inner]
+        @test block.constraints[2][rhs_inner]
+        @test !block.constraints[1][rhs_inner]
+        @test !block.constraints[2][lhs_inner]
+
+        non_sum_constraint = neq(:l, :i)
+        sum_with_fixed = ∑([:l], expr_sum, non_sum_constraint)
+        single_block = sum_with_fixed.terms[1].blocks[1]
+        non_sum_idx = SubSpaceIndex(:i, qspace.subspace_info)
+        @test !single_block.constraints[1][non_sum_idx.inner]
+
+        @test_throws ErrorException ∑([:l], expr_sum, constraint)
+        @test_throws ErrorException ∑([:l, :m], expr_sum, neq(:l, :l))
+        @test_throws ErrorException ∑([:l, :m], expr_sum, neq(:l, :h))
+    end
+
 end

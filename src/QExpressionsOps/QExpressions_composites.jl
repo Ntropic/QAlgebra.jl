@@ -1,21 +1,10 @@
 import Base: exp, log, sqrt
+import ..QAlgebra: sort_unique!
 
-export QAtomProduct, QAtomOrdered, OrderedQAtomProduct, permutation, QSum, Sum, ∑, QCommutator, QCompositeProduct, QExp, QLog, QPower, power, QRoot, root
 
-@inline function _identity_permutation(n::Int)::Vector{Int}
-    perm = collect(1:n)
-    return perm
-end
+export QAtomProduct, QAtomOrdered, OrderedQAtomProduct, permutation, QSum, ∑, NeqConstraint, neq, QCommutator, QCompositeProduct, QExp, QLog, QPower, power, QRoot, root
 
-@inline function _to_qatom_vector(expr::AbstractVector{<:QAtom})::Vector{QAtom}
-    n = length(expr)
-    out = Vector{QAtom}(undef, n)
-    @inbounds for i in 1:n
-        out[i] = expr[i]
-    end
-    return out
-end
-
+const SumIndexInput = Union{Symbol, String, SubSpaceIndex}
 
 """
     QAtomProduct
@@ -36,8 +25,7 @@ struct QAtomProduct <: QComposite
     braket::Bool
 
     function QAtomProduct(qspace::QSpace, coeff::T, expr::AbstractVector{<:QAtom}=QAtom[], separate_expectation_values::Bool=false, braket::Bool=false) where T <: CFunction
-        expr_vec = _to_qatom_vector(expr)
-        return new(qspace, coeff, expr_vec, separate_expectation_values, braket)
+        return new(qspace, coeff, Vector{QAtom}(expr), separate_expectation_values, braket)
     end
     function QAtomProduct(qspace::QSpace, coeff::T, expr::S, separate_expectation_values::Bool=false) where {T <: CFunction, S <: QAtom}
         return QAtomProduct(qspace, coeff, QAtom[expr], separate_expectation_values)
@@ -64,177 +52,91 @@ get_coeff(q::QComposite) = q.coeff_fun
 multiply_coeff(q::QComposite, coeff::CFunction) = modify_coeff(q, get_coeff(q)*coeff)
 set_braket(q::QAtomProduct, val::Bool=true) = QAtomProduct(q.qspace, q.coeff_fun, q.expr, q.separate_expectation_values, val)
 
-struct QAtomOrdered <: QComposite
-    qspace::QSpace
-    coeff_fun::CFunction
-    op_indices::Vector{QAtom}
-    permutation::Vector{Int}
-    function QAtomOrdered(qspace::QSpace, coeff_fun::CFunction, op_indices::Vector{QAtom}, permutation::Vector{Int})
-        length(op_indices) == length(permutation) || error("Permutation length does not match operator count.")
-        return new(qspace, coeff_fun, copy(op_indices), copy(permutation))
-    end
-end
 
-permutation(q::QAtomOrdered) = q.permutation
-
-"""
-    OrderedQAtomProduct(q::QAtomProduct; lt=isless)
-
-Return a `QAtomOrdered` where the operators of `q` are sorted according to `lt`.
-The permutation field records how the sorted ordering maps back to the original
-operator sequence.
-"""
-function OrderedQAtomProduct(q::QAtomProduct; lt=isless)
-    n = length(q.expr)
-    if n == 0
-        return QAtomOrdered(q.qspace, q.coeff_fun, QAtom[], Int[])
-    end
-    perm = sortperm(q.expr; lt=lt)
-    ordered_atoms = Vector{QAtom}(undef, n)
-    @inbounds for i in 1:n
-        ordered_atoms[i] = q.expr[perm[i]]
-    end
-    return QAtomOrdered(q.qspace, q.coeff_fun, ordered_atoms, perm)
-end
-
-
+include("ConstrainedIndexes.jl")
 """
     QSum
 
-A `QSum` represents the summation of a quantum expression over one or more
-index blocks. Each block is a set of summation indexes, with an associated
-flag indicating whether the indexes in that block must be all distinct.
-
+Concrete representation of a quantum sum. Each instance stores one
+`ConstrainedIndexBlock` per ensemble of the ambient `QSpace`, so all bound summation
+indexes and their constraint matrices live inside `blocks`.
 It contains:
-  - `qspace`    : the quantum space of the sum.
-  - `expr`      : (`QExpr`) the expression being summed over.
-  - `blocks`    : (`Vector{Vector{SubSpaceIndex}}`) disjoint, nonempty blocks of summation indexes. Indexes in each block are sorted.
-  - `neq_blocks`: (`BitVector`) same length as `blocks`, with `true` meaning all indexes in that block must be different, and `false` meaning they may coincide.
-
-For example:
-  ∑_{[i,j]}^{≠} ∑_[k]^{=}} f(i,j,k)
-
-represents a sum where `i` and `j` must be different, while `k` is unrestricted.
+  - `qspace::QSpace`: ambient space that supplies ensemble metadata.
+  - `expr::QExpr`: body of the summation.
+  - `blocks::Vector{ConstrainedIndexBlock}`: per-ensemble containers of indexes,
+    cached ensemble slot numbers, and their constraint bit vectors. Empty
+    blocks denote ensembles with no bound indexes.
 """
 struct QSum <: QComposite
     qspace::QSpace
     expr::QExpr
-    eq_indexes::Vector{SubSpaceIndex}            # may be empty
-    neq_blocks::Vector{Vector{SubSpaceIndex}}    # each block nonempty and sorted
-end
-function _QSum(qspace::QSpace, expr::QExpr, eq_indexes::Vector{SubSpaceIndex}, neq_blocks::Vector{Vector{SubSpaceIndex}})::Vector{QComposite}
-    qsum = QSum(qspace, expr, eq_indexes, neq_blocks)
-    # run decollision + flatten
-    return decollision_QSum(qsum)
-end
-function _QSum(qspace::QSpace, expr::QExpr, indexes::Vector{SubSpaceIndex}; neq::Bool=false)::Vector{QComposite}
-    isempty(indexes) && return QComposite[expr]
-    idxs_sorted = sort(indexes, by=expanded)
-    if neq && length(idxs_sorted) > 1
-        return _QSum(qspace, expr, SubSpaceIndex[], Vector{Vector{SubSpaceIndex}}([idxs_sorted]))
-    else
-        return _QSum(qspace, expr, idxs_sorted, Vector{Vector{SubSpaceIndex}}())
+    blocks::Vector{ConstrainedIndexBlock}
+    function QSum(qspace::QSpace, expr::QExpr, blocks::Vector{ConstrainedIndexBlock})
+        #info = qspace.subspace_info
+        #length(blocks) == length(info.where_ensembles) || error("One block per ensemble required.")
+        return new(qspace, expr, blocks)
     end
 end
-modify_expr(q::QSum, expr::QExpr, ::Val{:nodecollision}) =
-    QComposite[QSum(q.qspace, expr, q.eq_indexes, q.neq_blocks)]
-modify_expr(q::QSum, expr::Vector{QComposite}, ::Val{:nodecollision}) =
-    QComposite[QSum(q.qspace, QExpr(q.qspace, expr), q.eq_indexes, q.neq_blocks)]
-modify_expr(q::QSum, expr::QExpr, ::Val{:nosimp}) =
-    QComposite[QSum(q.qspace, expr, q.eq_indexes, q.neq_blocks)]
-modify_expr(q::QSum, expr::Vector{QComposite}, ::Val{:nosimp}) =
-    QComposite[QSum(q.qspace, QExpr(q.qspace, expr, Val(:nosimp)), q.eq_indexes, q.neq_blocks)]
-modify_expr(q::QSum, expr::QExpr) = _QSum(q.qspace, expr, q.eq_indexes, q.neq_blocks)
-modify_expr(q::QSum, expr::Vector{QComposite}) = _QSum(q.qspace, QExpr(q.qspace, expr), q.eq_indexes, q.neq_blocks)
-modify_expr_indexing(q::QSum, expr::QExpr, eq_indexes::Vector{SubSpaceIndex}, neq_blocks::Vector{Vector{SubSpaceIndex}}) =
-    _QSum(q.qspace, expr, eq_indexes, neq_blocks)
-modify_expr_indexing(q::QSum, expr::QExpr, eq_indexes::Vector{SubSpaceIndex}, neq_blocks::Vector{Vector{SubSpaceIndex}}, ::Val{:nodecollision}) =
-    QComposite[QSum(q.qspace, expr, eq_indexes, neq_blocks)]
+
+function _QSum(qspace::QSpace, expr::QExpr, blocks::Vector{ConstrainedIndexBlock})::Vector{QComposite}
+    if isempty(blocks) || all(isempty(block.indexes) for block in blocks)
+        return QComposite[expr]
+    end
+    qsum = QSum(qspace, expr, blocks)
+    # TODO: reinstate decollision_QSum once it supports block-based construction
+    # return decollision_QSum(qsum)
+    return QComposite[qsum]
+end
+modify_expr(q::QSum, expr::QExpr, ::Val{:nodecollision}) = QComposite[QSum(q.qspace, expr, q.blocks)]
+modify_expr(q::QSum, expr::Vector{QComposite}, ::Val{:nodecollision}) = QComposite[QSum(q.qspace, QExpr(q.qspace, expr), q.blocks)]
+modify_expr(q::QSum, expr::QExpr, ::Val{:nosimp}) = QComposite[QSum(q.qspace, expr, q.blocks)]
+modify_expr(q::QSum, expr::Vector{QComposite}, ::Val{:nosimp}) = QComposite[QSum(q.qspace, QExpr(q.qspace, expr, Val(:nosimp)), q.blocks)]
+modify_expr(q::QSum, expr::QExpr) = _QSum(q.qspace, expr, q.blocks)
+modify_expr(q::QSum, expr::Vector{QComposite}) = _QSum(q.qspace, QExpr(q.qspace, expr), q.blocks)
 each_term(q::QSum) = q.expr
 each_coeff(q::QSum)::Vector{CFunction} = flatmap_to(each_coeff, each_term(q), CFunction)
-multiply_coeff(q::QSum, coeff::CFunction)::QSum =
-    only(modify_expr(q, multiply_coeff(q.expr, coeff)))
+multiply_coeff(q::QSum, coeff::CFunction)::QSum = only(modify_expr(q, multiply_coeff(q.expr, coeff)))
 get_coeff(q::QSum) = q.qspace.c_one
-all_indexes(q::QSum) = vcat(q.eq_indexes, q.neq_blocks...)
-iter_all_indexes(q::QSum) = Iterators.flatten((q.eq_indexes, Iterators.flatten(q.neq_blocks)))
-iter_all_indexes_with_refs(q::QSum) = Iterators.flatten(( ((q.eq_indexes, i, q.eq_indexes[i]) for i in eachindex(q.eq_indexes)), ((blk, j, blk[j]) for blk in q.neq_blocks for j in eachindex(blk))))   # also returns the current vector and index 
-length_all_indexes(q::QSum) = length(q.eq_indexes) + sum(length(block) for block in q.neq_blocks)
-function is_single_neq(q::QSum)::Bool 
-    (length(q.eq_indexes) == 1 && isempty(q.neq_blocks)) || (isempty(q.eq_indexes) && length(q.neq_blocks) == 1)
+
+all_indexes(q::QSum)::Vector{SubSpaceIndex} = _flatten_indexes(q.blocks)
+iter_all_indexes(q::QSum) = Base.Iterators.flatten((block.indexes for block in q.blocks))
+iter_all_constraints(q::QSum) = Base.Iterators.flatten((block.constraints for block in q.blocks))
+container_iter_all_indexes_with_refs(q::QSum) = Base.Iterators.flatten( ((block.indexes, i, block.indexes[i]) for i in eachindex(block.indexes)) for block in q.blocks)
+length_all_indexes(q::QSum) = sum(length(block) for block in q.blocks)
+
+_to_subspace_index(qspace::QSpace, idx::SubSpaceIndex) = idx
+_to_subspace_index(qspace::QSpace, idx::Union{Symbol,String}) = SubSpaceIndex(idx, qspace.subspace_info)
+
+indexes2subspaceindexes(qspace::QSpace, idx::SumIndexInput)::Vector{SubSpaceIndex} = SubSpaceIndex[_to_subspace_index(qspace, idx)]
+indexes2subspaceindexes(qspace::QSpace, idxs::AbstractVector{<:SumIndexInput})::Vector{SubSpaceIndex} = SubSpaceIndex[_to_subspace_index(qspace, idx) for idx in idxs]
+
+function _make_qsum_expr(qspace::QSpace, raw_indexes::Union{SumIndexInput, AbstractVector{<:SumIndexInput}}, expr::QExpr, constraints::Vararg{NeqConstraint}; neq::Bool=false)
+    indexes = indexes2subspaceindexes(qspace, raw_indexes)
+    isempty(indexes) && return expr
+    normed_constraints::Vector{NeqConstraint{SubSpaceIndex}} = neqconstraint_of_SubSpaceIndex.(Ref(qspace), collect(constraints))
+    blocks = sort_indexes_and_constraints_into_ensemble_blocks(qspace, indexes, neq, normed_constraints)
+    comps = _QSum(qspace, expr, blocks)
+    return QExpr(qspace, comps)
 end
 
 """
-    Sum(index::Union{String,Symbol,Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=false) -> QSum
+    ∑(indexes, expr, constraints...; neq=false)
+    Base.sum(indexes, expr, constraints...; neq=false)
 
-Constructor of a `QSum` struct. Defines the indexes to sum over, the expressions for which to apply the sum and optionally whether the sum is only over non equal indexes. 
+Construct a `QSum` by binding summation indexes in `expr`. Indexes may be
+supplied as a single entry or vector, where each entry is a `String`, `Symbol`,
+or `SubSpaceIndex`. Additional `NeqConstraint`s restrict coinciding ensemble
+slots, while `neq=true` forces all tracked summation indexes within each
+ensemble to be distinct. Constraints are supplied positionally as extra
+arguments (e.g. `∑(:i, expr, neq(:i, :j))`). All provided summation indexes
+must be unique members of the given `qspace`.
 """
-function Sum(qspace::QSpace, expr::QExpr, eq_indexes::Vector{SubSpaceIndex}, blocks::Vector{Vector{SubSpaceIndex}})::QExpr
-    if length(blocks) > 1 
-        sort!(blocks)
-    end
-    all_inds = vcat(eq_indexes, blocks...)
-    if length(all_inds) == 0
-        return expr 
-    end
-    new_blocks = Vector{Vector{SubSpaceIndex}}() 
-    sizehint!(new_blocks, length(blocks))
-    for block in blocks 
-        if length(block) <= 1
-            append!(eq_indexes, block)
-            # remove block from blocks 
-        else
-            push!(new_blocks, block)
-        end
-    end
-    all = copy(eq_indexes)
-    append!(all, reduce(vcat, new_blocks; init=SubSpaceIndex[]))
-    if length(sort_unique!(all)) != length(all) 
-        error("Sum: indexes must be unique across blocks.")
-    end
-    return QExpr(qspace, QSum(qspace, expr, eq_indexes, new_blocks))
-end
-function Sum(qspace::QSpace, indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=false)::QExpr
-    subspace_indexes = SubSpaceIndex.(indexes, Ref(qspace.subspace_info))
-    for (i, ind) in enumerate(subspace_indexes)
-        for ind2 in subspace_indexes[i+1:end]
-            if ind == ind2 
-                error("Cannot sum twice over $(indexes[i]).")
-            end
-        end
-    end
-    for (sub_ind, index) in zip(subspace_indexes, indexes)
-        curr_ensemble = qspace.subspace_info.ensemble_index_by_outer_index[outer(sub_ind)]
-        if iszero(curr_ensemble)
-            error("Subsystem $index not among ensemble indexes.")
-        end
-        how_many_non_sum = qspace.subspace_info.how_many_non_sum_by_ensemble[curr_ensemble]
-        if how_many_non_sum >= inner(sub_ind)
-            curr_subspace = qspace.subspaces[outer(sub_ind)]
-            possible_keys = curr_subspace.keys[how_many_non_sum+1:end]
-            if length(possible_keys) > 0 
-                error("Please use a summation index of the ensemble. You used $index, the available summation indexes are $possible_keys.")
-            else
-                error("No summation indexes defined for this ensemble subspace. 
-                        Define in call to SubSpaceDefinitions via Tuple specifying non summation indexes, summation indexes and finally the OperatorSpace. ")
-            end
-        end
-    end
-    subspace_indexes = sort(subspace_indexes, by = expanded)
-    return QExpr(qspace, _QSum(qspace, expr, subspace_indexes, neq=neq))
-end
-function Sum(qspace::QSpace, index::Union{String,Symbol}, expr::QExpr; neq::Bool=false)::QExpr
-    return Sum(qspace, [index], expr, neq=neq)
-end
-""" 
-      ∑(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false) -> QSum (use \\sum + Enter)
-    sum(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false) -> QSum
-Alternative way to call the `Sum` constructor. Sum(index, expr; neq) = ∑(index, expr; neq).
-"""
-∑(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false) = Sum(expr.qspace, index, expr, neq=neq)
-∑(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=false) = Sum(expr.qspace, indexes, expr, neq=neq)
-Base.sum(index::Union{String,Symbol}, expr::QExpr; neq::Bool=false) = Sum(expr.qspace, index, expr, neq=neq)
-Base.sum(indexes::Union{Vector{String},Vector{Symbol}}, expr::QExpr; neq::Bool=false) = Sum(expr.qspace, indexes, expr, neq=neq)
- 
+∑(index::SumIndexInput, expr::QExpr, constraints::NeqConstraint...; neq::Bool=false) = _make_qsum_expr(expr.qspace, index, expr, constraints...; neq=neq)
+∑(indexes::AbstractVector{<:SumIndexInput}, expr::QExpr, constraints::NeqConstraint...; neq::Bool=false) = _make_qsum_expr(expr.qspace, indexes, expr, constraints...; neq=neq)
+
+Base.sum(index::SumIndexInput, expr::QExpr, constraints::NeqConstraint...; neq::Bool=false) = _make_qsum_expr(expr.qspace, index, expr, constraints...; neq=neq)
+Base.sum(indexes::AbstractVector{<:SumIndexInput}, expr::QExpr, constraints::NeqConstraint...; neq::Bool=false) = _make_qsum_expr(expr.qspace, indexes, expr, constraints...; neq=neq)
+
 
 
 """

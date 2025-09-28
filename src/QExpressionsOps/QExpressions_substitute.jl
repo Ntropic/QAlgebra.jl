@@ -512,40 +512,43 @@ function _substitute(target::QAtomProduct, ctx::IndexSubContext)::QAtomProduct
 end
 
 
-@inline function _replace_indexes(indices::Vector{SubSpaceIndex}, ctx::IndexSubContext)
-    isempty(indices) && return indices, false
-    changed = false
-    new_indices = Vector{SubSpaceIndex}(undef, length(indices))
-    for (i, idx) in enumerate(indices)
-        if idx.expanded == ctx.from_exp
-            new_indices[i] = ctx.to
-            changed = true
-        else
-            new_indices[i] = idx
-        end
-    end
-    changed || return indices, false
-    sort!(new_indices, by=expanded)
-    return new_indices, true
-end
-
-function _replace_blocks(blocks::Vector{Vector{SubSpaceIndex}}, ctx::IndexSubContext)
-    isempty(blocks) && return blocks, false
-    changed = false
-    new_blocks = Vector{Vector{SubSpaceIndex}}(undef, length(blocks))
-    for (i, block) in enumerate(blocks)
-        new_block, block_changed = _replace_indexes(block, ctx)
-        changed |= block_changed
-        new_blocks[i] = block_changed ? new_block : block
-    end
-    return new_blocks, true
-end
-
 function _substitute(target::QSum, ctx::IndexSubContext)::QSum
     new_expr = _substitute(target.expr, ctx)
-    new_eq, _ = _replace_indexes(target.eq_indexes, ctx)
-    new_blocks, _ = _replace_blocks(target.neq_blocks, ctx)
-    return QSum(target.qspace, new_expr, new_eq, new_blocks )
+    qspace = target.qspace
+    info = qspace.subspace_info
+    ensemble = info.ensemble_index_by_outer_index[ctx.from.outer]
+    # ensemble != 0 || error("Index $(Index2String(ctx.from, info)) does not belong to an ensemble subspace.")
+    target_block = target.blocks[ensemble]
+    positions = findall(idx -> idx.expanded == ctx.from_exp, target_block.indexes)
+    isempty(positions) && return QSum(qspace, new_expr, target.blocks)
+
+    info.ensemble_index_by_outer_index[ctx.to.outer] == ensemble || error("Cannot substitute index $(Index2String(ctx.from, info)) with $(Index2String(ctx.to, info)): different ensemble blocks.")
+
+    blocks = clone_blocks(target.blocks)
+    block = blocks[ensemble]
+
+    old_inner = ctx.from.inner
+    new_inner = ctx.to.inner
+
+    if old_inner != new_inner
+        _swap_constraint_columns!(block.constraints, old_inner, new_inner)
+    end
+
+    for pos in positions
+        block.indexes[pos] = ctx.to
+        row = block.constraints[pos]
+        row[new_inner] = true
+    end
+
+    perm = sortperm(block.indexes; by=expanded)
+    if !isempty(perm)
+        sorted_indexes = block.indexes[perm]
+        sorted_constraints = block.constraints[perm]
+        block.indexes[:] = sorted_indexes
+        block.constraints[:] = sorted_constraints
+    end
+
+    return QSum(qspace, new_expr, blocks)
 end
 
 function _substitute(target::T, ctx::IndexSubContext)::T where T <: QComposite 

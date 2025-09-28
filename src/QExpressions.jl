@@ -7,7 +7,7 @@ using ComplexRationals
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, /, ^, product, iszero, copy
 using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED, EXPAND_CUMULANTS, vecvec_or, vecvec_or!, findfirstfreeafterbefore, sorted_unique_push!
 using ..CFunctions: isnumeric
-export QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, QCumulant, diffQEq, diffQEqOrdered, Expectation, base_operators, d_dt #simplify
+export QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, QCumulant, diffQEq, Expectation, base_operators, d_dt
 export @define, @define_basics, QExpr2CFunction, Cumulant, cumulant_string
 
 # ==========================================================================================================================================================
@@ -301,7 +301,9 @@ include("QExpressionsOps/QSum_modify.jl")
 include("QExpressionsOps/QExpressions_welldefined.jl")
 include("QExpressionsOps/QExpressions_substitute.jl")
 include("QExpressionsOps/QExpressions_reorder.jl")
-include("QExpressionsOps/QSum_decollision.jl")
+include("QExpressionsOps/QSum_decollision.jl") 
+
+include("QExpressionsOps/QExpressions_transformed.jl")
 
 import ..CFunctions: define_cabstract, define_ctype, list_cabstracts, list_ctypes, c_abstract_exists
 

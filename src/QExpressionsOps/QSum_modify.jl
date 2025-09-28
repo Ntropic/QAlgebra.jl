@@ -94,7 +94,7 @@ end
 
 function term_equal_indexes(qexpr::QExpr, index1::SubSpaceIndex, index2::SubSpaceIndex, subspace::SubSpace, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, Vector{QExpr}}
     changed_any = false
-    elements = []
+    elements = QComposite[]
     for t in qexpr.terms
         changed, variants = term_equal_indexes(t, index1, index2, subspace, coeff_ind_order)
         append!(elements, variants)
@@ -172,197 +172,114 @@ function neq(q::T, do_abstract::Bool=false)::T where {T<:QMultiComposite}
     return only(modify_expr(q, neq.(q.expr, do_abstract)))
 end
 
-# -------------------------------------------------------------------
-# handle one QSum
-@inline function _sum_indexes_sorted(q::QSum)::Vector{SubSpaceIndex}
-    idxs = SubSpaceIndex[]
-    append!(idxs, q.eq_indexes)
-    for block in q.neq_blocks
-        append!(idxs, block)
-    end
-    sort!(idxs, by=expanded)
-    return idxs
-end
-
-@inline function _block_membership(q::QSum)::Dict{Int,Int}
-    membership = Dict{Int,Int}()
-    for (blk_idx, block) in enumerate(q.neq_blocks)
-        for idx in block
-            membership[expanded(idx)] = blk_idx
-        end
-    end
-    return membership
-end
-
-@inline function _can_coincide(membership::Dict{Int,Int}, idx1::SubSpaceIndex, idx2::SubSpaceIndex)::Bool
-    blk1 = get(membership, expanded(idx1), nothing)
-    blk2 = get(membership, expanded(idx2), nothing)
-    return blk1 === nothing || blk2 === nothing || blk1 != blk2
-end
-
-function _clone_indexes(q::QSum)
-    return copy(q.eq_indexes), [copy(block) for block in q.neq_blocks]
-end
-
-function _block_lt(a::Vector{SubSpaceIndex}, b::Vector{SubSpaceIndex})::Bool
-    ea = expanded(a)
-    eb = expanded(b)
-    minlen = min(length(ea), length(eb))
-    for i in 1:minlen
-        if ea[i] != eb[i]
-            return ea[i] < eb[i]
-        end
-    end
-    return length(ea) < length(eb)
-end
-
-function _canonicalize_indexes!(eq_indexes::Vector{SubSpaceIndex}, neq_blocks::Vector{Vector{SubSpaceIndex}})
-    sort!(eq_indexes, by=expanded)
-    unique!(eq_indexes)
-    i = 1
-    while i <= length(neq_blocks)
-        block = neq_blocks[i]
-        block_sorted = sort(block, by=expanded)
-        if length(block_sorted) <= 1
-            if length(block_sorted) == 1
-                push!(eq_indexes, block_sorted[1])
-            end
-            deleteat!(neq_blocks, i)
-        else
-            neq_blocks[i] = block_sorted
-            i += 1
-        end
-    end
-    sort!(eq_indexes, by=expanded)
-    unique!(eq_indexes)
-    sort!(neq_blocks, lt=_block_lt)
-    return eq_indexes, neq_blocks
-end
-
-function _remove_index_from_qsum(q::QSum, idx::SubSpaceIndex)
-    new_eq = SubSpaceIndex[]
-    removed = false
-    for existing in q.eq_indexes
-        if existing == idx
-            removed = true
-        else
-            push!(new_eq, existing)
-        end
-    end
-    new_blocks = Vector{Vector{SubSpaceIndex}}()
-    for block in q.neq_blocks
-        if any(existing -> existing == idx, block)
-            filtered = SubSpaceIndex[]
-            for existing in block
-                if existing == idx
-                    removed = true
-                else
-                    push!(filtered, existing)
-                end
-            end
-            if length(filtered) >= 2
-                push!(new_blocks, filtered)
-            elseif length(filtered) == 1
-                push!(new_eq, filtered[1])
-            end
-        else
-            push!(new_blocks, copy(block))
-        end
-    end
-    removed || error("neq: index $(idx) not found in QSum during removal.")
-    _canonicalize_indexes!(new_eq, new_blocks)
-    return new_eq, new_blocks
-end
-
-function _enforce_all_distinct(q::QSum)::QSum
-    idxs = collect(iter_all_indexes(q))
-    isempty(idxs) && return q
-    sorted_idxs = sort(idxs, by=expanded)
-    return QSum(q.qspace, q.expr, SubSpaceIndex[], Vector{Vector{SubSpaceIndex}}([sorted_idxs]))
+struct NeqState
+    expr::QExpr
+    blocks::Vector{ConstrainedIndexBlock}
+    where_defined::Vector{BitVector}
 end
 
 @inline function _is_all_distinct(q::QSum)::Bool
-    isempty(q.eq_indexes) || return false
-    length(q.neq_blocks) == 1 || return false
-    return length(q.neq_blocks[1]) == length_all_indexes(q)
-end
-
-function neq_qsum(s::QSum, do_abstract::Bool=false)
-    if _is_all_distinct(s)
-        return QExpr(s.expr.qspace, [s])
-    end
-    ordered = _sum_indexes_sorted(s)
-    membership = _block_membership(s)
-    where_defined = which_ensemble_acting(s, do_abstract=do_abstract)
-    return _neq_qsum_recursive(s, ordered, membership, 1, where_defined)
-end
-
-function neq_qsum(s::QSum, where_defined::Vector{BitVector})
-    if _is_all_distinct(s)
-        return QExpr(s.expr.qspace, [s])
-    end
-    ordered = _sum_indexes_sorted(s)
-    membership = _block_membership(s)
-    where_defined = vecvec_or(which_ensemble_acting(s, do_abstract=true), where_defined)
-    return _neq_qsum_recursive(s, ordered, membership, 1, where_defined)
-end
-
-function _neq_qsum_recursive(s::QSum, ordered::Vector{SubSpaceIndex}, membership::Dict{Int,Int}, index::Int, where_defined::Vector{BitVector})::QExpr
-    n = length(ordered)
-    qspace = s.expr.qspace
-    if n == 0
-        return QExpr(qspace, QComposite[s])
-    end
-    post_expr = if index < n
-        _neq_qsum_recursive(s, ordered, membership, index + 1, where_defined)
-    else
-        QExpr(qspace, QComposite[s])
-    end
-    curr_index = ordered[index]
-    info = qspace.subspace_info
-    curr_ensemble_index = Index2Ensemble(curr_index, info)
-    check_subindexes = curr_index.inner == 1 ? Int[] : findall(where_defined[curr_ensemble_index][1:curr_index.inner-1])
-    curr_subspace = qspace.subspaces[curr_index.outer]
-    pieces = QExpr(qspace, [term isa QSum ? _enforce_all_distinct(term) : term for term in post_expr.terms])
-    for new_ind_sum in check_subindexes
-        new_statespace_sum = curr_subspace.ss_inner_ind[new_ind_sum]
-        new_index = SubSpaceIndex(curr_index.outer, new_ind_sum, new_statespace_sum)
-        _can_coincide(membership, curr_index, new_index) || continue
-        curr_coeff_inds = changed_indices(map_by_subspace(curr_index, new_index, qspace.param_info))
-        for expr in post_expr.terms
-            if expr isa QSum
-                qsum_expr = expr::QSum
-                for t in qsum_expr.expr.terms
-                    not_neutral, new_terms = term_equal_indexes(t, curr_index, new_index, curr_subspace, curr_coeff_inds)
-                    new_inner_expr = QExpr(qspace, new_terms)
-                    if not_neutral
-                        new_eq, new_blocks = _remove_index_from_qsum(qsum_expr, curr_index)
-                        if isempty(new_eq) && isempty(new_blocks)
-                            for new_term in new_terms
-                                pieces += new_term
-                            end
-                        else
-                            tmp_qsum = QSum(qsum_expr.qspace, new_inner_expr, new_eq, new_blocks)
-                            pieces += _enforce_all_distinct(tmp_qsum)
-                        end
-                    else
-                        eq_copy, blocks_copy = _clone_indexes(qsum_expr)
-                        tmp_qsum = QSum(qsum_expr.qspace, new_inner_expr, eq_copy, blocks_copy)
-                        pieces += _enforce_all_distinct(tmp_qsum)
-                    end
-                end
-            else
-                not_neutral, new_terms = term_equal_indexes(expr, curr_index, new_index, curr_subspace, curr_coeff_inds)
-                if not_neutral
-                    error("Unsupported: Element that isn't part of a Sum should no longer contain sum indexes")
-                end
-                for new_term in new_terms
-                    pieces += new_term
+    for block in q.blocks
+        for (idx, row) in zip(block.indexes, block.constraints)
+            @inbounds begin
+                row[idx.inner] || return false
+                for (col, flag) in enumerate(row)
+                    col == idx.inner && continue
+                    flag && return false
                 end
             end
         end
     end
-    return pieces
+    return true
+end
+
+function _enforce_all_distinct(blocks::Vector{ConstrainedIndexBlock})::Vector{ConstrainedIndexBlock}
+    new_blocks = clone_blocks(blocks)
+    for block in new_blocks
+        for (i, idx) in enumerate(block.indexes)
+            row = falses(block.ensemble_size)
+            row[idx.inner] = true
+            block.constraints[i] = row
+        end
+    end
+    return new_blocks
+end
+
+function _apply_equalities(expr::QExpr, actions::Vector{NeqAction}, qspace::QSpace)::Vector{QExpr}
+    variants = QExpr[expr]
+    info = qspace.subspace_info
+    for (from_idx, column) in actions
+        new_variants = QExpr[]
+        target_idx = SubSpaceIndex(from_idx.outer, column, info)
+        subspace = qspace.subspaces[from_idx.outer]
+        coeff_inds = changed_indices(map_by_subspace(from_idx, target_idx, qspace.param_info))
+        for variant in variants
+            _, exprs = term_equal_indexes(variant, from_idx, target_idx, subspace, coeff_inds)
+            append!(new_variants, exprs)
+        end
+        variants = new_variants
+    end
+    return variants
+end
+
+function _process_block(state::NeqState, ensemble::Int, qspace::QSpace)::Vector{NeqState}
+    block = state.blocks[ensemble]
+    branches = neq_expand(block, state.where_defined[ensemble])
+    new_states = NeqState[]
+    for (branch_block, branch_where, actions) in branches
+        expr_variants = _apply_equalities(state.expr, actions, qspace)
+        for expr_variant in expr_variants
+            new_blocks = copy(state.blocks)
+            new_blocks[ensemble] = branch_block
+            new_where = copy(state.where_defined)
+            new_where[ensemble] = branch_where
+            push!(new_states, NeqState(expr_variant, new_blocks, new_where))
+        end
+    end
+    return new_states
+end
+
+function _expand_qsum_states(q::QSum, where_defined::Vector{BitVector})::Vector{NeqState}
+    initial_blocks = clone_blocks(q.blocks)
+    initial_where = copy.(where_defined)
+    states = NeqState[NeqState(q.expr, initial_blocks, initial_where)]
+    for ensemble in eachindex(q.blocks)
+        next_states = NeqState[]
+        for state in states
+            append!(next_states, _process_block(state, ensemble, q.qspace))
+        end
+        states = next_states
+    end
+    return states
+end
+
+function _collect_results(q::QSum, states::Vector{NeqState})::Vector{QComposite}
+    results = QComposite[]
+    for state in states
+        if all(isempty(block.indexes) for block in state.blocks)
+            append!(results, state.expr.terms)
+        else
+            distinct_blocks = _enforce_all_distinct(state.blocks)
+            push!(results, QSum(q.qspace, state.expr, distinct_blocks))
+        end
+    end
+    return results
+end
+
+function neq_qsum(s::QSum, do_abstract::Bool=false)
+    _is_all_distinct(s) && return QExpr(s.expr.qspace, [s])
+    where_defined = which_ensemble_acting(s, do_abstract=do_abstract)
+    states = _expand_qsum_states(s, where_defined)
+    terms = _collect_results(s, states)
+    return QExpr(s.qspace, terms)
+end
+
+function neq_qsum(s::QSum, where_defined::Vector{BitVector})
+    _is_all_distinct(s) && return QExpr(s.expr.qspace, [s])
+    combined_where = vecvec_or(which_ensemble_acting(s, do_abstract=true), where_defined)
+    states = _expand_qsum_states(s, combined_where)
+    terms = _collect_results(s, states)
+    return QExpr(s.qspace, terms)
 end
 function neq(qeq::QExpr, do_abstract::Bool=false)::QExpr
     if length(qeq) == 0

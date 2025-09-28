@@ -86,28 +86,31 @@ end
 # Fallback for simple composites: compare inner exprs
 isless_same(a::QComposite, b::QComposite) = isless(a.expr, b.expr)
 
-# QSum: subsystem_index, |element_indexes|, element_indexes, expr, neq
-function isless_same(a::QSum, b::QSum)
-    # total number of indexes
-    na_ind, nb_ind = length(a.eq_indexes), length(b.eq_indexes)
-    if na_ind != nb_ind
-        return na_ind < nb_ind
-    end
-    na_ind, nb_ind = length(a.neq_blocks), length(b.neq_blocks)
-    if na_ind != nb_ind
-        return na_ind < nb_ind
-    end
+# QSum: compare block metadata and inner expression
+@inline _total_indexes(q::QSum) = sum(length(block.indexes) for block in q.blocks)
 
-    for (blk_a, blk_b) in zip(a.neq_blocks, b.neq_blocks)
-        la, lb = length(blk_a), length(blk_b)
-        if la != lb
-            return la < lb
+function isless_same(a::QSum, b::QSum)
+    na_idx = _total_indexes(a)
+    nb_idx = _total_indexes(b)
+    _total_indexes(a) != _total_indexes(b) && return na_idx < nb_idx
+
+    @inbounds for (blk_a, blk_b) in zip(a.blocks, b.blocks)
+        len_a = length(blk_a.indexes); len_b = length(blk_b.indexes)
+        if len_a != len_b
+            return len_a < len_b
         end
-        if blk_a != blk_b
-            return blk_a < blk_b
+
+        @inbounds for (idx_a, idx_b) in zip(blk_a.indexes, blk_b.indexes)
+            if idx_a != idx_b 
+                return idx_a < idx_b 
+            end
+        end
+
+        @inbounds for (row_a, row_b) in zip(blk_a.constraints, blk_b.constraints)
+            row_a == row_b || return row_a < row_b 
         end
     end
-    return a.expr < b.expr
+    return isless(a.expr, b.expr)
 end
 
 # QAtomProduct: coeff first, then atoms (length + pairwise)
