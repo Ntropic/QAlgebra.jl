@@ -111,10 +111,15 @@ export @define, @define_basics, QExpr2CFunction, Cumulant, cumulant_string
 
 export contains_abstract, are_indexes_defined, which_summations_acting, which_summations_to_root
 export Substitution, --> 
-export reorder, reorder_full, reorder_time, neq, flatsums, complexsums
-export QExpr2string   # remove later 
+export reorder, reorder_full, reorder_time, neq, flatsums, complexsums 
+# Preindexing
+export QAtomOrdered, QNeutral, OrderbyOperator
+
+#include("Indexing.jl")
+#include("Combinatorics.jl")
 
 include("QEqSets.jl")
 using .QEqSets
-export diffQEqSet
+export diffQEqSet, diffQEqSetOrdered, diff_QEqSet, OrderedDiffQEqSet
 end # module QAlgebra
+

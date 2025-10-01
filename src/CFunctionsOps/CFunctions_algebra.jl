@@ -18,10 +18,10 @@ using ..CFunctions: CR_ZERO, CR_ONE
 end
 
 @inline function num_atom(f::CFunction, n::Number)
-    CAtom(pinfo(f), crationalize(n + 0im), zeros(Int, dims(f)))
+    CAtom(pinfo(f), crationalize(n + 0im), spzeros(Int, dims(f)))
 end
-@inline zero_atom(f::CFunction) = CAtom(pinfo(f), CR_ZERO,  zeros(Int, dims(f)))
-@inline one_atom(f::CFunction)  = CAtom(pinfo(f), CR_ONE,   zeros(Int, dims(f)))
+@inline zero_atom(f::CFunction) = CAtom(pinfo(f), CR_ZERO,  spzeros(Int, dims(f)))
+@inline one_atom(f::CFunction)  = CAtom(pinfo(f), CR_ONE,   spzeros(Int, dims(f)))
 
 # Clean accessors for “terms”
 _terms(f::CFunction) = [f]

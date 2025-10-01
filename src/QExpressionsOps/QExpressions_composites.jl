@@ -2,7 +2,7 @@ import Base: exp, log, sqrt
 import ..QAlgebra: sort_unique!
 
 
-export QAtomProduct, QAtomOrdered, OrderedQAtomProduct, permutation, QSum, ∑, NeqConstraint, neq, QCommutator, QCompositeProduct, QExp, QLog, QPower, power, QRoot, root
+export QAtomProduct, permutation, QSum, ∑, NeqConstraint, neq, QCommutator, QCompositeProduct, QExp, QLog, QPower, power, QRoot, root
 
 const SumIndexInput = Union{Symbol, String, SubSpaceIndex}
 

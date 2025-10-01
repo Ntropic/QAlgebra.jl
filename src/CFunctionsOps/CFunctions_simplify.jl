@@ -14,8 +14,8 @@ simplify(p::CPower)  = simplify_CPower(p.param_info, p.coeff, p.expr, p.exponent
 
 # helpers
 @inline _isint(q::Rational{Int}) = denominator(q) == 1
-@inline _one_atom(param_info::ParameterInfo) = CAtom(param_info, ComplexRational(1,0,1), zeros(Int, param_info.dims))
-@inline _const_atom(param_info::ParameterInfo, c::ComplexRational) = CAtom(param_info, c, zeros(Int, param_info.dims))
+@inline _one_atom(param_info::ParameterInfo) = CAtom(param_info, ComplexRational(1,0,1), spzeros(Int, param_info.dims))
+@inline _const_atom(param_info::ParameterInfo, c::ComplexRational) = CAtom(param_info, c, spzeros(Int, param_info.dims))
 
 function simplify_CPower(param_info::ParameterInfo, coeff::ComplexRational, x::CFunction, q::Rational{Int})
     x = simplify(x)  # normalize inner first
@@ -114,7 +114,7 @@ function simplify_CSum(param_info::ParameterInfo, elements::AbstractVector{<:CFu
         push!(new_elements, curr_element)
     end
     if length(new_elements) == 0 
-        push!(new_elements, CAtom(param_info, 0, zeros(Int, dims(elements[1]))))
+        push!(new_elements, CAtom(param_info, 0, spzeros(Int, dims(elements[1]))))
     elseif length(new_elements) == 1
         return new_elements[1]
     end
@@ -170,7 +170,7 @@ function simplify_CExp(param_info::ParameterInfo, coeff::ComplexRational, x::CFu
         return x.expr * coeff 
     # exp(0) ⇒ 1
     elseif iszero(x)
-        return CAtom(param_info, coeff, zeros(Int, dims(x)))
+        return CAtom(param_info, coeff, spzeros(Int, dims(x)))
     end
     return CExp(param_info, coeff, x, Val(:nosimp))
 end
@@ -182,7 +182,7 @@ function simplify_CLog(param_info::ParameterInfo, coeff::ComplexRational, x::CFu
     end
     # log(1) ⇒ 0
     if isone(x)
-        return CAtom(param_info, ComplexRational(0,0,1), zeros(Int, dims(x)))
+        return CAtom(param_info, ComplexRational(0,0,1), spzeros(Int, dims(x)))
     end
     return CLog(param_info, coeff, x, Val(:nosimp)) 
 end
@@ -236,7 +236,7 @@ function simplify_CProd(param_info::ParameterInfo, c0::ComplexRational, expr::Ab
     # 5) Trivial outcomes
     if isempty(final_terms)
         # only scalar coeff remained
-        return CAtom(param_info, cacc, zeros(Int, param_info.dims))
+        return CAtom(param_info, cacc, spzeros(Int, param_info.dims))
     elseif length(final_terms) == 1
         # just one factor: re-attach scalar coeff
         return cacc * final_terms[1]
@@ -438,19 +438,19 @@ function divisors(a::CLog)::Vector{Int}
     return [a.coeff.c]
 end
 
-function vec_multiply(x::CAtom, vector::Vector{Int})::CAtom
+function vec_multiply(x::CAtom, vector::AbstractVector{<:Integer})::CAtom
     return CAtom(x.param_info, x.coeff, x.var_exponents + vector)
 end
-function vec_multiply(x::T, vector::Vector{Int})::T where T <: CComposite
+function vec_multiply(x::T, vector::AbstractVector{<:Integer})::T where T <: CComposite
     new_expr = [vec_multiply(t, vector) for t in x.expr]
     return modify_expr(x, new_expr)
 end
-function vec_multiply(x::CRational, vector::Vector{Int})::CRational
+function vec_multiply(x::CRational, vector::AbstractVector{<:Integer})::CRational
     new_num = vec_multiply(x.numer, vector)
     new_den = vec_multiply(x.denom, vector)
     return CRational(x.param_info, new_num, new_den, Val(:nosimp))
 end
-function vec_multiply(x::CProd, vector::Vector{Int})::CProd
+function vec_multiply(x::CProd, vector::AbstractVector{<:Integer})::CProd
     expr = copy(x.expr)
     expr[1] = vec_multiply(expr[1], vector)
     return CProd(x.param_info, x.coeff, expr, Val(:nosimp)) 

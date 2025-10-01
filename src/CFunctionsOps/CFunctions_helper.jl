@@ -107,9 +107,13 @@ function which_ensemble_acting(f::CFunction, where_non_trivial::Vector{BitVector
 end
 which_ensemble_acting_atom!(f::CAbstract, where_non_trivial::Vector{BitVector}) = error("Cannot determine the acting ensembles for a CAbstract. Use abstracts only in CType definitions.") 
 function which_ensemble_acting_atom!(f::CAtom, where_non_trivial::Vector{BitVector})::Vector{BitVector}
-    for (param_ind, where_acting) in zip(f.param_info.indexed_parameter_indexes, f.param_info.where_acting_by_parameter)
-        if any(!=(0), f.var_exponents[param_ind])
-            vecvec_or!(where_non_trivial, where_acting)
+    vexp_inds = f.var_exponents.nzind
+    which_inds = f.param_info.indexed_parameter_indexes
+    where_actings = f.param_info.where_acting_by_parameter
+    for ind in vexp_inds 
+        curr_which_ind = which_inds[ind]
+        if curr_which_ind != 0
+            vecvec_or!(where_non_trivial, where_actings[curr_which_ind])
         end
     end
     return where_non_trivial
@@ -134,7 +138,10 @@ end
 where_acting_atom!(f::CAbstract, acting::BitVector =[]) = error("Cannot determine where acting for a CAbstract. Use abstracts only in CType definitions. ")
 function where_acting_atom!(f::CAtom, acting::BitVector)::BitVector
     # or operation between acting and f.var_exponents being overwritten on acting 
-    acting .|= (f.var_exponents .!= 0)
+    #acting .|= (f.var_exponents .!= 0)   # ==> changed to sparse matrices 
+    for idx in f.var_exponents.nzind
+        acting[idx] = true
+    end
     return acting
 end
 
@@ -172,7 +179,7 @@ function var_exponents_iter(f::CFunction)
     Iterators.map(_leaf2exps, leaf_iter(f))
 end
 _leaf2exps(a::CAtom)     = a.var_exponents
-_leaf2exps(a::CAbstract) = zeros(Int, dims(a))
+_leaf2exps(a::CAbstract) = spzeros(Int, dims(a))
 
 """
     var_exponents_iter_simple(f::CFunction)
@@ -184,7 +191,7 @@ Other function types contribute trivial exponents.
 var_exponents_iter_simple(a::CAtom) = (a.var_exponents,)
 var_exponents_iter_simple(s::CSum)  = Iterators.flatten(var_exponents_iter_simple.(s.expr))
 var_exponents_iter_simple(p::CProd) = Iterators.flatten(var_exponents_iter_simple.(p.expr))
-var_exponents_iter_simple(f::CFunction) = (zeros(Int, dims(f)),)
+var_exponents_iter_simple(f::CFunction) = (spzeros(Int, dims(f)),)
 
 import Base: isnumeric
 """
@@ -232,15 +239,15 @@ allnegative(r::CRational) = allnegative(r.numer)
 allnegative(x::CFunction)  = is_negative(x.coeff)
 
 """
-    min_exponents(f::CFunction) -> Vector{Int}
+    min_exponents(f::CFunction) -> SparseVector{Int}
 
 Component-wise minimum of all monomial exponent vectors appearing in `f`.
 If `f` contains no atoms (e.g. empty containers), returns `Int[]`.
 
 Relies on `var_exponents_iter(::CFunction)`.
 """
-function min_exponents(f::CFunction)::Vector{Int}
-    mins = zeros(Int, dims(f))           # start with all zeros
+function min_exponents(f::CFunction)
+    mins = spzeros(Int, dims(f))           # start with all zeros
     for exps in var_exponents_iter_simple(f)
         mins = min.(mins, exps)
     end
@@ -345,7 +352,7 @@ function common_denominator_form(v::Vector{ComplexRational})::Tuple{ComplexRatio
     return base, multiples
 end
 
-function common_exponent_offset(exponents::Vector{Vector{Int}})::Vector{Int}
+function common_exponent_offset(exponents::AbstractVector{<:AbstractVector{<:Integer}})::Vector{Int}
     @assert !isempty(exponents)
     n = length(exponents[1])
     @assert all(length(e) == n for e in exponents)
@@ -511,7 +518,7 @@ function group_Fs(ts::AbstractVector{<:CFunction})::Union{CFunction, Tuple{CFunc
         # use the first representative's exponent length as dimension
         rep = ts[1] isa CSum ? ts[1].expr[1] : ts[1]
         dim = length(var_exponents(rep))
-        zexp = zeros(Int, dim)
+        zexp = spzeros(Int, dim)
 
         post_Fs = CFunction[ CAtom(rep.param_info, m, zexp) for m in multiples ]
         return (pre_F, post_Fs)

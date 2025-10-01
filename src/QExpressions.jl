@@ -4,11 +4,13 @@ using ..CFunctions
 import ..CFunctions: expand
 using ..StringUtils
 using ComplexRationals
+using SparseArrays
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, /, ^, product, iszero, copy
 using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED, EXPAND_CUMULANTS, vecvec_or, vecvec_or!, findfirstfreeafterbefore, sorted_unique_push!
 using ..CFunctions: isnumeric
-export QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, QCumulant, diffQEq, Expectation, base_operators, d_dt
-export @define, @define_basics, QExpr2CFunction, Cumulant, cumulant_string
+export QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, QCumulant, diffQEq, diffQEqOrdered, Expectation, base_operators, d_dt
+
+export @define, @define_basics, QExpr2CFunction
 
 # ==========================================================================================================================================================
 # --------> Base Types and Their Constructors <---------------------------------------------------------------------------------------------------------
@@ -222,10 +224,6 @@ function diffQEq(qspace::QSpace, left_hand_side::QAtomProduct, expr::QExpr, ::Va
     return diffQEq(qspace, left_hand_side, expr, Val(:raw))
 end
 
-function OrderedDiffQEq(eq::diffQEq; lt=isless)
-    lhs_ordered = OrderedQAtomProduct(eq.left_hand_side; lt=lt)
-    return diffQEqOrdered(eq.qspace, lhs_ordered, eq.expr)
-end
 
 """
     d_dt(qspace::QSpace, expr)

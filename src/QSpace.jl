@@ -5,8 +5,9 @@ using ..CFunctions
 using ..StringUtils
 using ..Cumulants: ReducedCumulantList
 using Base: WeakRef, GC
+using SparseArrays
 
-export OperatorSet
+export OperatorSet, operator_magnitude
 export Ensemble, SubSpace, SubSpaceDefinitions, SubSpaceInfo, SubSpaceIndex, outer, inner, expanded, Index2Symbol, Index2String, Index2Ensemble, Index2Ensemble_and_Summation, SummationIndex2SubSpaceIndex
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
 export Parameter, ParameterDefinitions, map_by_subspace, map_by_tindex
@@ -14,7 +15,7 @@ export QSpace
 
 Is = Vector{Int}
 """
-    OperatorSet(name::String, fermion::Bool, len::Int, neutral_element::Union{Int,Vector{Int}}, base_ops::Union{Vector{Int},Vector{Vector{Int}}}, ops::Vector{String}, op_product::Function, op_dag::Function, strs2ind::Function, op2str::Function, op2latex::Function)
+    OperatorSet(name::String, particle_type::String, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function; commutes::Union{Nothing,Function}=nothing, operator_magnitude::Union{Nothing,Function}=nothing)
 
 OperatorSets define the algebraic structure of a quantum system, defining ways to multiply and conjugate operators within the space, how to print them (both for plain and latex formatting), how to extract operators from strings.
 We provide a few standard operator sets, such as QubitPauli, QubitPM and Ladder.
@@ -31,38 +32,38 @@ struct OperatorSet
     op2str::Function        # transforms an operator index into a string for console printing
     op2latex::Function      # transforms an operator index into a LaTeX string for formatted LaTeXStrings
     commutes::Function
-    function OperatorSet(name::String, particle_type::String, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function, commutes::Function)
-        return new(name, particle_type, len, neutral_element, base_ops, ops, op_product, op_dag, op2str, op2latex, commutes)
-    end
-    function OperatorSet(name::String, particle_type::String, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function)
-        function commutes(op1::Vector{Int}, op2::Vector{Int}) # multiply to test commute => probably much slower than a custom implementation
-            if op1 == op2 || op1 == neutral_element || op2 == neutral_element
-                return true
-            end
-            prod_1 = op_product(op1, op2) # isa Vector{Tuple{ComplexRational,Vector{Int}}}
-            prod_2 = op_product(op2, op1) # isa Vector{Tuple{ComplexRational,Vector{Int}}}
-            # sort prod1 and prod2
-            if length(prod_1) != length(prod_2)
-                return false
-            end
-            sort!(prod_1, by=x -> x[2])
-            sort!(prod_2, by=x -> x[2])
-            for k in eachindex(prod_1)
-                if prod_1[k][2] != prod_2[k][2] || prod_1[k][1] != -prod_2[k][1]
+    operator_magnitude::Function
+    function OperatorSet(name::String, particle_type::String, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function; commutes::Union{Nothing,Function}=nothing, operator_magnitude::Union{Nothing,Function}=nothing)
+        default_commutes = let neutral = neutral_element, op_product = op_product
+            function commutes_default(op1::Vector{Int}, op2::Vector{Int})::Bool
+                if op1 == op2 || op1 == neutral || op2 == neutral
+                    return true
+                end
+                prod_1 = op_product(op1, op2)
+                prod_2 = op_product(op2, op1)
+                if length(prod_1) != length(prod_2)
                     return false
                 end
+                sort!(prod_1, by=x -> x[2])
+                sort!(prod_2, by=x -> x[2])
+                for k in eachindex(prod_1)
+                    if prod_1[k][2] != prod_2[k][2] || prod_1[k][1] != -prod_2[k][1]
+                        return false
+                    end
+                end
+                return true
             end
-            return true
+            commutes_default
         end
-        return new(name, particle_type, len, neutral_element, base_ops, ops, op_product, op_dag, op2str, op2latex, commutes)
-    end
-    function OperatorSet() # Dummy Operator Set 
-        dummy_fun(args...; kwargs...) = error("OperatorSet not initialized")
-        return OperatorSet("Unspecified", "none", 1, Int[0],
-                        Vector{Vector{Int}}(),
-                        Dict{String, Vector{Tuple{ComplexRational, Vector{Int}}}}(),
-                        String[],
-                        dummy_fun, dummy_fun, dummy_fun, dummy_fun, dummy_fun)
+        default_magnitude = let neutral = neutral_element
+            function magnitude_default(op::Is)::Int
+                return op == neutral ? 0 : 1
+            end
+            magnitude_default
+        end
+        commutes_fun = isnothing(commutes) ? default_commutes : commutes
+        magnitude_fun = isnothing(operator_magnitude) ? default_magnitude : operator_magnitude
+        return new(name, particle_type, len, neutral_element, base_ops, ops, op_product, op_dag, op2str, op2latex, commutes_fun, magnitude_fun)
     end
 end
 #function OperatorSet
@@ -73,6 +74,8 @@ function Base.show(io::IO, os::OperatorSet)
     end
     print(io, os.name, " (", os.particle_type, "):  " * join(op_strs, ","))
 end
+
+operator_magnitude(os::OperatorSet, op::Is)::Int = os.operator_magnitude(op)
 include("OperatorSets/Qubit_Pauli.jl")
 include("OperatorSets/Qubit_PM.jl")
 include("OperatorSets/Ladder.jl")
@@ -124,8 +127,8 @@ mutable struct QSpace
         params, param_info = ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
     
         # Generate the string representations
-        c_one = CAtom(param_info, zeros(Int, length(params)))
-        c_zero = CAtom(param_info, ComplexRational(0,0,1), zeros(Int, length(params)))
+        c_one = CAtom(param_info, spzeros(Int, length(params)))
+        c_zero = CAtom(param_info, ComplexRational(0,0,1), spzeros(Int, length(params)))
         cumulant_cache = ReducedCumulantList(1)
         ensembles = Ensemble[ss.ensemble for ss in subspaces if ss.ensemble !== nothing]
 

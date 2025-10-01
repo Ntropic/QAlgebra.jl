@@ -19,7 +19,7 @@ function vecvec_or!(A::AbstractVector{<:AbstractVector{Bool}}, B::AbstractVector
     @inbounds for i in eachindex(B)        # only iterate existing B[i]
         ai = A[i]; bi = B[i]
         @inbounds @simd for j in eachindex(ai, bi)  # up to length(bi)
-            bi[j] |= ai[j]
+            ai[j] |= bi[j]
         end
     end
     return B
@@ -86,3 +86,123 @@ function sorted_unique_push!(arr::Vector{T}, x::T) where T
 end
 
 
+module SparsePermutationTools
+using SparseArrays
+export SparsePermutation, sparseperm, identityperm, denseperm, perm_image, applyperm, applyperm!, composeperm, as_repartition_moves
+
+struct SparsePermutation <: AbstractVector{Int}
+    len::Int
+    delta::SparseVector{Int,Int}
+    function SparsePermutation(len::Int, delta::SparseVector{Int,Int})
+        len >= 0 || throw(ArgumentError("length must be non-negative"))
+        length(delta) == len || throw(DimensionMismatch("delta length $(length(delta)) does not match permutation length $len"))
+        for (idx, shift) in zip(delta.nzind, delta.nzval)
+            1 <= idx <= len || throw(ArgumentError("source index out of bounds"))
+            dest = idx + shift
+            1 <= dest <= len || throw(ArgumentError("target index out of bounds"))
+        end
+        return new(len, delta)
+    end
+end
+
+SparsePermutation(len::Int) = SparsePermutation(len, spzeros(Int, len))
+
+function sparseperm(perm::AbstractVector{<:Integer})
+    n = length(perm)
+    idxs = Int[]
+    vals = Int[]
+    for (i, val) in enumerate(perm)
+        1 <= val <= n || throw(ArgumentError("value out of bounds"))
+        diff = val - i
+        diff == 0 && continue
+        push!(idxs, i)
+        push!(vals, diff)
+    end
+    return SparsePermutation(n, sparsevec(idxs, vals, n))
+end
+
+identityperm(n::Int) = SparsePermutation(n)
+
+function denseperm(sp::SparsePermutation)
+    perm = collect(1:sp.len)
+    perm .+= sp.delta
+    return perm
+end
+
+function perm_image(sp::SparsePermutation, idx::Int)
+    1 <= idx <= sp.len || throw(BoundsError(sp, idx))
+    return idx + sp.delta[idx]
+end
+
+function applyperm(sp::SparsePermutation, data::AbstractVector)
+    length(data) == sp.len || throw(DimensionMismatch("expected length $(sp.len), got $(length(data))"))
+    result = similar(data)
+    copyto!(result, data)
+    for i in 1:sp.len
+        dest = perm_image(sp, i)
+        result[dest] = data[i]
+    end
+    return result
+end
+
+function applyperm!(data::AbstractVector, sp::SparsePermutation)
+    tmp = applyperm(sp, data)
+    copyto!(data, tmp)
+    return data
+end
+
+function composeperm(p::SparsePermutation, q::SparsePermutation)
+    p.len == q.len || throw(DimensionMismatch("permutations act on different lengths"))
+    affected = Set{Int}()
+    union!(affected, q.delta.nzind)
+    union!(affected, p.delta.nzind)
+    idxs = Int[]
+    vals = Int[]
+    for idx in affected
+        img = perm_image(p, perm_image(q, idx))
+        diff = img - idx
+        diff == 0 && continue
+        push!(idxs, idx)
+        push!(vals, diff)
+    end
+    return SparsePermutation(p.len, sparsevec(idxs, vals, p.len))
+end
+
+function composeperm(first::SparsePermutation, rest::SparsePermutation...)
+    acc = first
+    for perm in rest
+        acc = composeperm(acc, perm)
+    end
+    return acc
+end
+
+function as_repartition_moves(sp::SparsePermutation)::Vector{Tuple{Int,Int}}
+    moves = Tuple{Int,Int}[]
+    for idx in sp.delta.nzind
+        push!(moves, (idx, idx + sp.delta[idx]))
+    end
+    return moves
+end
+
+import Base: length, copy, size, axes, IndexStyle, iterate
+
+length(sp::SparsePermutation) = sp.len
+size(sp::SparsePermutation) = (sp.len,)
+axes(sp::SparsePermutation) = (Base.OneTo(sp.len),)
+IndexStyle(::Type{SparsePermutation}) = IndexLinear()
+
+function iterate(sp::SparsePermutation, state::Int=1)
+    state > sp.len && return nothing
+    return (sp[state], state + 1)
+end
+
+function copy(sp::SparsePermutation)
+    return SparsePermutation(sp.len, copy(sp.delta))
+end
+
+function Base.getindex(sp::SparsePermutation, idx::Int)
+    1 <= idx <= sp.len || throw(BoundsError(sp, idx))
+    return idx + sp.delta[idx]
+end
+
+end

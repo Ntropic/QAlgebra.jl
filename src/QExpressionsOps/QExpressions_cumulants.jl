@@ -1,8 +1,5 @@
 using ..Cumulants: ReducedIndexedCumulant
-
-function where_acting_index(q::QTerm, qspace::QSpace)::Vector{Int}
-    return [i for (i, op) in enumerate(q.op_indices) if op != qspace.I_op[i]]
-end
+export Cumulant
 
 order(q::QTerm, qspace::QSpace)::Int = length(where_acting_index(q, qspace))
 
@@ -61,7 +58,7 @@ function Cumulant(qprod::QAtomProduct)::QCumulant
     atom isa QTerm || error("Cumulant only defined for QAtomProduct containing a QTerm; got $(typeof(atom)).")
     qspace = qprod.qspace
     where_acting = where_acting_index(atom, qspace)
-    order = length(where_acting)
+    order = length(where_acting) # don'T use order here, since where_acting is also needed 
     red_cum = qspace.cumulant_cache(order)
     return _Cumulant(qprod.coeff_fun, atom, qspace, order, where_acting, red_cum)
 end

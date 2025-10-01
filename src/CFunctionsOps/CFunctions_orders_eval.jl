@@ -9,7 +9,7 @@ ideal for getting the maximum requied orders for `build_xpows`.
 function max_vec(a::Vector{Int}, b::Vector{Int})::Vector{Int}
     return max.(a, b)
 end
-max_exponents(a::CAtom) = abs.(a.var_exponents)
+max_exponents(a::CAtom) = Vector(abs.(a.var_exponents))
 max_exponents(a::CAbstract) = error("max_exponents can not be used for CAbstract.")
 function max_exponents(s::CFunction)::Vector{Int}
     m = zeros(Int, dims(s))

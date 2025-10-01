@@ -84,7 +84,7 @@ function QubitPauli(symbol::String="")::OperatorSet
         # everything commutes with 4, otherwise must be the same
         return (op1[1] == 1 || op2[1] == 1 || op1[1] == op2[1])
     end
-    return OperatorSet("Pauli Qubit", "Fermion", 1, [1], base_pauli, ops, pauli_product, pauli_dag, pauli2str, pauli2latex, paulicommutes)
+    return OperatorSet("Pauli Qubit", "Fermion", 1, [1], base_pauli, ops, pauli_product, pauli_dag, pauli2str, pauli2latex; commutes=paulicommutes)
 end
 ## Test 
 #q = QubitPauli()

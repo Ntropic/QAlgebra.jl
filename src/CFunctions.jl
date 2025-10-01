@@ -2,6 +2,8 @@ module CFunctions
 
 using ..StringUtils
 using ComplexRationals
+using SparseArrays
+using ..SparsePermutationTools: SparsePermutation
 using ..QAlgebra: get_default, FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
 
 export CFunction, CAbstractDefinition, CTypeDefinition, ParameterInfo, add_cabstract!, add_ctype!, CAbstract, CCustomType, CAtom, CSum, CRational, CProd, CExp, CLog, CPower, CVector, CMatrix
@@ -137,12 +139,12 @@ struct ParameterInfo <: AbstractParameterInfo
     ss_ensemble_indexes_by_group::Vector{Vector{Int}}    # which ss ensembles are used for indexing in each group. 
     ss_ensemble_present_by_group::Vector{BitVector}   # which ss ensembles are present in each group.
 
-    indexed_parameter_indexes::Vector{Int}                  # which parameters have indexes?
+    indexed_parameter_indexes::Vector{Int}                  # where are the where_acting_by_parameter for an index
     where_acting_by_parameter::Vector{Vector{BitVector}}  # for each variable, where are they acting. 
 
     # Maps indexes for index transformation, once for switching subsystem indexes and once for time indexes
-    subspace_index_maps::Vector{Array{Vector{Int},2}}
-    t_index_transform::Array{Vector{Int},2}
+    subspace_index_maps::Vector{Array{SparsePermutation,2}}
+    t_index_transform::Array{SparsePermutation,2}
     indexes_by_t_index::Vector{Vector{Int}}   # for each t_index which indexes have it? 
     indexes_of_t::Vector{Int}
 
@@ -160,7 +162,7 @@ struct ParameterInfo <: AbstractParameterInfo
         outer_labels_symbols::Vector{Symbol}, inner_labels_symbols_flat::Vector{Symbol}, outer_labels::Vector{String}, params_name::Vector{String},
         params_str::Vector{String}, params_latex::Vector{String}, param_of_indexes::BitVector, outer_group_by_index::Vector{Int},
         t_index_by_index::Vector{Int}, ss_ensemble_indexes_by_group::Vector{Vector{Int}}, ss_ensemble_present_by_group::Vector{BitVector}, indexed_parameter_indexes::Vector{Int},
-        where_acting_by_parameter::Vector{Vector{BitVector}}, subspace_index_maps::Vector{Array{Vector{Int},2}}, t_index_transform::Array{Vector{Int},2}, indexes_by_t_index::Vector{Vector{Int}},
+        where_acting_by_parameter::Vector{Vector{BitVector}}, subspace_index_maps::Vector{Array{SparsePermutation,2}}, t_index_transform::Array{SparsePermutation,2}, indexes_by_t_index::Vector{Vector{Int}},
         indexes_of_t::Vector{Int}, how_many_by_ensemble::Vector{Int}, param_of_t::BitVector, param_is_t::BitVector, param_values::Vector, param_indexes::ParameterIndexes)
         dims = length(inner_labels_symbols_flat)
         new(dims, outer_labels_symbols, inner_labels_symbols_flat, outer_labels,
@@ -328,7 +330,7 @@ objects delegate to their children, while purely numeric constructs return a
 zero vector.
 """
 function var_exponents end
-var_exponents(a::CAbstract) = zeros(Int, a.param_info.dims)
+var_exponents(a::CAbstract) = spzeros(Int, a.param_info.dims)
 isdag(a::CAbstract) = a.dag
 modify_coeff(a::CAbstract, c::ComplexRational) = CAbstract(a.param_info, c, a.index, a.exponent, a.dag)
 modify_exponent(a::CAbstract, q::Rational{Int}) = CAbstract(a.param_info, a.coeff, a.index, q, a.dag)
@@ -360,7 +362,7 @@ function modify_coeff(f::CCustomType, coeff::ComplexRational)::CFunction
     iszero(coeff) && return zero_catom(f.param_info)
     return CCustomType(f.param_info, coeff, f.expr, f.ctype_def)
 end
-var_exponents(a::CCustomType) = zeros(Int, a.param_info.dims)
+var_exponents(a::CCustomType) = spzeros(Int, a.param_info.dims)
 coeff(f::CCustomType) = [f.coeff]
 length(f:: CCustomType) = 1
 
@@ -370,49 +372,59 @@ function modify_expr(f::CFunction, new_expr::Vector{CFunction})
 end
 
 """
-    CAtom(coeff::Int, var_exponents::Vector{Int})
-    CAtom(coeff::Rational, var_exponents::Vector{Int})
-    CAtom(coeff::ComplexRational, var_exponents::Vector{Int})
+    CAtom(param_info::ParameterInfo, var_exponents::AbstractVector{<:Integer})
+    CAtom(param_info::ParameterInfo, coeff::Int, var_exponents::AbstractVector{<:Integer})
+    CAtom(param_info::ParameterInfo, coeff::Rational, var_exponents::AbstractVector{<:Integer})
 
 A single term with a complex‐rational coefficient and integer exponents for each variable.
 - The `Int` and `Rational` constructors wrap the coefficient into a `ComplexRational`.
+- Exponents are stored as a sparse vector to avoid keeping zero entries.
 - `var_exponents[j]` is the exponent of variable _j_.
 """
+@inline function _sparse_exponents(param_info::ParameterInfo, exps)::SparseVector{Int}
+    exps isa AbstractVector || return _sparse_exponents(param_info, collect(exps))
+    length(exps) == param_info.dims || throw(DimensionMismatch("expected $(param_info.dims) exponents, got $(length(exps))"))
+    return SparseVector{Int}(exps)
+end
+
 struct CAtom <: CAtomic
     param_info::ParameterInfo
     coeff::ComplexRational
-    var_exponents::Vector{Int}
-    function CAtom(param_info::ParameterInfo, var_exponents::Vector{Int})
+    var_exponents::SparseVector{Int,Int}
+    function CAtom(param_info::ParameterInfo, var_exponents)
         c = ComplexRational(1, 0, 1)
-        return new(param_info, c, copy(var_exponents))
+        return new(param_info, c, _sparse_exponents(param_info, var_exponents))
     end
-    function CAtom(param_info::ParameterInfo, coeff::Int, var_exponents::Vector{Int})
+    function CAtom(param_info::ParameterInfo, coeff::Int, var_exponents)
         c = ComplexRational(coeff, 0, 1)
-        return new(param_info, c, copy(var_exponents))
+        return new(param_info, c, _sparse_exponents(param_info, var_exponents))
     end
-    function CAtom(param_info::ParameterInfo, coeff::Rational, var_exponents::Vector{Int})
+    function CAtom(param_info::ParameterInfo, coeff::Rational, var_exponents)
         c = ComplexRational(numerator(coeff), 0, denominator(coeff))
-        return new(param_info, c, copy(var_exponents))
+        return new(param_info, c, _sparse_exponents(param_info, var_exponents))
     end
-    function CAtom(param_info::ParameterInfo, coeff::Complex, var_exponents::Vector{Int})
+    function CAtom(param_info::ParameterInfo, coeff::Complex, var_exponents)
         c = crationalize(coeff)
-        return new(param_info, c, copy(var_exponents))
+        return new(param_info, c, _sparse_exponents(param_info, var_exponents))
     end
-    function CAtom(param_info::ParameterInfo, coeff::ComplexRational, var_exponents::Vector{Int})
-        return new(param_info, coeff, copy(var_exponents))
+    function CAtom(param_info::ParameterInfo, coeff::ComplexRational, var_exponents)
+        return new(param_info, coeff, _sparse_exponents(param_info, var_exponents))
     end
-    function CAtom(param_info::ParameterInfo, coeff::Number, var_exponents::Vector{Int})
-        c = crationalize(coeff+0im)
-        return new(param_info, c, copy(var_exponents))
+    function CAtom(param_info::ParameterInfo, coeff::Number, var_exponents)
+        c = crationalize(coeff + 0im)
+        return new(param_info, c, _sparse_exponents(param_info, var_exponents))
     end
+end
+@inline function _sparse_exponents(param_info::ParameterInfo, exps::Tuple)
+    return _sparse_exponents(param_info, collect(exps))
 end
 @inline function zero_catom(param_info::ParameterInfo)
-    return CAtom(param_info, CR_ZERO, zeros(Int, param_info.dims))
+    return CAtom(param_info, CR_ZERO, spzeros(Int, param_info.dims))
 end
 coeff(a::CAtom)::Vector{ComplexRational} = [a.coeff]
-modify_exponents(a::CAtom, var_exponents::Vector{Vector{Int}})::CAtom = CAtom(a.param_info, a.coeff, var_exponents)
+modify_exponents(a::CAtom, var_exponents) = CAtom(a.param_info, a.coeff, var_exponents)
 modify_coeff(a::CAtom, coeff::ComplexRational)::CAtom = CAtom(a.param_info, coeff, a.var_exponents)
-modify_coeff_exponents(a::CAtom, coeff::ComplexRational, var_exponents::Vector{Vector{Int}}) = CAtom(a.param_info, coeff, var_exponents)
+modify_coeff_exponents(a::CAtom, coeff::ComplexRational, var_exponents) = CAtom(a.param_info, coeff, var_exponents)
 var_exponents(a::CAtom) = a.var_exponents
 length(a::CAtom) = 1
 function repartition(f::CAtom, var_tuples::Vector{Tuple{Int, Int}})::CAtom 
@@ -501,7 +513,7 @@ function var_exponents(a::CProd)
     if length(a.expr) > 0 
         return var_exponents(a.expr[1])
     else 
-        return zeros(Int, a.param_info.dims)
+        return spzeros(Int, a.param_info.dims)
     end
 end
 
@@ -570,7 +582,7 @@ end
 coeff(x::CExp) = [x.coeff]
 length(q::CExp) = 1
 repartition(q::CExp, var_tuples::Vector{Tuple{Int, Int}}) = CExp(q.param_info, q.coeff, repartition(q.expr, var_tuples))
-var_exponents(a::CExp) = zeros(Int, a.param_info.dims)
+var_exponents(a::CExp) = spzeros(Int, a.param_info.dims)
 
 
 """
@@ -611,7 +623,7 @@ end
 coeff(x::CLog) = [x.coeff] 
 length(q::CLog) = 1
 repartition(q::CLog, var_tuples::Vector{Tuple{Int, Int}}) = CLog(q.param_info, q.coeff, repartition(q.expr, var_tuples))
-var_exponents(a::CLog) = zeros(Int, a.param_info.dims)
+var_exponents(a::CLog) = spzeros(Int, a.param_info.dims)
 
 """
     CPower(coeff::ComplexRational, x::CFunction, exponent::Rational{Int})
@@ -649,7 +661,7 @@ end
 coeff(p::CPower) = [p.coeff]
 length(::CPower) = 1
 repartition(p::CPower, var_tuples::Vector{Tuple{Int,Int}}) = CPower(p.param_info, p.coeff, repartition(p.expr, var_tuples), p.exponent)
-var_exponents(a::CPower) = zeros(Int, a.param_info.dims)
+var_exponents(a::CPower) = spzeros(Int, a.param_info.dims)
 
 
 """
@@ -678,7 +690,7 @@ size(v::CVector) = v.row ? (1, length(v.expr)) : (length(v.expr), 1)
 getindex(v::CVector, i::Int) = v.expr[i]
 iterate(v::CVector, st::Int=1) = st > length(v.expr) ? nothing : (v.expr[st], st+1)
 repartition(v::CVector, var_tuples::Vector{Tuple{Int,Int}}) = CVector(v.param_info, v.coeff, repartition.(v.expr, Ref(var_tuples)); row=v.row)
-var_exponents(a::CVector) = zeros(Int, a.param_info.dims)
+var_exponents(a::CVector) = spzeros(Int, a.param_info.dims)
 
 
 """
@@ -703,7 +715,7 @@ length(M::CMatrix) = length(M.expr)         # number of elements (m*n)
 size(M::CMatrix) = size(M.expr)
 getindex(M::CMatrix, i::Int, j::Int) = M.expr[i, j]
 repartition(M::CMatrix, var_tuples::Vector{Tuple{Int,Int}}) = CMatrix(M.param_info, M.coeff, reshape(repartition.(M.expr[:], Ref(var_tuples)), size(M.expr)))
-var_exponents(a::CMatrix) = zeros(Int, a.param_info.dims)
+var_exponents(a::CMatrix) = spzeros(Int, a.param_info.dims)
 
 
 #### Some basic functions ##############################################################################################

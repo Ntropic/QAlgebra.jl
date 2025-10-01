@@ -510,6 +510,25 @@ function substitution_properties_fulfilled(a::QAbstract, q::QExpr)::Bool
     return true 
 end
 
+########## Orders >=============================================================
+function where_acting_index(q::QTerm, qspace::QSpace)::Vector{Int}
+    return [i for (i, op) in enumerate(q.op_indices) if op != qspace.I_op[i]]
+end
+order(q::QTerm, qspace::QSpace)::Int = length(where_acting_index(q, qspace))
+
+function operator_magnitudes(q::QTerm, qspace::QSpace)::Vector{Int}
+    magnitudes::Vector{Int} = Vector{Int}(undef, length(q.op_indices))
+    curr_ind::Int = 1
+    for ss in qspace.subspaces
+        curr_ensemble_size = ss.ensemble_size
+        for i in 1:curr_ensemble_size
+            magnitudes[curr_ind] = ss.op_set.operator_magnitude(q.op_indices[curr_ind])
+            curr_ind += 1  
+        end
+    end
+    return magnitudes 
+end
+
 ########## Statespace check infra ##############################################
 function same_qspace(a::S, b::T)::Bool where {S<:QNotAtom,T<:QNotAtom}
     return a.qspace === b.qspace
@@ -522,3 +541,4 @@ end
 @noinline function _qspace_throw(a, b)
     throw(AssertionError("Objects must share the same qspace; got $(summary(a)) vs $(summary(b))"))
 end
+

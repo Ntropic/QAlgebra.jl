@@ -10,10 +10,10 @@ Time handling:
 """
 function base_operators(qspace::QSpace, name::String; do_fun::Bool=false, by_ensemble::Bool=false)
     # -------------------- helpers --------------------
-    _I_expr() = QExpr(qspace, QAtomProduct(qspace, CAtom(qspace.param_info, zeros(Int, length(qspace.params))), QTerm[]))
+    _I_expr() = QExpr(qspace, QAtomProduct(qspace, CAtom(qspace.param_info, spzeros(Int, length(qspace.params))), QTerm[]))
 
     _qexpr_for_var(i::Int) = begin
-        vexp = zeros(Int, length(qspace.params))
+        vexp = spzeros(Int, length(qspace.params))
         vexp[i] += 1
         QExpr(qspace, QAtomProduct(qspace, CAtom(qspace.param_info, vexp), QTerm[]))
     end

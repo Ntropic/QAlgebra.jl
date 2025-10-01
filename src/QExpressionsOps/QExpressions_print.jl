@@ -2,7 +2,7 @@ using Printf
 using LaTeXStrings
 import Base: string
 
-export string, latex_string, QExpr2string, cumulant_string
+export string, latex_string, cumulant_string
 
 include("QExpressions_print_sum.jl")
 

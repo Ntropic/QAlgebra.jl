@@ -1,5 +1,6 @@
 import ..CFunctions: repartition
 using ..QSpaces: map_by_tindex
+using ..SparsePermutationTools
 export reorder, reorder_full, reorder_time
 
 """
@@ -29,11 +30,11 @@ function reorder_time end
 struct IndexOrder
     op_order::Vector{Int}
     op_inverse::Vector{Int}
-    var_moves::Vector{Tuple{Int, Int}}
+    var_moves::SparsePermutation
     w_orders::Vector{Vector{Int}}
 end
 
-function IndexOrder(op_order::Vector{Int}, var_moves::Vector{Tuple{Int, Int}}, w_orders::Vector{Vector{Int}})
+function IndexOrder(op_order::Vector{Int}, var_moves::SparsePermutation, w_orders::Vector{Vector{Int}})
     return IndexOrder(op_order, invperm(op_order), var_moves, w_orders)
 end
 
@@ -100,14 +101,9 @@ function where_defined_to_index_order_full(qspace::QSpace, where_defined::Vector
         end
     end
 
-    var_moves = Tuple{Int,Int}[]
-    @inbounds for i in eachindex(var_inds)
-        if var_inds[i] != i
-            push!(var_moves, (i, var_inds[i]))
-        end
-    end
+    var_perm = sparseperm(var_inds)
 
-    return IndexOrder(op_inds, var_moves, w_orders)
+    return IndexOrder(op_inds, var_perm, w_orders)
 end
 
 function where_defined_to_index_order(qspace::QSpace, where_defined::Vector{BitVector})::IndexOrder
@@ -163,14 +159,9 @@ function where_defined_to_index_order(qspace::QSpace, where_defined::Vector{BitV
         end
     end
 
-    var_moves = Tuple{Int,Int}[]
-    @inbounds for i in eachindex(var_inds)
-        if var_inds[i] != i
-            push!(var_moves, (i, var_inds[i]))
-        end
-    end
+    var_perm = sparseperm(var_inds)
 
-    return IndexOrder(op_inds, var_moves, w_orders)
+    return IndexOrder(op_inds, var_perm, w_orders)
 end
 
 @inline function build_reorder_orders(qspace::QSpace, where_defined::Vector{BitVector})::ReorderOrders
@@ -198,7 +189,7 @@ reorder(q::QObj, ::IndexOrder) = q
 
 function reorder(q::QAtomProduct, mode::Val{M}, where_defined::Vector{BitVector}, orders::ReorderOrders; add_at_sum::Bool) where M
     order = get_index_order(orders, mode)
-    new_coeff = repartition(q.coeff_fun, order.var_moves)
+    new_coeff = repartition(q.coeff_fun, as_repartition_moves(order.var_moves))
     new_atoms = QAtom[reorder(atom, order) for atom in q.expr]
     return modify_coeff_expr(q, new_coeff, new_atoms)
 end
@@ -216,14 +207,14 @@ end
 function reorder(q::QComposite, mode::Val{M}, where_defined::Vector{BitVector}, orders::ReorderOrders; add_at_sum::Bool) where M
     q isa QSum && return reorder(q::QSum, mode, where_defined, orders; add_at_sum=add_at_sum)
     order = get_index_order(orders, mode)
-    new_coeff = repartition(q.coeff_fun, order.var_moves)
+    new_coeff = repartition(q.coeff_fun, as_repartition_moves(order.var_moves))
     new_expr = reorder(q.expr, mode, where_defined, orders; add_at_sum=add_at_sum)
     return modify_coeff_expr(q, new_coeff, new_expr)
 end
 
 function reorder(q::QMultiComposite, mode::Val{M}, where_defined::Vector{BitVector}, orders::ReorderOrders; add_at_sum::Bool) where M
     order = get_index_order(orders, mode)
-    new_coeff = repartition(q.coeff_fun, order.var_moves)
+    new_coeff = repartition(q.coeff_fun, as_repartition_moves(order.var_moves))
     new_expr = [reorder(qq, mode, where_defined, orders; add_at_sum=add_at_sum) for qq in q.expr]
     return modify_coeff_expr(q, new_coeff, new_expr)
 end

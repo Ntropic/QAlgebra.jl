@@ -1,5 +1,7 @@
 using Combinatorics
+using SparseArrays
 using ..CFunctions: ParameterInfo, ParameterIndexes
+using ..SparsePermutationTools: SparsePermutation, denseperm
 
 """ 
     Parameter(param_name::String, param_of_t::Bool, var_of_ensemble::Bool, var_ensemble_index::Int=0; param_values::Union{Nothing,Number,Vector{Number},Function}=nothing, var_suffix::String="")
@@ -70,12 +72,13 @@ function ParameterIndexes(subspace_info::SubSpaceInfo, indexed_parameter_indexes
         append!(labels, inner) 
     end
     label_parameter_indexes::Vector{Vector{Int}} = [Int[] for _ in 1:length(labels)]
-    curr_indexes::Vector{Int} = []
-    for (i_param, param_acting) in zip(indexed_parameter_indexes, where_acting_by_parameter)
+    for (param_idx, position) in pairs(indexed_parameter_indexes)
+        position == 0 && continue
+        param_acting = where_acting_by_parameter[position]
         flattened_acting = vcat(param_acting...)
         inds = findall(flattened_acting)
         for ind in inds 
-            append!(label_parameter_indexes[ind], i_param) 
+            append!(label_parameter_indexes[ind], param_idx) 
         end
     end
     for (i, t_indexes) in enumerate(indexes_by_t_index)
@@ -87,7 +90,7 @@ end
 
 function ParameterInfo(parameters::Vector{Parameter}, outer_labels_symbols::Vector{Symbol}, param_of_indexes::BitVector,
                        ss_ensemble_indexes_by_group::Vector{Vector{Int}}, ss_ensemble_present_by_group::Vector{BitVector},
-                       subspace_index_maps::Vector{Array{Vector{Int},2}}, t_index_transform::Array{Vector{Int},2}, subspace_info::SubSpaceInfo)
+                       subspace_index_maps::Vector{Array{SparsePermutation,2}}, t_index_transform::Array{SparsePermutation,2}, subspace_info::SubSpaceInfo)
     inner_labels_symbols_flat = [param.param_symbol for param in parameters]
     param_names  = [param.param_name  for param in parameters]
     param_strs   = [param.param_str   for param in parameters]
@@ -111,13 +114,15 @@ function ParameterInfo(parameters::Vector{Parameter}, outer_labels_symbols::Vect
     end
     indexes_by_t_index = [findall(==(t_ind), t_index_by_index) for t_ind in 0:maximum(t_index_by_index)]
 
-    indexed_parameter_indexes = Int[]
+    indexed_parameter_indexes = zeros(Int, length(parameters))
     where_acting_by_parameter = Vector{Vector{BitVector}}()
     ensemble_sizes = subspace_info.how_many_by_ensemble
 
+    curr_ind = 1
     for (i, param) in enumerate(parameters)
         if param.indexed_param 
-            push!(indexed_parameter_indexes, i)
+            indexed_parameter_indexes[i] = curr_ind
+            curr_ind += 1
             curr_bools = [falses( n) for n in ensemble_sizes]
             for curr_ind in param.param_indexes 
                 outer = curr_ind.outer 
@@ -182,54 +187,52 @@ end
 function build_subspace_index_maps(parameters::Vector{Parameter}, ensemble_index_maps, s_info::SubSpaceInfo)
     N = length(parameters)
     nsub = length(s_info.outer_labels_symbols)
-    result = Vector{Array{Vector{Int},2}}(undef, nsub)
+    result = Vector{Array{SparsePermutation,2}}(undef, nsub)
 
     ensemble_set = Set(s_info.where_ensembles)
 
     for s in 1:nsub
         if s in ensemble_set
             m = length(s_info.inner_labels_symbols[s])  # ensemble size for subspace s
-            pairmat = Array{Vector{Int}}(undef, m, m)   # (inner_to, inner_from)
+            pairmat = Array{SparsePermutation}(undef, m, m)   # (inner_to, inner_from)
             for inner_to in 1:m, inner_from in 1:m
-                mapvec = Vector{Int}(undef, N)
+                idxs = Int[]
+                diffs = Int[]
                 @inbounds for (idx, param) in enumerate(parameters)
-                    if !param.indexed_param
-                        mapvec[idx] = idx
-                        continue
-                    end
-                    # remap only if this param actually uses subspace s at inner_from
-                    has_s = false
-                    inners = Vector{Int}(undef, length(param.param_indexes))
-                    for a in eachindex(param.param_indexes)
-                        ix = param.param_indexes[a]
-                        v = ix.inner
-                        if ix.outer == s && ix.inner == inner_from
-                            v = inner_to
-                            has_s = true
+                    dest = idx
+                    if param.indexed_param
+                        has_s = false
+                        inners = Vector{Int}(undef, length(param.param_indexes))
+                        for a in eachindex(param.param_indexes)
+                            ix = param.param_indexes[a]
+                            v = ix.inner
+                            if ix.outer == s && ix.inner == inner_from
+                                v = inner_to
+                                has_s = true
+                            end
+                            inners[a] = v
                         end
-                        inners[a] = v
+                        if has_s
+                            inners_sorted = sort(inners)
+                            dest = ensemble_index_maps[param.group_index][param.t_index+1][inners_sorted...]
+                        end
                     end
-                    if has_s
-                        # dst = ensemble_index_maps[param.group_index][param.t_index+1][inners...]  ### unsorted variant 
-                        inners_sorted = sort(inners)
-                        dst = ensemble_index_maps[param.group_index][param.t_index+1][inners_sorted...]
-                        mapvec[idx] = dst
-                    else
-                        mapvec[idx] = idx
+                    if dest != idx
+                        push!(idxs, idx)
+                        push!(diffs, dest - idx)
                     end
                 end
-                
-                pairmat[inner_to, inner_from] = mapvec
+                pairmat[inner_to, inner_from] = SparsePermutation(N, sparsevec(idxs, diffs, N))
             end
             result[s] = pairmat
         else
             # non-ensemble subspace -> empty (0×0) matrix
-            result[s] = Array{Vector{Int}}(undef, 0, 0)
+            result[s] = Array{SparsePermutation}(undef, 0, 0)
         end
     end
     for s in 1:nsub
         for mat in result[s]
-            if any(==(0), mat)
+            if any(==(0), denseperm(mat))
                 error("build_subspace_index_maps: unmapped index (0) detected in subspace $s")
             end
         end
@@ -371,26 +374,28 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
     # ---- build t_index_transform (t_to, t_from) -> mapping vector over full parameter space ----
     N = length(parameters)
     T = max_t_ind + 1
-    t_index_transform = Array{Vector{Int}}(undef, T, T)
+    t_index_transform = Array{SparsePermutation}(undef, T, T)
     for t_to in 0:max_t_ind
         for t_from in 0:max_t_ind
-            mapvec = Vector{Int}(undef, N)
+            idxs = Int[]
+            diffs = Int[]
             @inbounds for (idx, param) in enumerate(parameters)
-                if !param.param_of_t || param.t_index != t_from
-                    mapvec[idx] = idx
-                    continue
+                dest = idx
+                if param.param_of_t && param.t_index == t_from
+                    g = param.group_index
+                    if param.indexed_param
+                        inners = [ix.inner for ix in param.param_indexes]
+                        dest = ensemble_index_maps[g][t_to+1][inners...]
+                    else
+                        dest = t_index_maps[g][t_to+1]
+                    end
                 end
-                g = param.group_index
-                if param.indexed_param
-
-                    inners = [ix.inner for ix in param.param_indexes]
-                    dst = ensemble_index_maps[g][t_to+1][inners...]
-                    mapvec[idx] = dst
-                else
-                    mapvec[idx] = t_index_maps[g][t_to+1]
+                if dest != idx
+                    push!(idxs, idx)
+                    push!(diffs, dest - idx)
                 end
             end
-            t_index_transform[t_to+1, t_from+1] = mapvec
+            t_index_transform[t_to+1, t_from+1] = SparsePermutation(N, sparsevec(idxs, diffs, N))
         end
     end
 
@@ -413,10 +418,10 @@ function map_by_subspace(i_to::SubSpaceIndex, i_from::SubSpaceIndex, pinfo::Para
     if size(M,1) == 0  # non-ensemble subspace -> identity map
         return collect(1:length(pinfo.outer_group_by_index))
     else
-        return M[i_to.inner, i_from.inner]
+        return denseperm(M[i_to.inner, i_from.inner])
     end
 end
 
 # Return parameter mapping vector for switching from t_index2 to t_index1.
-map_by_tindex(t_index1::Int, t_index2::Int, pinfo::ParameterInfo) = pinfo.t_index_transform[t_index1+1, t_index2+1]
+map_by_tindex(t_index1::Int, t_index2::Int, pinfo::ParameterInfo) = denseperm(pinfo.t_index_transform[t_index1+1, t_index2+1])
 # from t_index2 to t_index1 

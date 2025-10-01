@@ -63,12 +63,12 @@ function sum_symbol_str(term::QSum, where_acting::Vector{BitVector}; do_latex::B
     eq_counter, neq_constraints = eq_counter_and_neq_indexes(term.blocks, where_acting, subspace_info) 
     sup = ""
     # three cases eq_counter == 0 => all neq 
-    if eq_counter == 0
-        sup = _format_superscript(do_latex ? "\\neq" : "≠", do_latex=do_latex)
-    elseif length(neq_constraints) == 0  # all eq 
+    if length(neq_constraints) == 0  # all eq 
         if eq_counter > 0
             sup = _format_superscript("=", do_latex=do_latex)
         end
+    elseif eq_counter == 0
+        sup = _format_superscript(do_latex ? "\\neq" : "≠", do_latex=do_latex)
     else
         neq_condition_strs = _format_neq_condition.(neq_constraints, Ref(subspace_info), do_latex=do_latex)
         sup = _format_superscript(join(neq_condition_strs, ","), do_latex=do_latex)

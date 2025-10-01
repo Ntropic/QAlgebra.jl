@@ -89,9 +89,35 @@
         prod = QAtomProduct(qspace, QAtom[yi_term, xi_term])
         ordered = OrderedQAtomProduct(prod)
         @test ordered isa QAtomOrdered
-        @test ordered.op_indices[1] == xi_term
-        @test ordered.op_indices[2] == yi_term
+        @test ordered.expr[1] == xi_term
+        @test ordered.expr[2] == yi_term
         @test permutation(ordered) == [2, 1]
+
+        expr_unordered = QExpr(qspace, QComposite[prod], Val(:nosimp))
+        expr_ordered = OrderedQExpr(expr_unordered)
+        @test expr_ordered isa QExpr
+        ordered_term = expr_ordered.terms[1]
+        @test ordered_term isa QAtomOrdered
+        @test ordered_term.expr[1] == xi_term
+        @test ordered_term.expr[2] == yi_term
+        @test permutation(ordered_term) == [2, 1]
+
+        rhs_simple = QExpr(qspace, QComposite[prod], Val(:nosimp))
+        diff_unordered = diffQEq(qspace, prod, rhs_simple, Val(:raw))
+        diff_ordered = OrderedDiffQEq(diff_unordered)
+        @test diff_ordered isa diffQEqOrdered
+        @test diff_ordered.left_hand_side isa QAtomOrdered
+        @test diff_ordered.left_hand_side.expr[1] == xi_term
+        @test permutation(diff_ordered.left_hand_side) == [2, 1]
+
+        set_unordered = diffQEqSet([diff_unordered])
+        set_ordered = OrderedDiffQEqSet(set_unordered)
+        @test set_ordered isa diffQEqSetOrdered
+        @test set_ordered.equations[1] == diff_ordered
+
+        set_from_constructor = diff_QEqSet([diff_unordered])
+        @test set_from_constructor isa diffQEqSetOrdered
+        @test set_from_constructor.equations[1] == diff_ordered
     end
     @testset "PM Basis Rules" begin
         @test mh * ph == 1 / 2 * (I - zh)

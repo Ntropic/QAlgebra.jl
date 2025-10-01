@@ -93,6 +93,9 @@ function Ladder()
         #       a neutral,        b neutral,       both only creation, both annihilation, both number operators 
         return (p==0 && q==0) || (r==0 && s==0) || (q==0 && s==0)  || (p==0 && r==0) ||  (p==q && r==s)
     end
+    function ladder_operators_magnitude(op::Is)::Int
+        return op[1] + op[2]
+    end
 
-    return OperatorSet("Ladder", "Boson", 2, Int[0, 0], base_ladder, ops, ladder_product, ladder_dag, ladder2str, ladder2latex, laddercommutes) 
+    return OperatorSet("Ladder", "Boson", 2, Int[0, 0], base_ladder, ops, ladder_product, ladder_dag, ladder2str, ladder2latex; commutes=laddercommutes, operator_magnitude=ladder_operators_magnitude) 
 end

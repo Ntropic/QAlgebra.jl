@@ -262,7 +262,7 @@ function _expand(e::CExp, ::Val{:Taylor}, ::Val{S}, order::Int) where {S}
     terms = CFunction[]
     # n = 0 term: coeff * 1
     curr_coeff = e.coeff
-    push!(terms, CAtom(e.param_info, curr_coeff, zeros(Int, dims(e))))
+    push!(terms, CAtom(e.param_info, curr_coeff, spzeros(Int, dims(e))))
 
     # higher-order terms
     #fac = 1
@@ -289,7 +289,7 @@ function _expand(l::CLog, ::Val{:Taylor}, ::Val{S}, order::Int) where {S}
     # recurse with SAME alias
     x2, _ = _expand(l.expr, Val(:Taylor), Val(S), ord)
 
-    one = CAtom(l.param_info, ComplexRational(1,0,1), zeros(Int, dims(x2)))
+    one = CAtom(l.param_info, ComplexRational(1,0,1), spzeros(Int, dims(x2)))
     Δ = x2 - one
     curr = Δ
 
@@ -338,7 +338,7 @@ function _log_collect_terms(x::CFunction, acc::Vector{Tuple{ComplexRational,CFun
     if x isa CProd
         # coefficient factor
         if !isone(x.coeff)
-            push!(acc, (ComplexRational(1,0,1), CAtom(x.param_info, x.coeff, zeros(Int, dims(x)))))
+            push!(acc, (ComplexRational(1,0,1), CAtom(x.param_info, x.coeff, spzeros(Int, dims(x)))))
         end
         @inbounds for t in x.terms
             _log_collect_terms(t, acc)
@@ -354,7 +354,7 @@ function _log_collect_terms(x::CFunction, acc::Vector{Tuple{ComplexRational,CFun
     elseif x isa CPower
         # q * log(base) + log(coeff) if coeff != 1
         if !isone(x.coeff)
-            push!(acc, (ComplexRational(1,0,1), CAtom(x.param_info, x.coeff, zeros(Int, dims(x)))))
+            push!(acc, (ComplexRational(1,0,1), CAtom(x.param_info, x.coeff, spzeros(Int, dims(x)))))
         end
         push!(acc, (_qcr(x.exponent), x.expr))
     else
