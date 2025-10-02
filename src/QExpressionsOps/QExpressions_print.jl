@@ -30,11 +30,11 @@ end
 
 function _expanded_cumulant_string(q::QCumulant; do_latex::Bool)
     lhs_product = QAtomProduct(q.qspace, q.coeff_fun, [q.atom], false)
-    lhs_sign, lhs_body = QComposite2string(lhs_product, which_ensemble_acting(lhs_product); do_latex=do_latex, braced=DO_BRACED, do_frac=true, do_braket=true)
+    lhs_sign, lhs_body = QComposite2string(lhs_product, which_ensemble_acting(lhs_product, do_abstract=true); do_latex=do_latex, braced=DO_BRACED, do_frac=true, do_braket=true)
     lhs_display = lhs_sign ? "-" * lhs_body : lhs_body
     lhs_display = isempty(lhs_display) ? (do_latex ? "0" : "0") : lhs_display
 
-    rhs_sign, rhs_body = QExpr2string(q.expr, which_ensemble_acting(q.expr); do_latex=do_latex, braced=DO_BRACED, do_braket=true)
+    rhs_sign, rhs_body = QExpr2string(q.expr, which_ensemble_acting(q.expr, do_abstract=true); do_latex=do_latex, braced=DO_BRACED, do_braket=true)
     rhs_display = rhs_sign ? "-" * rhs_body : rhs_body
     rhs_display = isempty(rhs_display) ? (do_latex ? "0" : "0") : rhs_display
 
@@ -376,13 +376,13 @@ function QExpr2string(q::QExpr, where_acting::Vector{BitVector}; do_latex::Bool=
     end
 end
 
-function diff_qEQ2string(eq::diffQEq; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, do_braket::Bool=false)::String
-    rhs_where_acting = which_ensemble_acting(eq.expr)
+function diffQEq2string(eq::diffQEq; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, do_braket::Bool=false)::String
+    rhs_where_acting = which_ensemble_acting(eq.expr, do_abstract=true)
     curr_sign, curr_string = QExpr2string(eq.expr, rhs_where_acting; do_latex=do_latex, braced=braced, do_frac=do_frac, do_braket=do_braket)
     right_hand_side = curr_sign ? "-" * curr_string : curr_string
 
     lhs_braket = do_braket || eq.left_hand_side.braket
-    lhs_where_acting = which_ensemble_acting(eq.left_hand_side)
+    lhs_where_acting = which_ensemble_acting(eq.left_hand_side, do_abstract=true)
     curr_sign, curr_string = QComposite2string(eq.left_hand_side, lhs_where_acting; do_latex=do_latex, braced=braced, do_frac=do_frac, do_braket=lhs_braket)
     left_hand_side_op_str = curr_sign ? "-" * curr_string : curr_string
     left_hand_side_op_str = lstrip(left_hand_side_op_str, '+')
@@ -406,25 +406,25 @@ Returns a string representation of the QExpr, QAtomProduct or diffQEq object. Th
 """
 function string(eq::QExpr)::String
     # add default variables for do_Frac, braced and so on. take care of this by writing a single function called by every string and latex string function 
-    where_acting = which_ensemble_acting(eq)
+    where_acting = which_ensemble_acting(eq, do_abstract=true)
     curr_sign, curr_string = QExpr2string(eq, where_acting; do_latex=false, braced=DO_BRACED)
     total_string = curr_sign ? "-" * curr_string : curr_string
     return total_string
 end
 function string(eq::QCumulant)::String
-    where_acting = which_ensemble_acting(eq)
+    where_acting = which_ensemble_acting(eq, do_abstract=true)
     sign, total_string = QComposite2string(eq, where_acting; do_latex=false, braced=DO_BRACED)
     return sign ? "-" * total_string : total_string
 end
 function string(eq::QAtomProduct)::String
     # add default variables for do_Frac, braced and so on. take care of this by writing a single function called by every string and latex string function 
-    where_acting = which_ensemble_acting(eq)
+    where_acting = which_ensemble_acting(eq, do_abstract=true)
     sign, total_string = QComposite2string(eq, where_acting; do_latex=false, braced=DO_BRACED)
     total_string = sign ? "-" * total_string : total_string
     return total_string
 end
 function string(eq::diffQEq)::String
-    return diff_qEQ2string(eq; do_latex=false, braced=DO_BRACED)
+    return diffQEq2string(eq; do_latex=false, braced=DO_BRACED)
 end
 
 #### LaTeX-String ##########################################################################################################################
@@ -436,25 +436,25 @@ end
 Returns a LaTeX string representation of the QExpr, QAtomProduct or diffQEq object. 
 """
 function latex_string(eq::QExpr)::String
-    where_acting = which_ensemble_acting(eq)
+    where_acting = which_ensemble_acting(eq, do_abstract=true)
     curr_sign, curr_string = QExpr2string(eq, where_acting; do_latex=true, braced=DO_BRACED)
     total_string = curr_sign ? "-" * curr_string : curr_string
     return total_string
 end
 function latex_string(eq::QCumulant)::String
-    where_acting = which_ensemble_acting(eq)
+    where_acting = which_ensemble_acting(eq, do_abstract=true)
     sign, total_string = QComposite2string(eq, where_acting; do_latex=true, braced=DO_BRACED)
     return sign ? "-" * total_string : total_string
 end
 function latex_string(eq::QAtomProduct)::String
     # add default variables for do_Frac, braced and so on. take care of this by writing a single function called by every string and latex string function 
-    where_acting = which_ensemble_acting(eq)
+    where_acting = which_ensemble_acting(eq, do_abstract=true)
     sign, total_string = QComposite2string(eq, where_acting; do_latex=true, braced=DO_BRACED)
     total_string = sign ? "-" * total_string : total_string
     return total_string
 end
 function latex_string(eq::diffQEq)::String
-    return diff_qEQ2string(eq; do_latex=true, braced=DO_BRACED)
+    return diffQEq2string(eq; do_latex=true, braced=DO_BRACED)
 end
 
 #### Show off #########################################################################################################################

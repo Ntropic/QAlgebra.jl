@@ -1,6 +1,8 @@
-export is_t_var, is_t, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, contains_which_t_indexes, max_moment_of_terms, where_acting
+export is_t_var, is_t, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, contains_which_t_indexes, max_order_of_terms, where_acting, which_abstracts, iterate_QAtomProducts
 export is_unitary, is_hermitian, substitution_properties_fulfilled, same_qspace, qspace_check
 import ..CFunctions: isnumeric, CFunction, CAtom
+import ..bubble_insert_unique!
+import ..QSpaces: expanded
 """ 
     isnumeric(t::QObj) -> Bool
 
@@ -149,6 +151,56 @@ function contains_abstract(term::diffQEq)::Bool
     return contains_abstract(term.expr) && contains_abstract(term.left_hand_side)
 end
 
+_init_abstract_positions(qspace::QSpace)::Vector{Vector{Int}} = [Int[] for _ in qspace.operatortypes]
+"""
+    which_abstracts(term::QExpr)::Tuple{BitVector,Vector{Vector{Int}}}
+
+Return a tuple `(present, positions)` summarising which abstract operators defined in the
+ambient `QSpace` occur inside `term`. `present[i]` is true when the `i`-th abstract appears
+anywhere in the expression, and `positions[i]` lists the expanded indexes where it occurs.
+"""
+function which_abstracts(term::T)::Vector{Vector{Int}} where T<:QObj
+    positions = _init_abstract_positions(term.qspace)
+    _collect_abstracts!(positions, term)
+    return positions
+end
+which_abstracts(term::T) where T<:QAtom = error("Cannot determine abstracts for objects of type QAtom.")
+
+function _collect_abstracts!(positions::Vector{Vector{Int}}, term::diffQEq)::Vector{Vector{Int}}
+    _collect_abstracts!(positions, term.left_hand_side)
+    _collect_abstracts!(positions, term.expr)
+    return positions
+end
+function _collect_abstracts!(positions::Vector{Vector{Int}}, term::QExpr)::Vector{Vector{Int}}
+    for t in term.terms
+        _collect_abstracts!(positions, t)
+    end
+    return positions
+end
+function _collect_abstracts!(positions::Vector{Vector{Int}}, term::T)::Vector{Vector{Int}} where T<: QComposite
+    _collect_abstracts!(positions, term.expr)
+    return positions
+end
+function _collect_abstracts!(positions::Vector{Vector{Int}}, term::T)::Vector{Vector{Int}} where T<: QMultiComposite
+    for sub in term.expr
+        _collect_abstracts!(positions, sub)
+    end
+    return positions
+end
+function _collect_abstracts!(positions::Vector{Vector{Int}}, term::QAtomProduct)::Vector{Vector{Int}}
+    for atom in term.expr
+        if atom isa QAbstract
+            _record_abstract!(positions, atom)
+        end
+    end
+    return positions
+end
+function _record_abstract!(positions::Vector{Vector{Int}}, abstract_op::QAbstract)
+    key_index, sub_index = abstract_op.key_index, abstract_op.sub_index
+    bubble_insert_unique!(positions[key_index], sub_index)
+    return positions
+end
+
 import ..CFunctions: contains_c_indexes
 """ 
     contains_c_indexes(f::Union{CFunction, QObj}, indexes::Vector{Int})::Bool
@@ -170,19 +222,24 @@ contains_c_indexes(q::QSum, indexes::Vector{Int})::Bool = any(q -> contains_c_in
 contains_c_indexes(q::diffQEq, indexes::Vector{Int})::Bool = contains_c_indexes(q.expr, indexes)
 
 
-contains_t_indexes(q::QExpr, indexes::Vector{Int})::Bool = any(q -> contains_t_indexes(q, indexes), q.terms) 
+contains_t_indexes(q::QExpr, indexes::Vector{Int}, which_t::Int=-1)::Bool = any(q -> contains_t_indexes(q, indexes, which_t), q.terms) 
 contains_t_indexes(q::QAtom, indexes::Vector{Int}) = error("Cannot be applied to QAtom")
-function contains_t_indexes(q::QAtomProduct, indexes::Vector{Int})::Bool 
-    return contains_c_indexes(q.coeff_fun, indexes) || any(x -> x.time_index != -1, q.expr)
+function contains_t_indexes(q::QAtomProduct, indexes::Vector{Int}, which_t::Int=-1)::Bool 
+    if which_t == -1
+        return contains_c_indexes(q.coeff_fun, indexes) || any(x -> x.time_index != -1, q.expr)
+    else
+        return contains_c_indexes(q.coeff_fun, indexes) || any(x -> x.time_index == which_t, q.expr)
+    end
+
 end
-function contains_t_indexes(q::T, indexes::Vector{Int})::Bool where T <: QComposite 
-    return contains_c_indexes(q.coeff_fun, indexes) || contains_t_indexes(q.expr, indexes)
+function contains_t_indexes(q::T, indexes::Vector{Int}, which_t::Int=-1)::Bool where T <: QComposite 
+    return contains_c_indexes(q.coeff_fun, indexes) || contains_t_indexes(q.expr, indexes, which_t)
 end
-function contains_t_indexes(q::M, indexes::Vector{Int})::Bool where M <: QMultiComposite
-    return contains_c_indexes(q.coeff_fun) || any(t -> contains_t_indexes(x, indexes), q.expr)
+function contains_t_indexes(q::M, indexes::Vector{Int}, which_t::Int=-1)::Bool where M <: QMultiComposite
+    return contains_c_indexes(q.coeff_fun) || any(t -> contains_t_indexes(x, indexes, which_t), q.expr)
 end
-contains_t_indexes(q::QSum, indexes::Vector{Int})::Bool = any(q -> contains_t_indexes(q, indexes), q.expr) 
-contains_t_indexes(q::diffQEq, indexes::Vector{Int})::Bool = contains_t_indexes(q.expr, indexes) || contains_t_indexes(q.left_hand_side)
+contains_t_indexes(q::QSum, indexes::Vector{Int}, which_t::Int=-1)::Bool = any(q -> contains_t_indexes(q, indexes, which_t), q.expr) 
+contains_t_indexes(q::diffQEq, indexes::Vector{Int}, which_t::Int=-1)::Bool = contains_t_indexes(q.expr, indexes, which_t) || contains_t_indexes(q.left_hand_side, which_t)
 function get_t_indexes(param_info::ParameterInfo, t_ind::Int=-1)::Vector{Int} 
     if t_ind == -1 
         return param_info.indexes_of_t
@@ -211,27 +268,34 @@ with time indexes starting at `t_index=0` and ending at `t_index=max_t_ind`
 contains_which_t_indexes(q::T) where T<:QAtom = error("Cannot get time indexes from QAtom. Try QComposites, QExpr, of diffQEq instead. ")
 function contains_which_t_indexes(q::T)::BitVector where T <: QObj
     max_t_index = q.qspace.max_t_ind
-    return [contains_t_indexes(q, get_t_indexes(q.qspace.param_info, t_ind)) for t_ind in 0:max_t_index] 
+    return [contains_t_indexes(q, get_t_indexes(q.qspace.param_info, t_ind), t_ind) for t_ind in 0:max_t_index] 
 end
 
-@inline function max_moment_of_terms(q::QAtomProduct)::Int
+@inline function max_order_of_terms(q::QAtomProduct)::Int
     @assert length(q.expr) == 1 && isa(q.expr[1], QTerm) "QAtomProduct can only contain a single QTerm to specify moment of operator."
     return sum(where_acting(q.expr[1], q.qspace))
 end 
-@inline function max_moment_of_terms(q::T)::Int where T <: QComposite
-    return max_moment_of_terms(q.expr)
+@inline function max_order_of_terms(q::T)::Int where T <: QComposite
+    return max_order_of_terms(q.expr)
 end
-@inline function max_moment_of_terms(q::T)::Int where T <: QMultiComposite
-    return maximum(max_moment_of_terms.(x) for x in q.expr)
+@inline function max_order_of_terms(q::T)::Int where T <: QMultiComposite
+    return maximum(max_order_of_terms.(x) for x in q.expr)
 end
-@inline function max_moment_of_terms(q::QExpr)::Int 
-    return maximum(max_moment_of_terms(t) for t in q.terms)
+@inline function max_order_of_terms(q::QExpr)::Int 
+    return maximum(max_order_of_terms(t) for t in q.terms)
 end
-@inline function max_moment_of_terms(q::diffQEq)::Int 
-    return max(max_moment_of_terms(q.left_hand_side), max_moment_of_terms(q.expr))
+@inline function max_order_of_terms(q::diffQEq)::Int 
+    return max(max_order_of_terms(q.left_hand_side), max_order_of_terms(q.expr))
 end
 
 ###################
+
+iterate_QAtomProducts(q::QExpr) = Iterators.flatten((iterate_QAtomProducts(term) for term in q.terms))
+iterate_QAtomProducts(prod::QAtomProduct) = (prod,)
+iterate_QAtomProducts(comp::QComposite) = iterate_QAtomProducts(comp.expr)
+iterate_QAtomProducts(items::AbstractVector) = Iterators.flatten((iterate_QAtomProducts(item) for item in items))
+iterate_QAtomProducts(items::Tuple) = Iterators.flatten((iterate_QAtomProducts(item) for item in items))
+iterate_QAtomProducts(eq::diffQEq) = Iterators.flatten((iterate_QAtomProducts(eq.left_hand_side), iterate_QAtomProducts(eq.expr)))
 
 function simple_isa(q::QExpr, type::Type)::Bool
     return length(q) == 1 && isa(q.terms[1], type)
@@ -272,8 +336,18 @@ end
 function where_neutral(q::QAbstract, qspace::QSpace)::BitVector
     return q.operator_type.expanded_ss_acting   # should never be modified! copy would be safer, but slower
 end
+
+@inline function where_acting(op_indices::Vector{Is}, I_op::Vector{Is})::BitVector
+    n = length(op_indices)
+    out = BitVector(undef, n)
+    @inbounds @simd for i in 1:n
+        out[i] = op_indices[i] != I_op[i]
+    end
+    return out
+end
+
 function where_acting(q::QTerm, qspace::QSpace)::BitVector
-    return [op != neut for (op, neut) in zip(q.op_indices, qspace.I_op)]
+    return where_acting(q.op_indices, qspace.I_op)
 end
 function where_acting(q::QAbstract, qspace::QSpace)::BitVector
     return .!q.operator_type.expanded_ss_acting  # should never be modified! copy would be safer, but slower
@@ -541,4 +615,3 @@ end
 @noinline function _qspace_throw(a, b)
     throw(AssertionError("Objects must share the same qspace; got $(summary(a)) vs $(summary(b))"))
 end
-

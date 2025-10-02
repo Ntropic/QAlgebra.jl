@@ -21,12 +21,14 @@ mutable struct Ensemble
     num_sum_indexes::Int
     operator_set::OperatorSet
     num_modes::Int
+    max_operator_order::Int
     parameter_groups::Vector{Symbol}
     samples::Vector{Vector{Float64}}
     distribution::Any
     qspace_ref::Union{Nothing,WeakRef}
     function Ensemble(num_operator_indexes::Integer, num_sum_indexes::Integer, operator_set::OperatorSet;
                       num_modes::Integer=-1,
+                      max_operator_order::Integer=-1,
                       parameter_groups::Vector{Symbol}=Symbol[],
                       samples::Vector{<:AbstractVector{<:Real}}=Vector{Vector{Float64}}(),
                       distribution=nothing,
@@ -38,7 +40,7 @@ mutable struct Ensemble
             end
         end
         return new(Int(num_operator_indexes), Int(num_sum_indexes), operator_set, Int(num_modes),
-                   copy(parameter_groups), sample_store, distribution, qspace_ref)
+                   Int(max_operator_order), copy(parameter_groups), sample_store, distribution, qspace_ref)
     end
     function Ensemble(num_operator_indexes::Integer, operator_set::OperatorSet; kwargs...)
         return Ensemble(num_operator_indexes, 0, operator_set; kwargs...)
@@ -53,6 +55,9 @@ function Base.show(io::IO, ensemble::Ensemble)
     print(io, "operators=" , ensemble.num_operator_indexes)
     print(io, ", summations=" , ensemble.num_sum_indexes)
     print(io, ", num_modes=" , ensemble.num_modes)
+    if ensemble.max_operator_order != -1
+        print(io, ", max_order=" , ensemble.max_operator_order)
+    end
     if !isempty(ensemble.parameter_groups)
         print(io, ", parameter_groups=" , ensemble.parameter_groups)
     end
@@ -79,6 +84,9 @@ struct SubSpace
     particle_type::String
     op_set::OperatorSet             # The operator set for this subspace.
     ensemble::Union{Nothing,Ensemble}
+    min_ints::Vector{Int}
+    max_ints::Vector{Int}           # -1 entries signal unbounded axes
+    max_operator_magnitude::Int
 end
 # Define the custom show for SubSpace.
 function Base.show(io::IO, qspace::SubSpace)
@@ -157,11 +165,13 @@ struct SubSpaceDefinitions
                 num_sum_indexes = ensemble_cfg.num_sum_indexes
                 op_set = ensemble_cfg.operator_set
                 ensemble_size = num_operator_indexes + num_sum_indexes
+                max_op_mag = ensemble_cfg.max_operator_order != -1 ? ensemble_cfg.max_operator_order : max_operator_magnitude(op_set)
             else
                 ensemble_size = 1
                 op_set = val
                 num_operator_indexes = 1
                 num_sum_indexes = 0
+                max_op_mag = max_operator_magnitude(op_set)
             end
 
             isa(op_set, OperatorSet) || error("Invalid subspace definition for $key_symbol: expected an OperatorSet or Ensemble.")
@@ -189,7 +199,8 @@ struct SubSpaceDefinitions
             end 
             curr_inds = key_counter .+ collect(1:ensemble_size)
             curr_subspace = SubSpace(key_symbol, keys_symbols, key, keys, keys_latex, outer_ind, curr_inds, is_ensemble_ss, 
-                        ensemble_size, num_operator_indexes, num_sum_indexes, op_set.particle_type, op_set, ensemble_cfg) 
+                        ensemble_size, num_operator_indexes, num_sum_indexes, op_set.particle_type, op_set, ensemble_cfg,
+                        copy(op_set.min_ints), copy(op_set.max_ints), max_op_mag) 
             key_counter += ensemble_size
             push!(subspaces, curr_subspace)
             union!(used_symbols, keys_symbols)

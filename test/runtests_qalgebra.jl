@@ -115,7 +115,7 @@
         @test set_ordered isa diffQEqSetOrdered
         @test set_ordered.equations[1] == diff_ordered
 
-        set_from_constructor = diff_QEqSet([diff_unordered])
+        set_from_constructor = diffQEqSet([diff_unordered])
         @test set_from_constructor isa diffQEqSetOrdered
         @test set_from_constructor.equations[1] == diff_ordered
     end

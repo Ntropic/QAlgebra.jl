@@ -1,8 +1,6 @@
 using ..Cumulants: ReducedIndexedCumulant
 export Cumulant
 
-order(q::QTerm, qspace::QSpace)::Int = length(where_acting_index(q, qspace))
-
 struct QCumulant <: QComposite
     qspace::QSpace
     coeff_fun::CFunction

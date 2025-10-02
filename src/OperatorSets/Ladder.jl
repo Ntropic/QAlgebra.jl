@@ -1,13 +1,15 @@
 export Ladder
 
 @doc raw"""
-    Ladder() -> OperatorSet
+    Ladder(; max_magnitude::Int=-1) -> OperatorSet
 
 Creates the OperatorSet for a bosonic mode using creation and annihilation operators (Ladder operators: ``a^\dagger``, ``a``).
+Provide `max_magnitude` to cap the highest occupation per index; the operator set records both that bound and the induced maximum magnitude. Pass `-1` (default) for unbounded.
 """
-function Ladder()
+function Ladder(; max_magnitude::Int=-1)
     ops = [""]  # (Creation, Annihilation) -> removed annihilation
     base_ladder = [[0, 1]]
+    max_vec = max_magnitude < 0 ? Int[-1, -1] : Int[max_magnitude, max_magnitude]
     function ladderstr2ind(str::String)::Vector{Tuple{ComplexRational,Vector{Int}}}
         str, exp = expstr_separate(str)
         res = findfirst(==(str), ops)
@@ -97,5 +99,7 @@ function Ladder()
         return op[1] + op[2]
     end
 
-    return OperatorSet("Ladder", "Boson", 2, Int[0, 0], base_ladder, ops, ladder_product, ladder_dag, ladder2str, ladder2latex; commutes=laddercommutes, operator_magnitude=ladder_operators_magnitude) 
+    return OperatorSet("Ladder", "Boson", 2, Int[0, 0], base_ladder, ops, ladder_product, ladder_dag, ladder2str, ladder2latex;
+                      commutes=laddercommutes, operator_magnitude=ladder_operators_magnitude,
+                      min_ints=Int[0, 0], max_ints=max_vec, max_magnitude=max_magnitude) 
 end

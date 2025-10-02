@@ -7,7 +7,7 @@ using ..Cumulants: ReducedCumulantList
 using Base: WeakRef, GC
 using SparseArrays
 
-export OperatorSet, operator_magnitude
+export OperatorSet, operator_magnitude, max_operator_magnitude
 export Ensemble, SubSpace, SubSpaceDefinitions, SubSpaceInfo, SubSpaceIndex, outer, inner, expanded, Index2Symbol, Index2String, Index2Ensemble, Index2Ensemble_and_Summation, SummationIndex2SubSpaceIndex
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
 export Parameter, ParameterDefinitions, map_by_subspace, map_by_tindex
@@ -15,7 +15,7 @@ export QSpace
 
 Is = Vector{Int}
 """
-    OperatorSet(name::String, particle_type::String, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function; commutes::Union{Nothing,Function}=nothing, operator_magnitude::Union{Nothing,Function}=nothing)
+    OperatorSet(name::String, particle_type::String, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function; commutes::Union{Nothing,Function}=nothing, operator_magnitude::Union{Nothing,Function}=nothing, min_ints::Union{Nothing,Vector{Int}}=nothing, max_ints::Union{Nothing,Vector{Int}}=nothing, max_magnitude::Integer=-1)
 
 OperatorSets define the algebraic structure of a quantum system, defining ways to multiply and conjugate operators within the space, how to print them (both for plain and latex formatting), how to extract operators from strings.
 We provide a few standard operator sets, such as QubitPauli, QubitPM and Ladder.
@@ -33,7 +33,38 @@ struct OperatorSet
     op2latex::Function      # transforms an operator index into a LaTeX string for formatted LaTeXStrings
     commutes::Function
     operator_magnitude::Function
-    function OperatorSet(name::String, particle_type::String, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function; commutes::Union{Nothing,Function}=nothing, operator_magnitude::Union{Nothing,Function}=nothing)
+    min_ints::Vector{Int}   # component-wise minimum integer index
+    max_ints::Vector{Int}   # component-wise maximum index (-1 marks unbounded)
+    max_magnitude::Int       # -1 denotes unknown cap
+    function OperatorSet(name::String, particle_type::String, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function; commutes::Union{Nothing,Function}=nothing, operator_magnitude::Union{Nothing,Function}=nothing, min_ints::Union{Nothing,Vector{Int}}=nothing, max_ints::Union{Nothing,Vector{Int}}=nothing, max_magnitude::Integer=-1)
+        length(neutral_element) == len || error("neutral_element length must match len")
+        for op in base_ops
+            length(op) == len || error("base_ops entries must match len")
+        end
+        extrema_vectors = Vector{Vector{Int}}()
+        push!(extrema_vectors, neutral_element)
+        append!(extrema_vectors, base_ops)
+        comp_min = fill(typemax(Int), len)
+        comp_max = fill(typemin(Int), len)
+        for vec in extrema_vectors
+            for i in 1:len
+                vi = vec[i]
+                if vi < comp_min[i]
+                    comp_min[i] = vi
+                end
+                if vi > comp_max[i]
+                    comp_max[i] = vi
+                end
+            end
+        end
+        inferred_min = isnothing(min_ints) ? comp_min : copy(min_ints)
+        inferred_max = isnothing(max_ints) ? comp_max : copy(max_ints)
+        length(inferred_min) == len || error("min_ints length must match len")
+        length(inferred_max) == len || error("max_ints length must match len")
+        for i in 1:len
+            inferred_max[i] == -1 && continue
+            inferred_max[i] >= inferred_min[i] || error("max_ints must be >= min_ints (or -1 for unbounded)")
+        end
         default_commutes = let neutral = neutral_element, op_product = op_product
             function commutes_default(op1::Vector{Int}, op2::Vector{Int})::Bool
                 if op1 == op2 || op1 == neutral || op2 == neutral
@@ -63,7 +94,11 @@ struct OperatorSet
         end
         commutes_fun = isnothing(commutes) ? default_commutes : commutes
         magnitude_fun = isnothing(operator_magnitude) ? default_magnitude : operator_magnitude
-        return new(name, particle_type, len, neutral_element, base_ops, ops, op_product, op_dag, op2str, op2latex, commutes_fun, magnitude_fun)
+        max_mag_int = Int(max_magnitude)
+        if max_mag_int == -1 && all(max_val != -1 for max_val in inferred_max)
+            max_mag_int = magnitude_fun(copy(inferred_max))
+        end
+        return new(name, particle_type, len, neutral_element, base_ops, ops, op_product, op_dag, op2str, op2latex, commutes_fun, magnitude_fun, inferred_min, inferred_max, max_mag_int)
     end
 end
 #function OperatorSet
@@ -76,6 +111,12 @@ function Base.show(io::IO, os::OperatorSet)
 end
 
 operator_magnitude(os::OperatorSet, op::Is)::Int = os.operator_magnitude(op)
+
+function max_operator_magnitude(os::OperatorSet)::Int
+    os.max_magnitude != -1 && return os.max_magnitude
+    any(==( -1), os.max_ints) && return -1
+    return operator_magnitude(os, copy(os.max_ints))
+end
 include("OperatorSets/Qubit_Pauli.jl")
 include("OperatorSets/Qubit_PM.jl")
 include("OperatorSets/Ladder.jl")

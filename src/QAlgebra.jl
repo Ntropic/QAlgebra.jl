@@ -69,6 +69,8 @@ export get_default, set_flip_if_first_term_negative, set_do_braced, set_expand_c
        FLIP_IF_FIRST_TERM_NEGATIVE , DO_BRACED, EXPAND_CUMULANTS
 
 include("Helper.jl")
+include("OffsetArrays.jl")
+export OffsetArray
 
 include("StringUtils.jl")
 using .StringUtils
@@ -90,7 +92,7 @@ using .Cumulants
 
 include("QSpace.jl")
 using .QSpaces
-export OperatorSet
+export OperatorSet, max_operator_magnitude
 export Ensemble, SubSpace, SubSpaceDefinitions 
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
 export Parameter, ParameterInfo, ParameterDefinitions
@@ -102,7 +104,7 @@ using .QExpressions
 export QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QCumulant, QAtomProduct, permutation, QSum, ∑, QCompositeProduct, diffQEq, d_dt
 export QCommutator, QExp, QLog, QPower, power, QRoot, root, Expectation
 export Dag, Commutator, same_qspace
-export is_t_var, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, max_moment_of_terms, contains_which_t_indexes, where_acting
+export is_t_var, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, max_order_of_terms, contains_which_t_indexes, where_acting, iterate_QAtomProducts
 export is_unitary, is_hermitian, substitution_properties_fulfilled
 export base_operators, QExprLookup 
 export string, latex_string
@@ -118,8 +120,7 @@ export QAtomOrdered, QNeutral, OrderbyOperator
 #include("Indexing.jl")
 #include("Combinatorics.jl")
 
-include("QEqSets.jl")
-using .QEqSets
-export diffQEqSet, diffQEqSetOrdered, diff_QEqSet, OrderedDiffQEqSet
+#include("QEqSets.jl")
+#using .QEqSets
+export diffQEqSet, diffQEqSetOrdered, diffQEqSet, OrderedDiffQEqSet
 end # module QAlgebra
-

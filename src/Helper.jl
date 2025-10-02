@@ -85,6 +85,18 @@ function sorted_unique_push!(arr::Vector{T}, x::T) where T
     return arr
 end
 
+function bubble_insert_unique!(arr::Vector{T}, value::T) where T
+    insert_at = 1
+    while insert_at <= length(arr) && arr[insert_at] < value
+        insert_at += 1
+    end
+    if insert_at <= length(arr) && arr[insert_at] == value
+        return arr
+    end
+    insert!(arr, insert_at, value)
+    return arr
+end
+
 
 module SparsePermutationTools
 using SparseArrays

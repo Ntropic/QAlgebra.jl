@@ -1,4 +1,4 @@
-export QAtomOrdered, QNeutral, OrderbyOperator
+export QAtomOrdered, QNeutral, OrderbyOperator, decompose_sorted_blocks
 
 # ===============> Sorting op_indices by subspaces, and returning the ensemble permutations 
 """
@@ -18,13 +18,12 @@ Decompose a full operator index vector into subspace blocks.
   - Example: for `[X, I, Y, X]` with neutral `I`, result is `[[1,4],[3]]`.
 """
 function decompose_sorted_blocks(op_indices::Vector{Is}, qspace::QSpace)::Tuple{Vector{Vector{Is}}, Vector{Vector{Vector{Int}}}}
-    
     nsub::Int = length(qspace.subspaces)
     blocks::Vector{Vector{Is}} = Vector{Vector{Is}}(undef, nsub)
     ensemble_indexes::Vector{Vector{Vector{Int}}} = Vector{Vector{Vector{Int}}}()
 
     index::Int = 1
-    for (sidx, subspace) in enumerate(qspace.subspaces)
+    @inbounds for (sidx, subspace) in enumerate(qspace.subspaces)
         if subspace.is_ensemble_ss
             ensemble_size::Int = subspace.ensemble_size
             neutral_element::Is = subspace.op_set.neutral_element
@@ -109,9 +108,8 @@ function recompose_op_indices(blocks::Vector{Vector{Is}}, ensemble_indexes::Vect
 end
 
 
-
 """ 
-QAtomOrdered is a QTerm, but where the operators within ensembles are sorted by operator index.  
+QAtomOrdered is a QTerm, but where the operators within ensembles are sorted by operator index, via OrderbyOperator.  
 """
 struct QAtomOrdered <: QComposite
     qspace::QSpace
@@ -127,33 +125,38 @@ struct QNeutral <: QComposite
 end
 
 """
+    diffQEqOrdered
+
+A diffQEq with ordered, where the elements are OrderbyOperator.
+"""
+struct diffQEqOrdered <: QParent
+    qspace::QSpace
+    left_hand_side::QAtomOrdered
+    expr::QExpr 
+    function diffQEqOrdered(qspace::QSpace, left_hand_side::QAtomOrdered, expr::QExpr, ::Val{:raw})
+        new(qspace, left_hand_side, expr)
+    end
+end
+
+struct QCumulantOrdered <: QComposite
+    qspace::QSpace
+    coeff_fun::CFunction
+    atom::QAtomOrdered
+    expr::QExpr
+    order::Int
+    where_acting::Vector{Int}
+end
+
+"""
     OrderbyOperator(q::QObj; lt=isless)
 
 Replace simple QAtomProducts (consisting only of QTerms) into QAtomOrdered, to sort 
 """
 OrderbyOperator(q::QAtomOrdered) = q
-OrderbyOperator(q::QAbstract) = error("Cannot order QAbstract. Must be substituted before.")
-OrderbyOperator(q::QTerm) = 
-
-function OrderbyOperator(q::T; lt=isless)::T where T <: QComposite 
-    ordered_expr = OrderbyOperator.(q.expr, lt=isless)
-    return modify_expr(q, ordered_expr)
-end
-function OrderbyOperator(q::T; lt=isless)::T where T <: QMultiComposite
-    ordered_factors = [OrderbyOperator(term; lt=lt) for term in q.expr]
-    return modify_expr(q, ordered_factors)
-end
-
-function OrderbyOperator(q::QExpr; lt=isless)
-    ordered_terms = Vector{QComposite}(undef, length(q.terms))
-    @inbounds for i in eachindex(q.terms)
-        ordered_terms[i] = OrderbyOperator(q.terms[i]; lt=lt)
-    end
-    return QExpr(q.qspace, ordered_terms, Val(:nosimp))
-end
+OrderbyOperator(q::T) where T<: QAtom = error("Cannot Order by Operator for QAtom of type $(typeof(q)).") 
 
 # Core OrderbyOperator here!
-function OrderbyOperator(q::QAtomProduct; lt=isless)
+function OrderbyOperator(q::QAtomProduct)
     n = length(q.expr)
     if n == 0
         return QNeutral(q.qspace, q.coeff_fun, q.time_index)
@@ -169,3 +172,28 @@ function OrderbyOperator(q::QAtomProduct; lt=isless)
     end
     return QCompositeProduct(q.qspace, q.coeff_fun, ordered_atoms)
 end
+
+function OrderbyOperator(q::T)::T where T <: QComposite 
+    ordered_expr = OrderbyOperator.(q.expr)
+    return modify_expr(q, ordered_expr)
+end
+function OrderbyOperator(q::T)::T where T <: QMultiComposite
+    ordered_factors = [OrderbyOperator(term) for term in q.expr]
+    return modify_expr(q, ordered_factors)
+end
+function OrderbyOperator(q::QExpr)::QExpr
+    ordered_terms = Vector{QComposite}(undef, length(q.terms))
+    @inbounds for i in eachindex(q.terms)
+        ordered_terms[i] = OrderbyOperator(q.terms[i]; lt=lt)
+    end
+    return QExpr(q.qspace, ordered_terms, Val(:nosimp))
+end
+
+function OrderbyOperator(q::diffQEq)::diffQEqOrdered
+    return diffQEqOrdered(q.qspace, OrderbyOperator(q.left_hand_side), OrderbyOperator(q.expr))
+end
+
+function OrderbyOperator(q::QCumulant)::QCumulantOrdered
+    return QCumulantOrdered(q.qspace, q.coeff_fun, OrderbyOperator(q.atom), OrderbyOperator(q.expr), q.order, q.where_acting)
+end
+

@@ -325,7 +325,7 @@ function _substitute(target::diffQEq, sp::Substitution)::diffQEq
     if length(lhs) != 1
         error("Substitution of $(sp.from) with $(sp.to) in $target did not result in a single term.")
     end
-    rhs = _substitute(target.expr, sp, false)
+    rhs = _substitute(target.expr, sp)
     return diffQEq(target.qspace, lhs[1], rhs)
 end
 
