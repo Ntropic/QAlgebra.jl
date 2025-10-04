@@ -8,10 +8,11 @@ using ..QAlgebra: get_default, FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
 
 export CFunction, CAbstractDefinition, CTypeDefinition, ParameterInfo, add_cabstract!, add_ctype!, CAbstract, CCustomType, CAtom, CSum, CRational, CProd, CExp, CLog, CPower, CVector, CMatrix
 export CMatrix, CVector, CPower
-export coeff, var_exponents
+export coeff, var_exponents, unique_first_terms
 export contains_non_simple_CFunction
 export define_cabstract, define_ctype, list_cabstracts, list_ctypes
-export which_ensemble_acting, which_ensemble_acting!, substitute
+export where_acting, where_acting!, which_params_acting, which_params_acting!
+export which_ensemble_acting, which_ensemble_acting!, substitute, separate_by_cond
 
 import Base: copy, exp, log, length, getindex, iterate, size
 import ComplexRationals: isonelike
@@ -140,7 +141,8 @@ struct ParameterInfo <: AbstractParameterInfo
     ss_ensemble_present_by_group::Vector{BitVector}   # which ss ensembles are present in each group.
 
     indexed_parameter_indexes::Vector{Int}                  # where are the where_acting_by_parameter for an index
-    where_acting_by_parameter::Vector{Vector{BitVector}}  # for each variable, where are they acting. 
+    where_acting_by_parameter::Vector{Vector{BitVector}}  # for each variable, where are they acting.
+    parameters_acting_by_index::Vector{Vector{BitVector}} # for each ensemble/index, which parameters act on it.
 
     # Maps indexes for index transformation, once for switching subsystem indexes and once for time indexes
     subspace_index_maps::Vector{Array{SparsePermutation,2}}
@@ -162,13 +164,14 @@ struct ParameterInfo <: AbstractParameterInfo
         outer_labels_symbols::Vector{Symbol}, inner_labels_symbols_flat::Vector{Symbol}, outer_labels::Vector{String}, params_name::Vector{String},
         params_str::Vector{String}, params_latex::Vector{String}, param_of_indexes::BitVector, outer_group_by_index::Vector{Int},
         t_index_by_index::Vector{Int}, ss_ensemble_indexes_by_group::Vector{Vector{Int}}, ss_ensemble_present_by_group::Vector{BitVector}, indexed_parameter_indexes::Vector{Int},
-        where_acting_by_parameter::Vector{Vector{BitVector}}, subspace_index_maps::Vector{Array{SparsePermutation,2}}, t_index_transform::Array{SparsePermutation,2}, indexes_by_t_index::Vector{Vector{Int}},
+        where_acting_by_parameter::Vector{Vector{BitVector}}, parameters_acting_by_index::Vector{Vector{BitVector}},
+        subspace_index_maps::Vector{Array{SparsePermutation,2}}, t_index_transform::Array{SparsePermutation,2}, indexes_by_t_index::Vector{Vector{Int}},
         indexes_of_t::Vector{Int}, how_many_by_ensemble::Vector{Int}, param_of_t::BitVector, param_is_t::BitVector, param_values::Vector, param_indexes::ParameterIndexes)
         dims = length(inner_labels_symbols_flat)
         new(dims, outer_labels_symbols, inner_labels_symbols_flat, outer_labels,
             params_name, params_str, params_latex, param_of_indexes,
             outer_group_by_index, t_index_by_index, ss_ensemble_indexes_by_group, ss_ensemble_present_by_group,
-            indexed_parameter_indexes, where_acting_by_parameter, subspace_index_maps, t_index_transform,
+            indexed_parameter_indexes, where_acting_by_parameter, parameters_acting_by_index, subspace_index_maps, t_index_transform,
             indexes_by_t_index, indexes_of_t, how_many_by_ensemble, param_of_t, param_is_t, param_values,
             param_indexes, CAbstractDefinition[], CTypeDefinition[])
     end
@@ -772,6 +775,7 @@ include("CFunctionsOps/CFunctions_simplify.jl")
 include("CFunctionsOps/CFunctions_orders_eval.jl")
 include("CFunctionsOps/CFunctions_expand.jl")
 include("CFunctionsOps/CFunctions_helper.jl")
+include("CFunctionsOps/CFunctions_separate.jl")
 include("CFunctionsOps/CFunctions_print.jl")
 
 end # module CFunctions

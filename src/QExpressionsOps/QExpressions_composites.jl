@@ -126,6 +126,11 @@ _to_subspace_index(qspace::QSpace, idx::Union{Symbol,String}) = SubSpaceIndex(id
 indexes2subspaceindexes(qspace::QSpace, idx::SumIndexInput)::Vector{SubSpaceIndex} = SubSpaceIndex[_to_subspace_index(qspace, idx)]
 indexes2subspaceindexes(qspace::QSpace, idxs::AbstractVector{<:SumIndexInput})::Vector{SubSpaceIndex} = SubSpaceIndex[_to_subspace_index(qspace, idx) for idx in idxs]
 
+# extens definition in ConstrainedIndexes.jl
+function are_all_neq(q::AbstractQSum{A}, where_acting_blocks::Vector{BitVector})::Bool where {A}
+    return are_all_neq(q.blocks, where_acting_blocks, q.qspace.subspace_info )
+end
+
 function _make_qsum_expr(::Type{A}, qspace::QSpace, raw_indexes::Union{SumIndexInput, AbstractVector{<:SumIndexInput}}, expr::QExpr, constraints::Vararg{NeqConstraint}; neq::Bool=false) where {A<:AbstractQAggregator}
     indexes = indexes2subspaceindexes(qspace, raw_indexes)
     isempty(indexes) && return expr

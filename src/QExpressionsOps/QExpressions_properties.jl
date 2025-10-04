@@ -1,6 +1,6 @@
-export is_t_var, is_t, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, contains_which_t_indexes, max_order_of_terms, where_acting, which_abstracts, iter_QAtomProducts, iter_QInts
+export is_t_var, is_t, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, contains_which_t_indexes, max_order_of_terms, which_abstracts, iter_QAtomProducts, iter_QInts
 export is_unitary, is_hermitian, substitution_properties_fulfilled, same_qspace, qspace_check
-import ..CFunctions: isnumeric, CFunction, CAtom
+import ..CFunctions: isnumeric, CFunction, CAtom, where_acting, where_acting!
 import ..bubble_insert_unique!
 import ..QSpaces: expanded
 """ 
@@ -358,50 +358,54 @@ so coefficient functions are intentionally ignored — their
 parameter-support lives in `CFunctionsOps.where_acting` and must be queried
 separately when required.
 """
-@inline function where_acting(op_indices::Vector{Is}, I_op::Vector{Is})::BitVector
-    n = length(op_indices)
-    out = BitVector(undef, n)
+function where_acting(q::T)::BitVector where T<:QObj 
+    out = falses(length(op_indices))
+    return where_acting!(q, out)
+end
+
+@inline function where_acting!(op_indices::Vector{Is}, I_op::Vector{Is}, out::BitVector)::BitVector
     @inbounds @simd for i in 1:n
-        out[i] = op_indices[i] != I_op[i]
+        out[i] |= op_indices[i] != I_op[i]
     end
     return out
 end
 
-function where_acting(q::QTerm, qspace::QSpace)::BitVector
-    return where_acting(q.op_indices, qspace.I_op)
+function where_acting!(q::QTerm, qspace::QSpace, out::BitVector)::BitVector
+    return where_acting(q.op_indices, qspace.I_op, out)
 end
-function where_acting(q::QAbstract, qspace::QSpace)::BitVector
-    return .!q.operator_type.expanded_ss_acting  # should never be modified! copy would be safer, but slower
+function where_acting!(q::QAbstract, qspace::QSpace, out::BitVector)::BitVector
+    return out .|= !q.operator_type.expanded_ss_acting  # should never be modified! copy would be safer, but slower
 end
-function where_acting(q::QAtomProduct)::BitVector
+function where_acting!(q::QAtomProduct, out::BitVector)::BitVector
     # combine the action of all of its constituents via OR
     qspace = q.qspace 
-    if length(q.expr) == 0
-        return falses(length(qspace.I_op))
-    else
-        return mapreduce(expr -> where_acting(expr, qspace), .|, q.expr)
+    for x in q.expr
+        where_acting!(x, qspace, out)
     end
+    return out 
 end
-where_acting(q::QExpr)::BitVector = mapreduce(t -> where_acting(t), .|, q.terms)
-function where_acting(q::T)::BitVector where {T<:QComposite}
-    return where_acting(q.expr)
+function where_acting!(q::QExpr, out::BitVector)::BitVector 
+    for t in q.terms 
+        where_acting!(t, out)
+    end
+    return out 
 end
-function where_acting(q::QCumulant)::BitVector
-    acting = falses(length(q.qspace.I_op))
+function where_acting!(q::T, out::BitVector)::BitVector where {T<:QComposite}
+    return where_acting!(q.expr, out)
+end
+function where_acting!(q::T, out::BitVector)::BitVector where T <: QMultiComposite
     for idx in q.where_acting
-        acting[idx] = true
+        out[idx] = true
     end
-    return acting .| where_acting(q.expr)
+    where_acting!(q.expr, out)
+    return out
 end
-function where_acting(q::T)::BitVector where {T<:QMultiComposite}
-    return mapreduce(expr -> where_acting(expr, qspace), .|, q.expr)
-end
-function where_acting(q::AbstractQSum)::BitVector
-    acting = where_acting(q.expr)
-    for ind in iter_all_indexes(q)
-        acting[expanded(ind)] = true
+function where_acting!(q::AbstractQSum, out::BitVector)::BitVector
+    where_acting!(q.expr, out)
+    @inbounds for ind in iter_all_indexes(q)
+        out[expanded(ind)] = true
     end
-    return acting
+    return out
 end
 
 function commutes_QAtom(q1::QAbstract, q2::QAbstract, qspace::QSpace)::Bool   # for QAtom can check 

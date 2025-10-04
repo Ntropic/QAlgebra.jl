@@ -69,11 +69,19 @@ function which_ensemble_acting!(q::QAtom, accum::Vector{BitVector}, subspace_inf
     return accum
 end
 function which_ensemble_acting!(q::QAbstract, accum::Vector{BitVector}, subspace_info::SubSpaceInfo, neutral_ensembles_op::Vector{Vector{Is}}; do_abstract::Bool=false)
-    if do_abstract ## ==> Assume instead that it is among the defined operator types | This is hacky, and probably not the best solution long term!
+    if do_abstract
         return accum
-    else
-        error("Which ensemble acting should be applied to abstractless expressions! ")
     end
+    if !isempty(q.index_map)
+        for (idx1, idx2) in q.index_map
+            for idx in (idx1, idx2)
+                ensemble = Index2Ensemble(idx, subspace_info)
+                accum[ensemble][idx.inner] = true
+            end
+        end
+        return accum
+    end
+    return accum
 end
 
 

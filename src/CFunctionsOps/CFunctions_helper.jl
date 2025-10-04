@@ -91,6 +91,33 @@ end
 @inline function _empty_where_defined(param_info::ParameterInfo)::Vector{BitVector}
     return [falses(n) for n in param_info.how_many_by_ensemble]
 end
+
+""" 
+    which_params_acting(f::CFunction)::BitVector
+
+Returns which parameters are present in a CFunction .
+""" 
+function which_params_acting(f::CFunction)::BitVector 
+    out::BitVector = falses(f.param_info.dims)
+    return which_params_acting!(f, out)
+end
+
+function which_params_acting!(f::CFunction, out::BitVector)::BitVector
+    @inbounds for lead in leaf_iter(f) 
+        which_params_acting!(f, out) 
+    end 
+    return out 
+end
+function which_params_acting!(f::CAtom, out::BitVector)::BitVector  
+    vexp_inds = f.var_exponents.nzind
+    for ind in vexp_inds 
+        out[ind] = true 
+    end
+    return out 
+end
+which_params_acting!(f::CAbstract, out::BitVector) = error("Cannot determine the acting parameters for a CAbstract. Use abstracts only in CType definitions.") 
+
+
 """ 
     which_ensemble_acting(f::CFunction)::Vector{BitVector}
 
@@ -103,7 +130,7 @@ function which_ensemble_acting(f::CFunction)::Vector{BitVector}
     return which_ensemble_acting!(f, where_non_trivial)
 end
 function which_ensemble_acting!(f::CFunction, where_non_trivial::Vector{BitVector})::Vector{BitVector}
-    for leaf in leaf_iter(f) 
+    @inbounds for leaf in leaf_iter(f) 
         which_ensemble_acting!(leaf, where_non_trivial)
     end
     return where_non_trivial
@@ -134,12 +161,12 @@ function where_acting(f::CFunction)::BitVector
 end
 function where_acting!(f::CFunction, acting::BitVector )::BitVector
     for leaf in leaf_iter(f) 
-        where_acting_atom!(leaf, acting)
+        where_acting!(leaf, acting)
     end
     return acting
 end
-where_acting_atom!(f::CAbstract, acting::BitVector =[]) = error("Cannot determine where acting for a CAbstract. Use abstracts only in CType definitions. ")
-function where_acting_atom!(f::CAtom, acting::BitVector)::BitVector
+where_acting!(f::CAbstract, acting::BitVector) = error("Cannot determine where acting for a CAbstract. Use abstracts only in CType definitions. ")
+function where_acting!(f::CAtom, acting::BitVector)::BitVector
     # or operation between acting and f.var_exponents being overwritten on acting 
     #acting .|= (f.var_exponents .!= 0)   # ==> changed to sparse matrices 
     for idx in f.var_exponents.nzind
@@ -195,6 +222,60 @@ var_exponents_iter_simple(a::CAtom) = (a.var_exponents,)
 var_exponents_iter_simple(s::CSum)  = Iterators.flatten(var_exponents_iter_simple.(s.expr))
 var_exponents_iter_simple(p::CProd) = Iterators.flatten(var_exponents_iter_simple.(p.expr))
 var_exponents_iter_simple(f::CFunction) = (spzeros(Int, dims(f)),)
+
+"""
+    unique_first_terms(groups::AbstractVector{<:AbstractVector{<:Tuple{CFunction,CFunction}}})
+        -> Tuple{Vector{CFunction}, Vector{Vector{Tuple{Int,Int}}}}
+    unique_first_terms(groups::AbstractVector{<:AbstractVector{<:AbstractVector{<:Tuple{CFunction,CFunction}}}})
+        -> Tuple{Vector{CFunction}, Vector{Vector{Tuple{Int,Int,Int}}}}
+
+Collect the distinct first entries appearing in a nested collection of
+`Tuple{CFunction,CFunction}` (e.g. repeated outputs of [`separate_by_cond`]).
+Return the unique first terms sorted according to the global `isless`
+ordering, together with all index tuples identifying each occurrence in the
+original `groups` structure. For a two-level input each index tuple is
+`(outer, inner)`; for three levels it is `(layer1, layer2, layer3)`.
+"""
+function unique_first_terms(groups::AbstractVector{<:AbstractVector{<:Tuple{CFunction,CFunction}}})::Tuple{Vector{CFunction}, Vector{Vector{Tuple{Int,Int}}}}
+    flattened = Tuple{CFunction,Int,Int}[]
+    for (outer_idx, bucket) in pairs(groups)
+        for (inner_idx, pair) in pairs(bucket)
+            push!(flattened, (pair[1], outer_idx, inner_idx))
+        end
+    end
+    return _collect_unique(flattened)
+end
+
+function unique_first_terms(groups::AbstractVector{<:AbstractVector{<:AbstractVector{<:Tuple{CFunction,CFunction}}}})::Tuple{Vector{CFunction}, Vector{Vector{Tuple{Int,Int,Int}}}}
+    flattened = Tuple{CFunction,Int,Int,Int}[]
+    for (i, layer1) in pairs(groups)
+        for (j, layer2) in pairs(layer1)
+            for (k, pair) in pairs(layer2)
+                push!(flattened, (pair[1], i, j, k))
+            end
+        end
+    end
+    return _collect_unique(flattened)
+end
+
+function _collect_unique(flattened::Vector{T})::Tuple{Vector{CFunction}, Vector{Vector{NTuple{N,Int}}}} where {N, T<:Tuple{CFunction,Vararg{Int,N}}}
+    if isempty(flattened)
+        return CFunction[], Vector{Vector{NTuple{N,Int}}}()
+    end
+    sort!(flattened; lt = (a, b) -> isless(a[1], b[1]))
+    uniques = CFunction[]
+    locations = Vector{Vector{NTuple{N,Int}}}()
+    for entry in flattened
+        cf = entry[1]
+        idx_tuple = ntuple(i -> entry[i+1], Val(N))
+        if isempty(uniques) || !(cf == uniques[end])
+            push!(uniques, cf)
+            push!(locations, NTuple{N,Int}[])
+        end
+        push!(locations[end], idx_tuple)
+    end
+    return uniques, locations
+end
 
 import Base: isnumeric
 """
@@ -572,7 +653,7 @@ function term_equal_indexes(fsum::CSum, coeff_ind_order::Vector{Tuple{Int, Int}}
         changed_any |= changed
         new_terms[k] = new_term
     end
-    return changed_any, _CSum(new_terms)
+    return changed_any, _CSum(fsum.param_info, new_terms)
 end
 
 function term_equal_indexes(fractional::CRational, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CRational}

@@ -133,11 +133,22 @@ function ParameterInfo(parameters::Vector{Parameter}, outer_labels_symbols::Vect
             push!(where_acting_by_parameter, curr_bools)
         end
     end
+    acting_parameters_by_index = [ [ falses(length(parameters)) for _ in 1:n ] for n in ensemble_sizes ]
+    for (param_idx, storage_idx) in pairs(indexed_parameter_indexes)
+        storage_idx == 0 && continue
+        param_acts = where_acting_by_parameter[storage_idx]
+        for (ensemble_idx, bits) in enumerate(param_acts)
+            for inner_idx in findall(bits)
+                acting_parameters_by_index[ensemble_idx][inner_idx][param_idx] = true
+            end
+        end
+    end
+
     param_indexes = ParameterIndexes(subspace_info, indexed_parameter_indexes, where_acting_by_parameter, indexes_by_t_index)
     return ParameterInfo(outer_labels_symbols, inner_labels_symbols_flat, outer_labels, param_names,
         param_strs, param_latex, param_of_indexes, outer_group_by_index,
         t_index_by_index, ss_ensemble_indexes_by_group, ss_ensemble_present_by_group, indexed_parameter_indexes,
-        where_acting_by_parameter, subspace_index_maps, t_index_transform, indexes_by_t_index,
+        where_acting_by_parameter, acting_parameters_by_index, subspace_index_maps, t_index_transform, indexes_by_t_index,
         indexes_of_t, ensemble_sizes, param_of_t, param_is_t, param_values, param_indexes)
 end
 

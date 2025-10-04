@@ -302,6 +302,7 @@ include("QExpressionsOps/QExpressions_reorder.jl")
 include("QExpressionsOps/QSum_decollision.jl") 
 
 include("QExpressionsOps/OrderedQExpressions.jl")
+include("QExpressionsOps/QExpressions_iterate.jl")
 
 import ..CFunctions: define_cabstract, define_ctype, list_cabstracts, list_ctypes, c_abstract_exists
 

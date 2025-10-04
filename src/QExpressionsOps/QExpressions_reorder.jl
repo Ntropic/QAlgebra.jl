@@ -1,4 +1,4 @@
-import ..CFunctions: repartition
+import ..CFunctions: repartition, which_ensemble_acting
 using ..QSpaces: map_by_tindex
 using ..SparsePermutationTools
 export reorder, reorder_full, reorder_time
@@ -41,6 +41,40 @@ end
 struct ReorderOrders
     base::IndexOrder
     full::IndexOrder
+end
+
+@inline function _ensemble_outer_indices(param_info::ParameterInfo)::Vector{Int}
+    outers = Int[]
+    for (outer_idx, mat) in enumerate(param_info.subspace_index_maps)
+        size(mat, 1) == 0 && continue
+        push!(outers, outer_idx)
+    end
+    return outers
+end
+
+@inline function _apply_subspace_permutation(var_inds::Vector{Int}, outer::Int, order::Vector{Int}, param_info::ParameterInfo)::Vector{Int}
+    length(order) ≤ 1 && return var_inds
+    all(i -> order[i] == i, eachindex(order)) && return var_inds
+    for (from_idx, to_idx) in permutation_moves(order)
+        idx_from = SubSpaceIndex(outer, from_idx, 0)
+        idx_to = SubSpaceIndex(outer, to_idx, 0)
+        perm = map_by_subspace(idx_from, idx_to, param_info)
+        var_inds = var_inds[perm]
+    end
+    return var_inds
+end
+
+function _var_perm_full(param_info::ParameterInfo, ensemble_outers::Vector{Int}, where_defined::Vector{BitVector})
+    length(ensemble_outers) == length(where_defined) ||
+        throw(ArgumentError("Mismatch between ensemble metadata and where_defined mask."))
+    var_inds = collect(1:param_info.dims)
+    for (ensemble_idx, outer) in enumerate(ensemble_outers)
+        w = where_defined[ensemble_idx]
+        isempty(w) && continue
+        order = sortperm(w, rev=true)
+        var_inds = _apply_subspace_permutation(var_inds, outer, order, param_info)
+    end
+    return sparseperm(var_inds)
 end
 
 @inline permutation_moves(p::Vector{Int})::Vector{Tuple{Int, Int}} = [(i, pi) for (i, pi) in enumerate(p) if pi > i]
@@ -282,29 +316,21 @@ function reorder(q::diffQEq, mode::Val{M}) where M
 end
 
 """
-    reorder(eq::diffQEq) -> diffQEq
-
+    reorder(eq::QObj) -> QObj
 Reorder the ensemble indexes of `eq` so that already-defined (non-summation) indexes
-stay on the left and remaining summation indexes are packed next to them. The
-returned equation preserves the original structure, updating both the left-hand
-side operator and the right-hand side expression.
+stay on the left and remaining summation indexes are packed next to them. 
 """
 function reorder(q::diffQEq)::diffQEq
     return reorder(q, Val(:base))
 end
-"""
-    reorder(expr::QExpr) -> QExpr
-
-Reorder a quantum expression using the partial index ordering (non-summation
-indexes first, followed by summation indexes within each ensemble). This keeps
-summation indexes inside their dedicated slots while normalising operator order.
-"""
-function reorder(q::QExpr)::QExpr
+function reorder(q::QObj)::QExpr
     qspace = q.qspace
     where_defined = [falses(n) for n in qspace.subspace_info.how_many_by_ensemble]
     orders = build_reorder_orders(qspace, where_defined)
     return reorder(q, Val(:base), where_defined, orders; add_at_sum=true)
 end
+
+
 """
     reorder_full(eq::diffQEq) -> diffQEq
 

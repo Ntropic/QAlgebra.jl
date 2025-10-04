@@ -13,8 +13,9 @@ struct QSumDecollisionInds
     op_tuples::Vector{Tuple{Int, Int}}
     var_tuples::Vector{Tuple{Int, Int}}
     var_inds::Vector{Int}
-    function QSumDecollisionInds(init::Bool, where_acting::Vector{BitVector}, op_tuples::Vector{Tuple{Int, Int}}, var_tuples::Vector{Tuple{Int, Int}}, var_inds::Vector{Int})
-        new(init, where_acting, op_tuples, var_tuples, var_inds) 
+    index_pairs::Vector{Tuple{SubSpaceIndex,SubSpaceIndex}}
+    function QSumDecollisionInds(init::Bool, where_acting::Vector{BitVector}, op_tuples::Vector{Tuple{Int, Int}}, var_tuples::Vector{Tuple{Int, Int}}, var_inds::Vector{Int}, index_pairs::Vector{Tuple{SubSpaceIndex,SubSpaceIndex}})
+        new(init, where_acting, op_tuples, var_tuples, var_inds, index_pairs) 
     end
     function QSumDecollisionInds(q::AbstractQSum)
         qspace = q.qspace
@@ -23,7 +24,8 @@ struct QSumDecollisionInds
         op_tuples = Vector{Tuple{Int, Int}}()
         var_tuples = Vector{Tuple{Int, Int}}()
         var_inds = Vector{Int}() #collect(1:length(qspace.params))
-        new(false, where_acting, op_tuples, var_tuples, var_inds) 
+        index_pairs = Tuple{SubSpaceIndex,SubSpaceIndex}[]
+        new(false, where_acting, op_tuples, var_tuples, var_inds, index_pairs) 
     end
 end 
 
@@ -115,7 +117,7 @@ function update_QSumDecollisionInds(q::AbstractQSum, d::QSumDecollisionInds)::Tu
     end
 
     if isempty(new_op_tuples)
-        return QSumDecollisionInds(d.init, new_where, d.op_tuples, d.var_tuples, d.var_inds), blocks
+        return QSumDecollisionInds(d.init, new_where, d.op_tuples, d.var_tuples, d.var_inds, d.index_pairs), blocks
     end
 
     var_inds = collect(1:length(qspace.params))
@@ -129,7 +131,7 @@ function update_QSumDecollisionInds(q::AbstractQSum, d::QSumDecollisionInds)::Tu
 
     var_tuples = [(i, var_inds[i]) for i in eachindex(var_inds) if var_inds[i] != i]
 
-    return QSumDecollisionInds(true, new_where, vcat(new_op_tuples, d.op_tuples), var_tuples, var_inds), blocks
+    return QSumDecollisionInds(true, new_where, vcat(new_op_tuples, d.op_tuples), var_tuples, var_inds, vcat(inds_tuples, d.index_pairs)), blocks
 end
 
 function _decollision_QSum_generic(q1::AbstractQSum{A}, q2::AbstractQSum) where {A<:AbstractQAggregator}
@@ -137,7 +139,7 @@ function _decollision_QSum_generic(q1::AbstractQSum{A}, q2::AbstractQSum) where 
     qspace = q1.qspace
     subspace_info = qspace.subspace_info
     where_acting::Vector{BitVector} = which_summations_acting(q1, subspace_info)
-    decollision = QSumDecollisionInds(false, where_acting, Tuple{Int, Int}[], Tuple{Int, Int}[], Int[])
+    decollision = QSumDecollisionInds(false, where_acting, Tuple{Int, Int}[], Tuple{Int, Int}[], Int[], Tuple{SubSpaceIndex,SubSpaceIndex}[])
     inner_terms = decollision_QSum(q2, decollision)
 
     base_terms = QComposite[]
@@ -167,7 +169,7 @@ function _decollision_sum_with_other(qsum::AbstractQSum{SumAggregator}, qother::
     qspace = qsum.qspace
     subspace_info = qspace.subspace_info
     where_acting::Vector{BitVector} = which_summations_acting(qsum, subspace_info)
-    decollision = QSumDecollisionInds(false, where_acting, Tuple{Int, Int}[], Tuple{Int, Int}[], Int[])
+    decollision = QSumDecollisionInds(false, where_acting, Tuple{Int, Int}[], Tuple{Int, Int}[], Int[], Tuple{SubSpaceIndex,SubSpaceIndex}[])
     inner_terms = decollision_QSum(qother, decollision)
     inner_expr = QExpr(qspace, inner_terms)
 
@@ -242,7 +244,7 @@ function decollision_QSum(q::QTerm, decollision::QSumDecollisionInds, qspace::QS
     return QTerm(op_indices)
 end
 function decollision_QSum(q::QAbstract, decollision::QSumDecollisionInds, qspace::QSpace)::QAbstract
-    return add_to_index_map(q, decollision.op_tuples)
+    return add_to_index_map(q, decollision.index_pairs)
 end
 function decollision_QSum(q::QAtomProduct, decollision::QSumDecollisionInds)::Vector{QComposite}
     if decollision.init

@@ -78,34 +78,7 @@ function _format_neq_condition(condition::NeqConstraint{SubSpaceIndex}, subspace
     end
 end
 
-function eq_counter_and_neq_indexes_by_block(block::ConstrainedIndexBlock, where_acting_block::BitVector, subspace_info::SubSpaceInfo)::Tuple{Int, Vector{NeqConstraint{SubSpaceIndex}}}
-    non_sum = block.how_many_non_sum
-    neq_constraints::Vector{NeqConstraint{SubSpaceIndex}} = Vector{NeqConstraint{SubSpaceIndex}}()
-    eq_counter = 0
-    for (ind, constraint) in zip(block.indexes, block.constraints)
-        curr_inner = ind.inner
-        for i in vcat(1:non_sum, curr_inner+1:length(where_acting_block))
-            if where_acting_block[i] 
-                if !constraint[i]
-                    push!(neq_constraints, neq(ind, SubSpaceIndex(ind.outer, i, subspace_info)))
-                else
-                    eq_counter += 1
-                end
-            end
-        end
-    end
-    return (eq_counter, neq_constraints)
-end
-function eq_counter_and_neq_indexes(blocks::Vector{ConstrainedIndexBlock}, where_acting::Vector{BitVector}, subspace_info::SubSpaceInfo)::Tuple{Int, Vector{NeqConstraint{SubSpaceIndex}}}
-    eq_counter = 0
-    neq_constraints::Vector{NeqConstraint{SubSpaceIndex}} = Vector{NeqConstraint{SubSpaceIndex}}()
-    for (block, where_acting_block) in zip(blocks, where_acting)
-        new_count, new_inds = eq_counter_and_neq_indexes_by_block(block, where_acting_block, subspace_info)
-        eq_counter += new_count
-        append!(neq_constraints, new_inds)
-    end 
-    return (eq_counter, neq_constraints)
-end
+
 
 function sum_symbol_str(term::AbstractQSum, where_acting::Vector{BitVector}; do_latex::Bool=false)
     subspace_info = term.qspace.subspace_info

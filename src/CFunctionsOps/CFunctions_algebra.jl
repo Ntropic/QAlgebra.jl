@@ -91,6 +91,8 @@ end
 *(a::CSum, b::CSum)      = _CSum(pinfo(a), [ x*y for x in a.expr for y in b.expr ])
 *(s::CSum, a::CFunction) = _CSum(pinfo(s), [ x*a for x in s.expr ])
 *(a::CFunction, s::CSum) = s*a
+*(a::CAtom, s::CSum)     = _CSum(pinfo(s), [ a * term for term in s.expr ])
+*(s::CSum, a::CAtom)     = _CSum(pinfo(s), [ term * a for term in s.expr ])
 
 # atom-level ×
 function *(a::CAtom, b::CAtom)
@@ -134,6 +136,8 @@ end
 # Rational interactions
 *(a::CFunction, r::CRational) = CRational(pinfo(a), a*r.numer, r.denom)
 *(r::CRational, a::CFunction) = CRational(pinfo(a), r.numer*a, r.denom)
+*(a::CAtom, r::CRational)     = CRational(pinfo(a), a*r.numer, r.denom)
+*(r::CRational, a::CAtom)     = CRational(pinfo(r), r.numer*a, r.denom)
 *(a::CRational, b::CRational) = CRational(pinfo(a), a.numer*b.numer, a.denom*b.denom)
 
 # generic multiply when both are non-sums
@@ -161,6 +165,15 @@ function *(a::CProd, b::CFunction)
     end
 end
 *(a::CFunction, b::CProd) = b*a
+*(a::CAtom, b::CProd)     = b * a
+function *(p::CProd, a::CAtom)
+    ca = coeff(a)
+    if iszero(ca[1])
+        return zero_atom(p)
+    else
+        return CProd(pinfo(p), p.coeff*ca[1], sort!(vcat(p.expr, a/ca[1])))
+    end
+end
 
 *(a::CSum, b::CProd) = _CSum(pinfo(a), [ x*b for x in a.expr ])
 *(b::CProd, a::CSum) = a*b
