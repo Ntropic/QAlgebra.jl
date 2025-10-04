@@ -1,20 +1,32 @@
 """
     Ensemble(num_operator_indexes, num_sum_indexes, operator_set; kwargs...)
+    Ensemble(num_operator_indexes, operator_set; kwargs...)
+    Ensemble(; num_operator_indexes, num_sum_indexes=0, operator_set, kwargs...)
 
-Container for ensemble subspace metadata. The first two positional arguments define how many operator indexes
-and summation indexes are reserved for the ensemble, while `operator_set` specifies the associated `OperatorSet`.
-Optionally one may declare the number of physically instantiated modes via `num_modes`; by default it is set to
-`-1` to signal that the ensemble only reserves the subspace indexes without committing to a concrete system size.
+Create an `Ensemble`: a container for ensemble–subspace metadata.
 
-Additional fields track parameter groups, samples and a sampling distribution:
-  - `parameter_groups` collects the symbols (e.g. `:gamma`) of all parameter groups associated with this ensemble.
-    It is initialised empty and populated during `QSpace` construction.
-  - `samples` stores points in the parameter space as a vector of real vectors (internally converted to `Float64`).
-    It starts empty and can be filled later when sampling data becomes available.
-  - `distribution` acts as a placeholder for a probability distribution object or sampling routine.
+# Positional arguments
+- `num_operator_indexes::Int`: Number of operator indices reserved for the ensemble.
+- `num_sum_indexes::Int`: Number of summation indices reserved for the ensemble.  
+  (Omitted or defaulted to `0` in the 2-arg / keyword-only constructors.)
+- `operator_set::OperatorSet`: The operator set associated with this ensemble.
 
-Unless explicitly provided, all optional collections are initialised as empty containers so that they can be
-appended to in-place at a later stage.
+# Keyword arguments
+- `num_modes::Int = -1`: Physical number of instantiated modes. `-1` means the
+  ensemble only reserves indices (no fixed system size).
+- `max_operator_order::Int = -1`: Maximum operator order allowed (convention: `-1` = unbounded).
+- `as_continuum::Bool = false`: Whether a continuum approximation is planned.
+- `parameter_groups::Vector{Symbol} = Symbol[]`: Symbols for parameter groups (e.g. `:gamma`).
+- `samples::Vector{<:AbstractVector{<:Real}} = Vector{Vector{Float64}}()`: Sample points in
+  parameter space. Each vector is converted internally to `Vector{Float64}`.
+- `qspace_ref::Union{Nothing,WeakRef} = nothing`: Optional weak reference back to a `QSpace`.
+
+# Behavior
+- `samples` are copied and converted element-wise to `Float64`.
+- `parameter_groups` is copied (`copy(parameter_groups)`) to avoid external mutation side-effects.
+- Internal storage types:
+  - `samples :: Vector{Vector{Float64}}`
+  - `parameter_groups :: Vector{Symbol}`
 """
 mutable struct Ensemble
     num_operator_indexes::Int
@@ -22,16 +34,16 @@ mutable struct Ensemble
     operator_set::OperatorSet
     num_modes::Int
     max_operator_order::Int
+    as_continuum::Bool
     parameter_groups::Vector{Symbol}
     samples::Vector{Vector{Float64}}
-    distribution::Any
     qspace_ref::Union{Nothing,WeakRef}
-    function Ensemble(num_operator_indexes::Integer, num_sum_indexes::Integer, operator_set::OperatorSet;
-                      num_modes::Integer=-1,
-                      max_operator_order::Integer=-1,
+    function Ensemble(num_operator_indexes::Int, num_sum_indexes::Int, operator_set::OperatorSet;
+                      num_modes::Int=-1,
+                      max_operator_order::Int=-1,
+                      as_continuum::Bool=false,
                       parameter_groups::Vector{Symbol}=Symbol[],
                       samples::Vector{<:AbstractVector{<:Real}}=Vector{Vector{Float64}}(),
-                      distribution=nothing,
                       qspace_ref::Union{Nothing,WeakRef}=nothing)
         sample_store = Vector{Vector{Float64}}()
         if !isempty(samples)
@@ -39,13 +51,13 @@ mutable struct Ensemble
                 push!(sample_store, Float64.(sample))
             end
         end
-        return new(Int(num_operator_indexes), Int(num_sum_indexes), operator_set, Int(num_modes),
-                   Int(max_operator_order), copy(parameter_groups), sample_store, distribution, qspace_ref)
+        return new(num_operator_indexes, num_sum_indexes, operator_set, num_modes,
+                   max_operator_order, as_continuum, copy(parameter_groups), sample_store, qspace_ref)
     end
-    function Ensemble(num_operator_indexes::Integer, operator_set::OperatorSet; kwargs...)
+    function Ensemble(num_operator_indexes::Int, operator_set::OperatorSet; kwargs...)
         return Ensemble(num_operator_indexes, 0, operator_set; kwargs...)
     end
-    function Ensemble(; num_operator_indexes::Integer, num_sum_indexes::Integer=0, operator_set::OperatorSet, kwargs...)
+    function Ensemble(; num_operator_indexes::Int, num_sum_indexes::Int=0, operator_set::OperatorSet, kwargs...)
         return Ensemble(num_operator_indexes, num_sum_indexes, operator_set; kwargs...)
     end
 end
@@ -78,7 +90,8 @@ struct SubSpace
     ss_outer_ind::Int            # Which Vector to use for ss_inner_ind  (this is for accessing the string elements)
     ss_inner_ind::Vector{Int}    # Indices to access operator values in the corresponding qspace main ind  (this is for accessing the string elements)
     is_ensemble_ss::Bool
-    ensemble_size::Int
+    ensemble_size::Int    # how many modes 
+    as_continuum::Bool
     num_operator_indexes::Int 
     num_sum_indexes::Int
     particle_type::String
@@ -149,10 +162,12 @@ struct SubSpaceDefinitions
         reserved_outer = Set{String}(String.(core_keys))
         for (outer_ind, (key_symbol, val)) in enumerate(kwargs) 
             is_ensemble_ss = false
+            as_continuum = false
             ensemble_cfg::Union{Nothing,Ensemble} = nothing
             if isa(val, Ensemble)
                 ensemble_cfg = val
                 is_ensemble_ss = true
+                as_continuum = val.as_continuum
             elseif isa(val, OperatorSet)
                 # handled below
             else
@@ -199,7 +214,7 @@ struct SubSpaceDefinitions
             end 
             curr_inds = key_counter .+ collect(1:ensemble_size)
             curr_subspace = SubSpace(key_symbol, keys_symbols, key, keys, keys_latex, outer_ind, curr_inds, is_ensemble_ss, 
-                        ensemble_size, num_operator_indexes, num_sum_indexes, op_set.particle_type, op_set, ensemble_cfg,
+                        ensemble_size, as_continuum, num_operator_indexes, num_sum_indexes, op_set.particle_type, op_set, ensemble_cfg,
                         copy(op_set.min_ints), copy(op_set.max_ints), max_op_mag) 
             key_counter += ensemble_size
             push!(subspaces, curr_subspace)
@@ -352,6 +367,7 @@ struct SubSpaceIndex
         return new(outer, inner, expanded) 
     end
 end
+Base.copy(x::SubSpaceIndex)::SubSpaceIndex = SubSpaceIndex(x.outer, x.inner, x.expanded)
 @inline outer(i::SubSpaceIndex)    = i.outer
 @inline inner(i::SubSpaceIndex)    = i.inner
 @inline expanded(i::SubSpaceIndex) = i.expanded

@@ -205,7 +205,7 @@ function reorder(q::QExpr, mode::Val{M}, where_defined::Vector{BitVector}, order
 end
 
 function reorder(q::QComposite, mode::Val{M}, where_defined::Vector{BitVector}, orders::ReorderOrders; add_at_sum::Bool) where M
-    q isa QSum && return reorder(q::QSum, mode, where_defined, orders; add_at_sum=add_at_sum)
+    q isa AbstractQSum && return reorder(q::AbstractQSum, mode, where_defined, orders; add_at_sum=add_at_sum)
     order = get_index_order(orders, mode)
     new_coeff = repartition(q.coeff_fun, as_repartition_moves(order.var_moves))
     new_expr = reorder(q.expr, mode, where_defined, orders; add_at_sum=add_at_sum)
@@ -219,7 +219,7 @@ function reorder(q::QMultiComposite, mode::Val{M}, where_defined::Vector{BitVect
     return modify_coeff_expr(q, new_coeff, new_expr)
 end
 
-function reorder(q::QSum, mode::Val{M}, where_defined::Vector{BitVector}, orders::ReorderOrders; add_at_sum::Bool) where M
+function reorder(q::AbstractQSum, mode::Val{M}, where_defined::Vector{BitVector}, orders::ReorderOrders; add_at_sum::Bool) where M
     order = get_index_order(orders, mode)
     qspace = q.qspace
     info = qspace.subspace_info
@@ -252,13 +252,13 @@ function reorder(q::QSum, mode::Val{M}, where_defined::Vector{BitVector}, orders
             remapped = remap_subspace_index(index, info, new_order)
             push!(new_indexes, remapped)
             row = block.constraints[i]
-            @assert length(row) == length(perm) "Constraint row length mismatch during QSum reordering."
+            @assert length(row) == length(perm) "Constraint row length mismatch during AbstractQSum reordering."
             push!(new_constraints, BitVector(row[perm]))
         end
     end
 
     blocks = _build_blocks(q.qspace, new_indexes, new_constraints)
-    return only(_QSum(q.qspace, inner, blocks))
+    return only(_QSum(aggregator_type(q), q.qspace, inner, blocks))
 end
 
 function reorder(q::QObj, mode::Val{M}, where_defined::Vector{BitVector}, orders::ReorderOrders; add_at_sum::Bool) where M
@@ -365,7 +365,7 @@ function _reorder_time(vec::AbstractVector{T}, ctx::TimeReorderContext) where {T
 end
 
 function _reorder_time(q::QComposite, ctx::TimeReorderContext)
-    q isa QSum && return _reorder_time(q::QSum, ctx)
+    q isa AbstractQSum && return _reorder_time(q::AbstractQSum, ctx)
     new_expr = _reorder_time(q.expr, ctx)
     new_coeff = isempty(ctx.coeff_moves) ? q.coeff_fun : repartition(q.coeff_fun, ctx.coeff_moves)
     return modify_coeff_expr(q, new_coeff, new_expr)
@@ -377,7 +377,7 @@ function _reorder_time(q::QMultiComposite, ctx::TimeReorderContext)
     return modify_coeff_expr(q, new_coeff, new_expr)
 end
 
-function _reorder_time(q::QSum, ctx::TimeReorderContext)
+function _reorder_time(q::AbstractQSum, ctx::TimeReorderContext)
     inner = _reorder_time(q.expr, ctx)
     inner === q.expr && return q
     return only(modify_expr(q, inner, Val(:nodecollision)))

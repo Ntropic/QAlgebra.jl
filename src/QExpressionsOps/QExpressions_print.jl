@@ -135,20 +135,21 @@ function QComposite2string(q::QAtomProduct, ::Vector{BitVector}; do_latex::Bool=
         end
     end
 end
-function QComposite2string(term::QSum, where_acting::Vector{BitVector}; do_latex::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
-    sum_str = sum_symbol_str(term, where_acting; do_latex=do_latex)
+function QComposite2string(term::AbstractQSum, where_acting::Vector{BitVector}; do_latex::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+    sum_str, measure = sum_symbol_str(term, where_acting; do_latex=do_latex)
     first_sign, total_string, single_group = QExpr2string(term.expr, where_acting; do_latex=do_latex, braced=braced, do_frac=do_frac, return_grouping=true, do_braket=do_braket)
+    measure_str = measure
     if return_if_braced
         if single_group
-            return first_sign, sum_str * total_string, false
+            return first_sign, sum_str * total_string * measure_str, false
         else
-            return false, sum_str * brace(total_string, do_latex=do_latex), true
+            return false, sum_str * brace(total_string, do_latex=do_latex) * measure_str, true
         end
     else
         if single_group
-            return first_sign, sum_str * total_string
+            return first_sign, sum_str * total_string * measure_str
         else
-            return false, sum_str * brace(total_string, do_latex=do_latex)
+            return false, sum_str * brace(total_string, do_latex=do_latex) * measure_str
         end
     end
 end

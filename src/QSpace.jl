@@ -15,7 +15,7 @@ export QSpace
 
 Is = Vector{Int}
 """
-    OperatorSet(name::String, particle_type::String, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function; commutes::Union{Nothing,Function}=nothing, operator_magnitude::Union{Nothing,Function}=nothing, min_ints::Union{Nothing,Vector{Int}}=nothing, max_ints::Union{Nothing,Vector{Int}}=nothing, max_magnitude::Integer=-1)
+    OperatorSet(name::String, particle_type::String, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function; commutes::Union{Nothing,Function}=nothing, operator_magnitude::Union{Nothing,Function}=nothing, min_ints::Union{Nothing,Vector{Int}}=nothing, max_ints::Union{Nothing,Vector{Int}}=nothing, max_magnitude::Int=-1)
 
 OperatorSets define the algebraic structure of a quantum system, defining ways to multiply and conjugate operators within the space, how to print them (both for plain and latex formatting), how to extract operators from strings.
 We provide a few standard operator sets, such as QubitPauli, QubitPM and Ladder.
@@ -36,7 +36,7 @@ struct OperatorSet
     min_ints::Vector{Int}   # component-wise minimum integer index
     max_ints::Vector{Int}   # component-wise maximum index (-1 marks unbounded)
     max_magnitude::Int       # -1 denotes unknown cap
-    function OperatorSet(name::String, particle_type::String, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function; commutes::Union{Nothing,Function}=nothing, operator_magnitude::Union{Nothing,Function}=nothing, min_ints::Union{Nothing,Vector{Int}}=nothing, max_ints::Union{Nothing,Vector{Int}}=nothing, max_magnitude::Integer=-1)
+    function OperatorSet(name::String, particle_type::String, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function; commutes::Union{Nothing,Function}=nothing, operator_magnitude::Union{Nothing,Function}=nothing, min_ints::Union{Nothing,Vector{Int}}=nothing, max_ints::Union{Nothing,Vector{Int}}=nothing, max_magnitude::Int=-1)
         length(neutral_element) == len || error("neutral_element length must match len")
         for op in base_ops
             length(op) == len || error("base_ops entries must match len")

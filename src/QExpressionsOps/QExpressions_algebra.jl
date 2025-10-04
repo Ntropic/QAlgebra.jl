@@ -261,11 +261,11 @@ end
 end
 
 # sums eat other QComposites!!! Mjam Mjam Mjam
-@inline function _mul(p1::QSum, p2::QSum, ::Val{C})::Vector{QComposite} where {C}
+@inline function _mul(p1::AbstractQSum, p2::AbstractQSum, ::Val{C})::Vector{QComposite} where {C}
     qspace_check_if(Val(C), p1, p2)
-    return decollision_QSum_product(p1, p2)  
+    return decollision_QSum_product(p1, p2)
 end
-@inline function _mul(p1::QSum, p2::T2, ::Val{C})::Vector{QComposite} where {T2<:QComposite,C}
+@inline function _mul(p1::AbstractQSum, p2::T2, ::Val{C})::Vector{QComposite} where {T2<:QComposite,C}
     qspace_check_if(Val(C), p1, p2)
     new_expr::Vector{QComposite} = []
     for t in p1.expr
@@ -273,7 +273,7 @@ end
     end
     return modify_expr(p1, QExpr(p1.qspace, new_expr))
 end
-@inline function _mul(p1::T1, p2::QSum, ::Val{C})::Vector{QComposite} where {T1<:QComposite,C}
+@inline function _mul(p1::T1, p2::AbstractQSum, ::Val{C})::Vector{QComposite} where {T1<:QComposite,C}
     qspace_check_if(Val(C), p1, p2)
     new_expr::Vector{QComposite} = []
     for t in p2.expr

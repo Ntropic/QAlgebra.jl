@@ -9,7 +9,7 @@ export int_exponent2str, exponentdag2str
 Contains the mapping from characters to their subscript representation for non-latex formatted outputs.
 """
 const subscript_indexes = Dict('a' => "ₐ", 'h' => "ₕ", 'i' => "ᵢ", 'j' => "ⱼ", 'k' => "ₖ", 'l' => "ₗ", 'm' => "ₘ", 'n' => "ₙ", 
-    'o' => "ₒ", 'p' => "ₚ", '1' => "₁", '2' => "₂", '3' => "₃", '4' => "₄", '5' => "₅", '6' => "₆", '7' => "₇", '8' => "₈", 
+    'o' => "ₒ", 'p' => "ₚ", 'ρ' => "ᵨ", '1' => "₁", '2' => "₂", '3' => "₃", '4' => "₄", '5' => "₅", '6' => "₆", '7' => "₇", '8' => "₈", 
     '9' => "₉", '=' => "₌", '+' => "₊", '-' => "₋", '0' => "₀", 'x' => "ₓ", 'y' => "ᵧ", ',' => "ˏ", ' ' => " ", 
     '(' => "₍", ')' => "₎")
 

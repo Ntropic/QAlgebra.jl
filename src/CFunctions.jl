@@ -11,7 +11,7 @@ export CMatrix, CVector, CPower
 export coeff, var_exponents
 export contains_non_simple_CFunction
 export define_cabstract, define_ctype, list_cabstracts, list_ctypes
-export which_ensemble_acting, substitute
+export which_ensemble_acting, which_ensemble_acting!, substitute
 
 import Base: copy, exp, log, length, getindex, iterate, size
 import ComplexRationals: isonelike
@@ -372,9 +372,9 @@ function modify_expr(f::CFunction, new_expr::Vector{CFunction})
 end
 
 """
-    CAtom(param_info::ParameterInfo, var_exponents::AbstractVector{<:Integer})
-    CAtom(param_info::ParameterInfo, coeff::Int, var_exponents::AbstractVector{<:Integer})
-    CAtom(param_info::ParameterInfo, coeff::Rational, var_exponents::AbstractVector{<:Integer})
+    CAtom(param_info::ParameterInfo, var_exponents::AbstractVector{<:Int})
+    CAtom(param_info::ParameterInfo, coeff::Int, var_exponents::AbstractVector{<:Int})
+    CAtom(param_info::ParameterInfo, coeff::Rational, var_exponents::AbstractVector{<:Int})
 
 A single term with a complex‐rational coefficient and integer exponents for each variable.
 - The `Int` and `Rational` constructors wrap the coefficient into a `ComplexRational`.

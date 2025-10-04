@@ -1,12 +1,12 @@
 #### Flatten 
-export neq, flatsums, complexsums
+export neq, flatsums, complexsums, Sum2Int
 
 """ 
     flatsums(q::QObj)::Bool 
 
-Checks if QSums are flattened in QObj. Returns true if there are no nested QSums. 
+Checks if AbstractQSums are flattened in QObj. Returns true if there are no nested aggregators. 
 """
-flatsums(q::QSum, has_sum::Bool=false)::Bool = has_sum ? false : flatsums(q.expr, has_sum) 
+flatsums(q::AbstractQSum, has_sum::Bool=false)::Bool = has_sum ? false : flatsums(q.expr, has_sum) 
 (flatsums(q::T, has_sum::Bool=false)::Bool) where {T<:QComposite} = flatsums(q.expr, has_sum) 
 flatsums(q::QAtomProduct, has_sum::Bool=false) = true 
 (flatsums(q::T, has_sum::Bool=false)::Bool) where {T<:QMultiComposite} = all(flatsums.(q.expr, has_sum))  
@@ -17,9 +17,9 @@ flatsums(q::diffQEq)::Bool = flatsums(q.expr)
 """ 
     complexsums(q::QObj)::Bool 
 
-Returns ture if any QSum is nested or in a QComposite. 
+Returns true if any AbstractQSum is nested or appears inside a QComposite. 
 """
-complexsums(q::QSum, in_complex::Bool=false)::Bool = in_complex ? true : complexsums(q.expr, true)  
+complexsums(q::AbstractQSum, in_complex::Bool=false)::Bool = in_complex ? true : complexsums(q.expr, true)  
 (complexsums(q::T, in_complex::Bool=false)::Bool) where {T<:QComposite} = complexsums(q.expr, true) 
 complexsums(q::QAtomProduct, in_complex::Bool=false) = false 
 (complexsums(q::T, in_complex::Bool=false)::Bool) where {T<:QMultiComposite} = any(complexsums.(q.expr, true))  
@@ -178,7 +178,7 @@ struct NeqState
     where_defined::Vector{BitVector}
 end
 
-@inline function _is_all_distinct(q::QSum)::Bool
+@inline function _is_all_distinct(q::AbstractQSum)::Bool
     for block in q.blocks
         for (idx, row) in zip(block.indexes, block.constraints)
             @inbounds begin
@@ -194,7 +194,7 @@ end
 end
 
 function _enforce_all_distinct(blocks::Vector{ConstrainedIndexBlock})::Vector{ConstrainedIndexBlock}
-    new_blocks = clone_blocks(blocks)
+    new_blocks = copy.(blocks)
     for block in new_blocks
         for (i, idx) in enumerate(block.indexes)
             row = falses(block.ensemble_size)
@@ -239,8 +239,8 @@ function _process_block(state::NeqState, ensemble::Int, qspace::QSpace)::Vector{
     return new_states
 end
 
-function _expand_qsum_states(q::QSum, where_defined::Vector{BitVector})::Vector{NeqState}
-    initial_blocks = clone_blocks(q.blocks)
+function _expand_qsum_states(q::AbstractQSum, where_defined::Vector{BitVector})::Vector{NeqState}
+    initial_blocks = copy.(q.blocks)
     initial_where = copy.(where_defined)
     states = NeqState[NeqState(q.expr, initial_blocks, initial_where)]
     for ensemble in eachindex(q.blocks)
@@ -253,20 +253,20 @@ function _expand_qsum_states(q::QSum, where_defined::Vector{BitVector})::Vector{
     return states
 end
 
-function _collect_results(q::QSum, states::Vector{NeqState})::Vector{QComposite}
+function _collect_results(q::AbstractQSum, states::Vector{NeqState})::Vector{QComposite}
     results = QComposite[]
     for state in states
         if all(isempty(block.indexes) for block in state.blocks)
             append!(results, state.expr.terms)
         else
             distinct_blocks = _enforce_all_distinct(state.blocks)
-            push!(results, QSum(q.qspace, state.expr, distinct_blocks))
+            push!(results, QSum_like(q, state.expr, distinct_blocks))
         end
     end
     return results
 end
 
-function neq_qsum(s::QSum, do_abstract::Bool=false)
+function neq_qsum(s::AbstractQSum, do_abstract::Bool=false)
     _is_all_distinct(s) && return QExpr(s.expr.qspace, [s])
     where_defined = which_ensemble_acting(s, do_abstract=do_abstract)
     states = _expand_qsum_states(s, where_defined)
@@ -274,7 +274,7 @@ function neq_qsum(s::QSum, do_abstract::Bool=false)
     return QExpr(s.qspace, terms)
 end
 
-function neq_qsum(s::QSum, where_defined::Vector{BitVector})
+function neq_qsum(s::AbstractQSum, where_defined::Vector{BitVector})
     _is_all_distinct(s) && return QExpr(s.expr.qspace, [s])
     combined_where = vecvec_or(which_ensemble_acting(s, do_abstract=true), where_defined)
     states = _expand_qsum_states(s, combined_where)
@@ -285,13 +285,13 @@ function neq(qeq::QExpr, do_abstract::Bool=false)::QExpr
     if length(qeq) == 0
         return qeq
     end
-    if isa(qeq.terms[1], QSum) 
+    if isa(qeq.terms[1], AbstractQSum) 
         out = neq_qsum(qeq.terms[1], do_abstract)
     else
         out = QExpr(qeq.qspace, neq(qeq.terms[1], do_abstract))
     end
     for t in qeq.terms[2:end]
-        if isa(t, QSum)
+        if isa(t, AbstractQSum)
             # expand this sum into distinct + diag parts
             out += neq_qsum(t, do_abstract)
         else
@@ -306,13 +306,13 @@ function neq(qeq::QExpr, where_defined::Vector{BitVector})::QExpr
     if length(qeq) == 0
         return qeq
     end
-    if isa(qeq.terms[1], QSum) 
+    if isa(qeq.terms[1], AbstractQSum) 
         out = neq_qsum(qeq.terms[1], where_defined)
     else
         out = QExpr(qeq.qspace, neq(qeq.terms[1], where_defined))
     end
     for t in qeq.terms[2:end]
-        if isa(t, QSum)
+        if isa(t, AbstractQSum)
             # expand this sum into distinct + diag parts
             out += neq_qsum(t, where_defined)
         else
@@ -342,4 +342,145 @@ function neq(q::diffQEq)
     else
         error("Cannot neq a differential Equation with a QAbstract on the left hand side.")
     end
+end
+
+
+##### Sum2Int <=================================================================================
+@inline function which_continuums_ensembles(qspace::QSpace)::BitVector
+    where_ensembles = qspace.subspace_info.where_ensembles
+    init::BitVector = falses(length(where_ensembles))
+    @inbounds for (i, curr_ensmble_index) in enumerate(where_ensembles)  
+        ss = qspace.subspaces[curr_ensmble_index]
+        init[i] = ss.as_continuum 
+    end
+    return init 
+end
+
+"""
+    Sum2Int(q::QObj) -> QObj
+
+Detects which ensembles in `q.qspace` are marked as continuous and rewrites
+`QSum` terms accordingly: discrete-only sums stay unchanged, continuous-only
+sums become `QInt`, and mixed sums are split into an integral and a remaining
+discrete sum. Returns the transformed object.
+"""
+function Sum2Int(q::T)::T where T <: QObj 
+    where_continuums = which_continuums_ensembles(q.qspace)
+    return _Sum2Int(q, where_continuums)[1]
+end
+Sum2Int(q::T) where T <: QAtom = error("Cannot apply Sum2Int to QAtoms. ")
+
+# --------------------------------------------------> walkers <----------------------------------------------------
+function _Sum2Int(q::QExpr, where_continuums::BitVector)::Tuple{QExpr, Bool} 
+    terms::Vector{QComposite} = q.terms 
+    new_terms::Vector{QComposite} = Vector{QComposite}(undef, length(terms))
+    any_changed::Bool = false
+    @inbounds for (i, term) in enumerate(terms)
+        new_term, changed = _Sum2Int(term, where_continuums)
+        if changed 
+            new_terms[i] = new_term 
+            any_changed = true
+        else
+            new_terms[i] = term 
+        end
+    end
+    if any_changed
+        return QExpr(q.qspace, new_terms), any_changed 
+    else
+        return q, any_changed
+    end
+end
+function _Sum2Int(q::T, where_continuums::BitVector)::Tuple{T, Bool} where T<:QComposite 
+    new_expr, changed = _Sum2Int(q.expr, where_continuums)
+    if changed
+        return modify_expr(q, new_expr,Val(:nosimp))[1], changed 
+    else
+        return q, changed
+    end
+end
+function _Sum2Int(q::T, where_continuums::BitVector)::Tuple{T, Bool} where T<:QMultiComposite 
+    terms::Vector{QExpr} = q.expr 
+    new_terms::Vector{QExpr} = Vector{QExpr}(undef, length(terms))
+    any_changed::Bool = false
+    @inbounds for (i, term) in enumerate(terms)
+        new_term, changed = _Sum2Int(t, where_continuums)
+        if changed 
+            new_terms[i] = new_term 
+            any_changed = true
+        else
+            new_terms[i] = term
+        end
+    end
+    if any_changed
+        return  modify_expr(q, new_terms,Val(:nosimp))[1], any_changed 
+    else
+        return q, any_changed
+    end
+end
+function _Sum2Int(q::QCompositeProduct, where_continuums::BitVector)::Tuple{QCompositeProduct, Bool} 
+    terms::Vector{QComposite} = q.expr 
+    new_terms::Vector{QComposite} = Vector{QComposite}(undef, length(terms))
+    any_changed::Bool = false
+    @inbounds for (i, term) in enumerate(terms)
+        new_term, changed = _Sum2Int(t, where_continuums)
+        if changed 
+            new_terms[i] = new_term 
+            any_changed = true
+        else
+            new_terms[i] = term 
+        end
+    end
+    if any_changed
+        return  modify_expr(q, new_terms, Val(:nosimp))[1], any_changed 
+    else
+        return q, any_changed
+    end
+end
+function _Sum2Int(q::QAtomProduct, ::BitVector)::Tuple{QAtomProduct, Bool}
+     return q, false 
+end
+
+function _Sum2Int(q::QSum, where_continuums::BitVector)::Tuple{Union{QSum, QInt},Bool}
+    blocks = q.blocks
+    new_expr, changed = _Sum2Int(q.expr, where_continuums)
+    has_int::Bool = false
+    has_sum::Bool = false
+    @inbounds for (block, is_cont) in zip(blocks, where_continuums)
+        if length(block) > 0
+            if is_cont
+                has_int = true
+            else
+                has_sum = true
+            end
+            (has_int & has_sum) && break
+        end
+    end
+    
+    # Case 1: only discrete → unchanged
+    if has_sum && !has_int
+        if changed
+            return _QSum_(q.qspace, new_expr, blocks), true
+        end
+        return q, false
+    end
+
+    # Case 2: only continuum → whole thing is a single QInt (copy blocks to avoid aliasing)
+    if has_int && !has_sum
+        copied_blocks = copy.(blocks)  # deep enough for your block type
+        return _QInt_(q.qspace, q.expr, copied_blocks), true
+    end
+
+    n = length(blocks)
+    int_blocks  = Vector{ConstrainedIndexBlock}(undef, n)
+    sum_blocks = Vector{ConstrainedIndexBlock}(undef, n)
+    @inbounds for (i, (block, is_cont)) in enumerate(zip(blocks, where_continuums))
+        if is_cont
+            int_blocks[i]  = copy(block)
+            sum_blocks[i] = copy_empty(block)  # same shape, empty content
+        else
+            int_blocks[i]  = copy_empty(block)
+            sum_blocks[i] = copy(block)
+        end
+    end
+    return _QSum_(q.qspace, QExpr(q.qspace, QComposite[_QInt_(q.qspace, q.expr, int_blocks)]), sum_blocks), true
 end

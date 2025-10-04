@@ -32,7 +32,8 @@ end
     return true
 end
 
-function same_term_type(s1::QSum, s2::QSum)::Bool
+function same_term_type(s1::AbstractQSum, s2::AbstractQSum)::Bool
+    aggregator_type(s1) == aggregator_type(s2) || return false
     length(s1.blocks) == length(s2.blocks) || return false
     @inbounds for (blk1, blk2) in zip(s1.blocks, s2.blocks)
         _same_block(blk1, blk2) || return false
@@ -58,7 +59,8 @@ end
 function combine_term_sum(t1::QAtomProduct, t2::QAtomProduct)::QAtomProduct
     return QAtomProduct(t1.qspace, t1.coeff_fun + t2.coeff_fun, t1.expr)
 end
-function combine_term_sum(s1::QSum, s2::QSum)::QSum
+function combine_term_sum(s1::AbstractQSum, s2::AbstractQSum)::AbstractQSum
+    aggregator_type(s1) == aggregator_type(s2) || error("Cannot combine sums with different aggregator types.")
     return only(modify_expr(s1, s1.expr + s2.expr))
 end
 function combine_term_sum(q1::S, q2::S)::QComposite where S<:QComposite 
@@ -152,7 +154,7 @@ Simplifies `QExpr`-based symbolic quantum expressions by recursively reducing in
 - `QMultiComposite`: Simplifies each expression element-wise.
 - `QComposite`: Simplifies its internal expression and returns a new `QComposite`.
 - `QExpr`: Flattens and simplifies terms, then combines like terms where possible.
-- `QSum`: Simplifies its expression array and returns a new `QSum`.
+- `AbstractQSum`: Simplifies its expression array and returns a new aggregator with matching type.
 - `diffQEq`: Replaces its right-hand side with a simplified version.
 
 Returns either a single simplified object or a list of canonical components depending on input type.

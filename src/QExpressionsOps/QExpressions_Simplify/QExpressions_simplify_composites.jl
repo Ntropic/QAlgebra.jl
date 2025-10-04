@@ -2,7 +2,7 @@
 function separate_coeff_qcomposite(q::T)::Tuple{CFunction, QComposite} where {T <: QComposite}
     return q.coeff_fun, modify_coeff(q, q.qspace.c_one)
 end
-function separate_coeff_qcomposite(q::QSum)::Tuple{CFunction, QComposite} 
+function separate_coeff_qcomposite(q::AbstractQSum)::Tuple{CFunction, QComposite} 
     return q.qspace.c_one, q 
 end
 function separate_coeff_qcomposites(qs::Vector{QComposite}, qspace::QSpace)::Tuple{CFunction, Vector{QComposite}} 
@@ -11,7 +11,7 @@ function separate_coeff_qcomposites(qs::Vector{QComposite}, qspace::QSpace)::Tup
     new_vector::Vector{QComposite} = QComposite[]
     sizehint!(new_vector, length(qs))
     for q in qs 
-        if isa(q, QSum)
+        if isa(q, AbstractQSum)
             push!(new_vector, q)
         else
             coeff_fun *= q.coeff_fun 
@@ -72,13 +72,13 @@ function simplify_pair_composite(a::QExp, b::QExp, qspace::QSpace)::Tuple{Vector
         return CompositeBranch[], false, false
     end
 end
-function simplify_pair_composite(a::QSum, b::QSum, qspace::QSpace)::Tuple{Vector{CompositeBranch}, Bool, Bool}
+function simplify_pair_composite(a::AbstractQSum, b::AbstractQSum, qspace::QSpace)::Tuple{Vector{CompositeBranch}, Bool, Bool}
     return CompositeBranch[_make_branch(a*b, qspace)], true, false
 end
-function simplify_pair_composite(a::QSum, b::QAtomProduct, qspace::QSpace)::Tuple{Vector{CompositeBranch}, Bool, Bool}
+function simplify_pair_composite(a::AbstractQSum, b::QAtomProduct, qspace::QSpace)::Tuple{Vector{CompositeBranch}, Bool, Bool}
     return CompositeBranch[_make_branch(modify_expr(a, a.expr * b), qspace)], true, false
 end
-function simplify_pair_composite(b::QAtomProduct, a::QSum, qspace::QSpace)::Tuple{Vector{CompositeBranch}, Bool, Bool}
+function simplify_pair_composite(b::QAtomProduct, a::AbstractQSum, qspace::QSpace)::Tuple{Vector{CompositeBranch}, Bool, Bool}
     return CompositeBranch[_make_branch(modify_expr(a, b * a.expr), qspace)], true, false
 end
 

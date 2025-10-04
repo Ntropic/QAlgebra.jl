@@ -29,15 +29,20 @@ end
 # -------------------------------
 qobj_tag(::QAtomProduct)      = 0
 qobj_tag(::QSum)              = 1
-qobj_tag(::QCompositeProduct) = 2
-qobj_tag(::QExp)              = 3
-qobj_tag(::QLog)              = 4
-qobj_tag(::QCommutator)       = 5
-qobj_tag(::QPower)            = 6
-qobj_tag(::QRoot)             = 7
+qobj_tag(::QInt)              = 2
+qobj_tag(::QCompositeProduct) = 3
+qobj_tag(::QExp)              = 4
+qobj_tag(::QLog)              = 5
+qobj_tag(::QCommutator)       = 6
+qobj_tag(::QPower)            = 7
+qobj_tag(::QRoot)             = 8
 
 qatom_tag(::QTerm)     = 0
 qatom_tag(::QAbstract) = 1
+
+@inline aggregator_order_key(::Type{SumAggregator}) = 0
+@inline aggregator_order_key(::Type{IntegralAggregator}) = 1
+@inline aggregator_order_key(::Type{T}) where {T<:AbstractQAggregator} = 10
 
 # -------------------------------
 # Atom-level isless
@@ -86,10 +91,19 @@ end
 # Fallback for simple composites: compare inner exprs
 isless_same(a::QComposite, b::QComposite) = isless(a.expr, b.expr)
 
-# QSum: compare block metadata and inner expression
-@inline _total_indexes(q::QSum) = sum(length(block.indexes) for block in q.blocks)
+# AbstractQSum: compare block metadata and inner expression
+@inline _total_indexes(q::AbstractQSum) = sum(length(block.indexes) for block in q.blocks)
 
-function isless_same(a::QSum, b::QSum)
+function isless_same(a::AbstractQSum, b::AbstractQSum)
+    ta = aggregator_type(a)
+    tb = aggregator_type(b)
+    key_a = aggregator_order_key(ta)
+    key_b = aggregator_order_key(tb)
+    if key_a != key_b
+        return key_a < key_b
+    elseif ta != tb
+        return String(nameof(ta)) < String(nameof(tb))
+    end
     na_idx = _total_indexes(a)
     nb_idx = _total_indexes(b)
     _total_indexes(a) != _total_indexes(b) && return na_idx < nb_idx

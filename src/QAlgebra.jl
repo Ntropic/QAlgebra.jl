@@ -85,7 +85,7 @@ export reorder, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_
 export coeff, var_exponents, expand, substitute
 export contains_non_simple_CFunction
 export define_cabstract, define_ctype, list_cabstracts, list_ctypes
-export which_ensemble_acting
+export which_ensemble_acting, which_ensemble_acting!
 
 include("Cumulants.jl")
 using .Cumulants
@@ -101,10 +101,10 @@ export QubitPauli, QubitPM, Ladder
 
 include("QExpressions.jl")
 using .QExpressions
-export QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QCumulant, QAtomProduct, permutation, QSum, ∑, QCompositeProduct, diffQEq, d_dt
+export QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QCumulant, QAtomProduct, permutation, AbstractQSum, QSum, QIntegral, QInt, ∑, ∫, integral, QCompositeProduct, diffQEq, d_dt
 export QCommutator, QExp, QLog, QPower, power, QRoot, root, Expectation
 export Dag, Commutator, same_qspace
-export is_t_var, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, max_order_of_terms, contains_which_t_indexes, where_acting, iterate_QAtomProducts
+export is_t_var, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, max_order_of_terms, contains_which_t_indexes, where_acting, iter_QAtomProducts, iter_QInts
 export is_unitary, is_hermitian, substitution_properties_fulfilled
 export base_operators, QExprLookup 
 export string, latex_string
@@ -113,7 +113,7 @@ export @define, @define_basics, QExpr2CFunction, Cumulant, cumulant_string
 
 export contains_abstract, are_indexes_defined, which_summations_acting, which_summations_to_root
 export Substitution, --> 
-export reorder, reorder_full, reorder_time, neq, flatsums, complexsums 
+export reorder, reorder_full, reorder_time, neq, flatsums, complexsums , Sum2Int
 # Preindexing
 export QAtomOrdered, QNeutral, OrderbyOperator
 

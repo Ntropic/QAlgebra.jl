@@ -16,15 +16,10 @@ struct QSumDecollisionInds
     function QSumDecollisionInds(init::Bool, where_acting::Vector{BitVector}, op_tuples::Vector{Tuple{Int, Int}}, var_tuples::Vector{Tuple{Int, Int}}, var_inds::Vector{Int})
         new(init, where_acting, op_tuples, var_tuples, var_inds) 
     end
-    function QSumDecollisionInds(q::QSum)
+    function QSumDecollisionInds(q::AbstractQSum)
         qspace = q.qspace
         subspace_info = qspace.subspace_info
         where_acting::Vector{BitVector} = [falses(n) for n in subspace_info.how_many_sum_by_ensemble]
-        for subspace_ind in iter_all_indexes(q)
-            ensemble_ind, summation_ind = Index2Ensemble_and_Summation(subspace_ind, subspace_info)
-            @assert ensemble_ind != 0 "Found an invalid Summation index: $(Index2String(subspace_ind)). "
-            where_acting[ensemble_ind][summation_ind] = true 
-        end
         op_tuples = Vector{Tuple{Int, Int}}()
         var_tuples = Vector{Tuple{Int, Int}}()
         var_inds = Vector{Int}() #collect(1:length(qspace.params))
@@ -87,7 +82,7 @@ end
     end
 end
 
-function update_QSumDecollisionInds(q::QSum, d::QSumDecollisionInds)::Tuple{QSumDecollisionInds, Vector{ConstrainedIndexBlock}}
+function update_QSumDecollisionInds(q::AbstractQSum, d::QSumDecollisionInds)::Tuple{QSumDecollisionInds, Vector{ConstrainedIndexBlock}}
     qspace = q.qspace
     subspace_info = qspace.subspace_info
     param_info = qspace.param_info
@@ -106,7 +101,7 @@ function update_QSumDecollisionInds(q::QSum, d::QSumDecollisionInds)::Tuple{QSum
                 push!(new_op_tuples, (index.expanded, new_index.expanded))
                 push!(inds_tuples, (index, new_index))
                 if working_block === nothing
-                    working_block = _clone_block(original)
+                    working_block = copy(original)
                 end
                 _relocate_index!(working_block, pos, index, new_index)
             end
@@ -125,7 +120,7 @@ function update_QSumDecollisionInds(q::QSum, d::QSumDecollisionInds)::Tuple{QSum
 
     var_inds = collect(1:length(qspace.params))
     @inbounds for (index, new_index) in Base.Iterators.reverse(inds_tuples)
-        curr_perm_params = map_by_subspace(index, new_index, param_info)
+        curr_perm_params = map_by_subspace(new_index, index, param_info)
         var_inds = var_inds[curr_perm_params]
     end
     if d.init
@@ -137,19 +132,19 @@ function update_QSumDecollisionInds(q::QSum, d::QSumDecollisionInds)::Tuple{QSum
     return QSumDecollisionInds(true, new_where, vcat(new_op_tuples, d.op_tuples), var_tuples, var_inds), blocks
 end
 
-function decollision_QSum_product(q1::QSum, q2::QSum)::Vector{QComposite}
-    # assumes that each QSum is already internally decollisioned! 
+function _decollision_QSum_generic(q1::AbstractQSum{A}, q2::AbstractQSum) where {A<:AbstractQAggregator}
+    # assumes that each aggregator is already internally decollisioned!
     qspace = q1.qspace
     subspace_info = qspace.subspace_info
-    where_acting::Vector{BitVector} = which_summations_acting(q1, subspace_info) 
+    where_acting::Vector{BitVector} = which_summations_acting(q1, subspace_info)
     decollision = QSumDecollisionInds(false, where_acting, Tuple{Int, Int}[], Tuple{Int, Int}[], Int[])
     inner_terms = decollision_QSum(q2, decollision)
 
-    base_terms  = QComposite[]
-    nested_sums = QSum[]
+    base_terms = QComposite[]
+    nested_same = AbstractQSum{A}[]
     for term in inner_terms
-        if term isa QSum
-            push!(nested_sums, term)
+        if term isa AbstractQSum{A}
+            push!(nested_same, term)
         else
             push!(base_terms, term)
         end
@@ -158,14 +153,41 @@ function decollision_QSum_product(q1::QSum, q2::QSum)::Vector{QComposite}
     out_terms = QComposite[]
     if !isempty(base_terms)
         new_inner_expr = q1.expr * QExpr(qspace, base_terms)
-        push!(out_terms, QSum(qspace, new_inner_expr, q1.blocks))
+        push!(out_terms, QSum_like(q1, new_inner_expr, q1.blocks))
     end
-    for nested in nested_sums
+    for nested in nested_same
         merged_expr = q1.expr * nested.expr
         merged_blocks = merge_blocks(q1.blocks, nested.blocks)
-        push!(out_terms, QSum(qspace, merged_expr, merged_blocks))
+        push!(out_terms, QSum_like(q1, merged_expr, merged_blocks))
     end
     return out_terms
+end
+
+function _decollision_sum_with_other(qsum::AbstractQSum{SumAggregator}, qother::AbstractQSum{B}, other_first::Bool)::Vector{QComposite} where {B<:AbstractQAggregator}
+    qspace = qsum.qspace
+    subspace_info = qspace.subspace_info
+    where_acting::Vector{BitVector} = which_summations_acting(qsum, subspace_info)
+    decollision = QSumDecollisionInds(false, where_acting, Tuple{Int, Int}[], Tuple{Int, Int}[], Int[])
+    inner_terms = decollision_QSum(qother, decollision)
+    inner_expr = QExpr(qspace, inner_terms)
+
+    new_terms = QComposite[]
+    sizehint!(new_terms, length(qsum.expr.terms) * max(length(inner_expr.terms), 1))
+    for term in qsum.expr.terms
+        combined_expr = other_first ? _mul(inner_expr, term, _NOCHK) : _mul(term, inner_expr, _NOCHK)
+        append!(new_terms, combined_expr.terms)
+    end
+
+    new_expr = QExpr(qspace, new_terms)
+    return QComposite[QSum_like(qsum, new_expr, qsum.blocks)]
+end
+
+function decollision_QSum_product(q1::AbstractQSum{A}, q2::AbstractQSum{B})::Vector{QComposite} where {A<:AbstractQAggregator, B<:AbstractQAggregator}
+    if B === SumAggregator && A !== SumAggregator
+        return _decollision_sum_with_other(q2, q1, true)
+    else
+        return _decollision_QSum_generic(q1, q2)
+    end
 end
 
 """
@@ -175,38 +197,38 @@ Resolve collisions between summation indexes by relabelling clashing
 indices and repartitioning coefficients. The returned vector contains the
 collision-free terms that replace the original `QSum`.
 """
-function decollision_QSum(q::QSum)::Vector{QComposite} 
+function decollision_QSum(q::AbstractQSum{A})::Vector{QComposite} where {A<:AbstractQAggregator}
     decollision = QSumDecollisionInds(q)
     decollision, blocks = update_QSumDecollisionInds(q, decollision)
-    new_q = QSum(q.qspace, q.expr, blocks)
+    new_q = QSum_like(q, q.expr, blocks)
     return decollision_QSum(new_q, decollision, Val(:noupdate))
 end
-function decollision_QSum(q::QSum, decollision::QSumDecollisionInds, ::Val{:noupdate})::Vector{QComposite} #assume it is already updated 
+function decollision_QSum(q::AbstractQSum{A}, decollision::QSumDecollisionInds, ::Val{:noupdate})::Vector{QComposite} where {A<:AbstractQAggregator} #assume it is already updated 
     qspace = q.qspace
     base_terms  = QComposite[]
-    nested_sums = QSum[]
+    nested_same = AbstractQSum{A}[]
     inner = decollision_QSum(q.expr, decollision)
     for term in inner.terms
-        if term isa QSum
-            push!(nested_sums, term)
+        if term isa AbstractQSum{A}
+            push!(nested_same, term)
         else
             push!(base_terms, term)
         end
     end
     out_terms = QComposite[]
     if !isempty(base_terms)
-        push!(out_terms, QSum(qspace, QExpr(qspace, base_terms), q.blocks)) # no more clone blocks
+        push!(out_terms, QSum_like(q, QExpr(qspace, base_terms), q.blocks)) # no more clone blocks
     end
-    for nested in nested_sums
+    for nested in nested_same
         merged_blocks = merge_blocks(q.blocks, nested.blocks)
-        push!(out_terms, QSum(qspace, nested.expr, merged_blocks))
+        push!(out_terms, QSum_like(q, nested.expr, merged_blocks))
     end
     return out_terms
 end
 
-function decollision_QSum(q::QSum, decollision::QSumDecollisionInds)::Vector{QComposite}
+function decollision_QSum(q::AbstractQSum{A}, decollision::QSumDecollisionInds)::Vector{QComposite} where {A<:AbstractQAggregator}
     decollision, blocks = update_QSumDecollisionInds(q, decollision)
-    new_q = QSum(q.qspace, q.expr, blocks)
+    new_q = QSum_like(q, q.expr, blocks)
     return decollision_QSum(new_q, decollision, Val(:noupdate))
 end
 

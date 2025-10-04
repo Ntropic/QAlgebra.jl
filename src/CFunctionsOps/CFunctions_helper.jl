@@ -88,6 +88,9 @@ function abstract_from_abstractdef(defs::CAbstractDefinition)::CAbstract
     return CAbstract(defs.param_info, ComplexRational(1,0,1), defs.index)
 end
 
+@inline function _empty_where_defined(param_info::ParameterInfo)::Vector{BitVector}
+    return [falses(n) for n in param_info.how_many_by_ensemble]
+end
 """ 
     which_ensemble_acting(f::CFunction)::Vector{BitVector}
 
@@ -97,16 +100,16 @@ Their present can be checked via `contains_abstract(q)`.
 """
 function which_ensemble_acting(f::CFunction)::Vector{BitVector}
     where_non_trivial::Vector{BitVector} = [falses(n) for n in f.param_info.how_many_by_ensemble]
-    return which_ensemble_acting(f, where_non_trivial)
+    return which_ensemble_acting!(f, where_non_trivial)
 end
-function which_ensemble_acting(f::CFunction, where_non_trivial::Vector{BitVector})::Vector{BitVector}
+function which_ensemble_acting!(f::CFunction, where_non_trivial::Vector{BitVector})::Vector{BitVector}
     for leaf in leaf_iter(f) 
-        which_ensemble_acting_atom!(leaf, where_non_trivial)
+        which_ensemble_acting!(leaf, where_non_trivial)
     end
     return where_non_trivial
 end
-which_ensemble_acting_atom!(f::CAbstract, where_non_trivial::Vector{BitVector}) = error("Cannot determine the acting ensembles for a CAbstract. Use abstracts only in CType definitions.") 
-function which_ensemble_acting_atom!(f::CAtom, where_non_trivial::Vector{BitVector})::Vector{BitVector}
+which_ensemble_acting!(f::CAbstract, where_non_trivial::Vector{BitVector}) = error("Cannot determine the acting ensembles for a CAbstract. Use abstracts only in CType definitions.") 
+function which_ensemble_acting!(f::CAtom, where_non_trivial::Vector{BitVector})::Vector{BitVector}
     vexp_inds = f.var_exponents.nzind
     which_inds = f.param_info.indexed_parameter_indexes
     where_actings = f.param_info.where_acting_by_parameter
@@ -352,7 +355,7 @@ function common_denominator_form(v::Vector{ComplexRational})::Tuple{ComplexRatio
     return base, multiples
 end
 
-function common_exponent_offset(exponents::AbstractVector{<:AbstractVector{<:Integer}})::Vector{Int}
+function common_exponent_offset(exponents::AbstractVector{<:AbstractVector{<:Int}})::Vector{Int}
     @assert !isempty(exponents)
     n = length(exponents[1])
     @assert all(length(e) == n for e in exponents)

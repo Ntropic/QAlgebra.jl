@@ -240,7 +240,7 @@ function _expand(q::QExpr, ::Val{M}, ::Val{T}, order::Int, args...) where {M,T}
     end
 end
 
-function _expand(q::QSum, ::Val{M}, ::Val{T}, order::Int, args...) where {M,T}
+function _expand(q::AbstractQSum, ::Val{M}, ::Val{T}, order::Int, args...) where {M,T}
     inner, changed = _expand(q.expr, Val(M), Val(T), order, args...)
     if changed
         return only(modify_expr(q, inner, Val(:nodecollision))), true

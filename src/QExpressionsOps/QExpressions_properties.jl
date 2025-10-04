@@ -1,4 +1,4 @@
-export is_t_var, is_t, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, contains_which_t_indexes, max_order_of_terms, where_acting, which_abstracts, iterate_QAtomProducts
+export is_t_var, is_t, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, contains_which_t_indexes, max_order_of_terms, where_acting, which_abstracts, iter_QAtomProducts, iter_QInts
 export is_unitary, is_hermitian, substitution_properties_fulfilled, same_qspace, qspace_check
 import ..CFunctions: isnumeric, CFunction, CAtom
 import ..bubble_insert_unique!
@@ -36,7 +36,7 @@ function isnumeric(e::T) where T<:QMultiComposite
     return iszero(e.coeff_fun) 
 end
 
-function isnumeric(s::QSum)::Bool
+function isnumeric(s::AbstractQSum)::Bool
     return false # isnumeric(s.expr)
 end
 function isnumeric(expr::QExpr)::Bool
@@ -93,7 +93,7 @@ Does a QObj contain non Basic Quantum Objects, such as QExp, QLog or QMultiCompo
 contains_non_simple_QObj(q::QExpr, sum_is_simple::Bool=true)::Bool = any(t -> contains_non_simple_QObj(t, sum_is_simple), q.terms)
 contains_non_simple_QObj(q::T, sum_is_simple::Bool=true) where {T <: QComposite} = true 
 contains_non_simple_QObj(q::QAtomProduct, sum_is_simple::Bool=true)::Bool = false 
-function contains_non_simple_QObj(q::QSum, sum_is_simple::Bool=true)::Bool 
+function contains_non_simple_QObj(q::AbstractQSum, sum_is_simple::Bool=true)::Bool 
     if sum_is_simple
         return any(x -> contains_non_simple_QObj(x, sum_is_simple), q.expr)
     end 
@@ -108,7 +108,7 @@ Checks if it contains any non-simple QObjects, QAbstracts or non-simple CFunctio
 contains_non_simple(q::QExpr, sum_is_simple::Bool=true)::Bool = any(t -> contains_non_simple(t, sum_is_simple), q.terms)
 contains_non_simple(q::T, sum_is_simple::Bool=true) where {T <: QComposite} = true 
 contains_non_simple(q::QAtomProduct, sum_is_simple::Bool=true)::Bool = contains_non_simple_CFunction(q.coeff_fun) || contains_abstract(q)
-function contains_non_simple(q::QSum, sum_is_simple::Bool=true)::Bool
+function contains_non_simple(q::AbstractQSum, sum_is_simple::Bool=true)::Bool
     if sum_is_simple
         return any(t -> contains_non_simple(t, sum_is_simple), q.expr)
     end
@@ -218,7 +218,7 @@ end
 function contains_c_indexes(q::M, indexes::Vector{Int})::Bool where M <: QMultiComposite
     return contains_c_indexes(q.coeff_fun) || any(t -> contains_c_indexes(x, indexes), q.expr)
 end
-contains_c_indexes(q::QSum, indexes::Vector{Int})::Bool = any(q -> contains_c_indexes(q, indexes), q.expr) 
+contains_c_indexes(q::AbstractQSum, indexes::Vector{Int})::Bool = any(q -> contains_c_indexes(q, indexes), q.expr) 
 contains_c_indexes(q::diffQEq, indexes::Vector{Int})::Bool = contains_c_indexes(q.expr, indexes)
 
 
@@ -238,7 +238,7 @@ end
 function contains_t_indexes(q::M, indexes::Vector{Int}, which_t::Int=-1)::Bool where M <: QMultiComposite
     return contains_c_indexes(q.coeff_fun) || any(t -> contains_t_indexes(x, indexes, which_t), q.expr)
 end
-contains_t_indexes(q::QSum, indexes::Vector{Int}, which_t::Int=-1)::Bool = any(q -> contains_t_indexes(q, indexes, which_t), q.expr) 
+contains_t_indexes(q::AbstractQSum, indexes::Vector{Int}, which_t::Int=-1)::Bool = any(q -> contains_t_indexes(q, indexes, which_t), q.expr) 
 contains_t_indexes(q::diffQEq, indexes::Vector{Int}, which_t::Int=-1)::Bool = contains_t_indexes(q.expr, indexes, which_t) || contains_t_indexes(q.left_hand_side, which_t)
 function get_t_indexes(param_info::ParameterInfo, t_ind::Int=-1)::Vector{Int} 
     if t_ind == -1 
@@ -290,12 +290,22 @@ end
 
 ###################
 
-iterate_QAtomProducts(q::QExpr) = Iterators.flatten((iterate_QAtomProducts(term) for term in q.terms))
-iterate_QAtomProducts(prod::QAtomProduct) = (prod,)
-iterate_QAtomProducts(comp::QComposite) = iterate_QAtomProducts(comp.expr)
-iterate_QAtomProducts(items::AbstractVector) = Iterators.flatten((iterate_QAtomProducts(item) for item in items))
-iterate_QAtomProducts(items::Tuple) = Iterators.flatten((iterate_QAtomProducts(item) for item in items))
-iterate_QAtomProducts(eq::diffQEq) = Iterators.flatten((iterate_QAtomProducts(eq.left_hand_side), iterate_QAtomProducts(eq.expr)))
+iter_QAtomProducts(q::QExpr) = Iterators.flatten((iter_QAtomProducts(term) for term in q.terms))
+iter_QAtomProducts(prod::QAtomProduct) = (prod,)
+iter_QAtomProducts(comp::QComposite) = iter_QAtomProducts(comp.expr)
+iter_QAtomProducts(items::AbstractVector) = Iterators.flatten((iter_QAtomProducts(item) for item in items))
+iter_QAtomProducts(items::Tuple) = Iterators.flatten((iter_QAtomProducts(item) for item in items))
+iter_QAtomProducts(eq::diffQEq) = Iterators.flatten((iter_QAtomProducts(eq.left_hand_side), iter_QAtomProducts(eq.expr)))
+
+iter_QInts(q::QExpr) = Iterators.flatten((iter_QInts(term) for term in q.terms))
+iter_QInts(sum::AbstractQSum{IntegralAggregator}) = (sum,)
+iter_QInts(sum::AbstractQSum) = iter_QInts(sum.expr)
+iter_QInts(comp::QComposite) = iter_QInts(comp.expr)
+iter_QInts(comp::QMultiComposite) = iter_QInts(comp.expr)
+iter_QInts(items::AbstractVector) = Iterators.flatten((iter_QInts(item) for item in items))
+iter_QInts(items::Tuple) = Iterators.flatten((iter_QInts(item) for item in items))
+iter_QInts(eq::diffQEq) = Iterators.flatten((iter_QInts(eq.left_hand_side), iter_QInts(eq.expr)))
+iter_QInts(::QObj) = ()
 
 function simple_isa(q::QExpr, type::Type)::Bool
     return length(q) == 1 && isa(q.terms[1], type)
@@ -324,7 +334,7 @@ end
 # Optionally, define length and eltype.
 iszero(q::QExpr) = length(q.terms) == 0 || all(iszero, q.terms)
 iszero(q::QAtomProduct) = iszero(q.coeff_fun)
-iszero(q::QSum) = iszero(q.expr)
+iszero(q::AbstractQSum) = iszero(q.expr)
 iszero(q::T) where T<:QComposite = iszero(q.coeff_fun) || iszero(q.expr)
 iszero(q::T) where T<:QMultiComposite = iszero(q.coeff_fun) || any(iszero, q.expr) 
 
@@ -337,6 +347,17 @@ function where_neutral(q::QAbstract, qspace::QSpace)::BitVector
     return q.operator_type.expanded_ss_acting   # should never be modified! copy would be safer, but slower
 end
 
+"""
+    where_acting(q::QObj)
+
+Return a `BitVector` marking the operator slots of the expanded SubSpace elements where the
+object acts non-trivially (expanded meaning we distinguish between different ensemble indexes=). 
+The mask is always expressed in the operator basis of `q.qspace`, 
+so coefficient functions are intentionally ignored — their
+
+parameter-support lives in `CFunctionsOps.where_acting` and must be queried
+separately when required.
+"""
 @inline function where_acting(op_indices::Vector{Is}, I_op::Vector{Is})::BitVector
     n = length(op_indices)
     out = BitVector(undef, n)
@@ -375,7 +396,7 @@ end
 function where_acting(q::T)::BitVector where {T<:QMultiComposite}
     return mapreduce(expr -> where_acting(expr, qspace), .|, q.expr)
 end
-function where_acting(q::QSum)::BitVector
+function where_acting(q::AbstractQSum)::BitVector
     acting = where_acting(q.expr)
     for ind in iter_all_indexes(q)
         acting[expanded(ind)] = true
@@ -526,7 +547,8 @@ function ==(a::QExpr, b::QExpr)
     end
     return all([ai == bi for (ai, bi) in zip(a, b)])
 end
-function ==(a::QSum, b::QSum)
+function ==(a::AbstractQSum, b::AbstractQSum)
+    aggregator_type(a) == aggregator_type(b) || return false
     a.qspace == b.qspace || return false
     a.eq_indexes == b.eq_indexes     || return false
     a.neq_blocks == b.neq_blocks || return false

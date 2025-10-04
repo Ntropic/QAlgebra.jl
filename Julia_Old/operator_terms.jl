@@ -1160,7 +1160,7 @@ function term_to_abstract_term(term::Term, vars_dict::Dict{String,Int}, summed::
     # e.g. for the term +x*y*z*x*y*z the vector [0, 0, 2, 2, 2] is returned
     spin_orders::Vector{Int} = zeros(Int, 3)
     indices = term.spin_indices  # transform into numbers 
-    inds = [Int(i) for i in indices]
+    inds = Int[Int(i) for i in indices]
 
     min_ind_ind = Int(min_ind)
     inds = inds .- min_ind_ind # min ind is zero

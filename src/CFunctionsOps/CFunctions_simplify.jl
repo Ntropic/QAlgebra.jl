@@ -438,19 +438,19 @@ function divisors(a::CLog)::Vector{Int}
     return [a.coeff.c]
 end
 
-function vec_multiply(x::CAtom, vector::AbstractVector{<:Integer})::CAtom
+function vec_multiply(x::CAtom, vector::AbstractVector{<:Int})::CAtom
     return CAtom(x.param_info, x.coeff, x.var_exponents + vector)
 end
-function vec_multiply(x::T, vector::AbstractVector{<:Integer})::T where T <: CComposite
+function vec_multiply(x::T, vector::AbstractVector{<:Int})::T where T <: CComposite
     new_expr = [vec_multiply(t, vector) for t in x.expr]
     return modify_expr(x, new_expr)
 end
-function vec_multiply(x::CRational, vector::AbstractVector{<:Integer})::CRational
+function vec_multiply(x::CRational, vector::AbstractVector{<:Int})::CRational
     new_num = vec_multiply(x.numer, vector)
     new_den = vec_multiply(x.denom, vector)
     return CRational(x.param_info, new_num, new_den, Val(:nosimp))
 end
-function vec_multiply(x::CProd, vector::AbstractVector{<:Integer})::CProd
+function vec_multiply(x::CProd, vector::AbstractVector{<:Int})::CProd
     expr = copy(x.expr)
     expr[1] = vec_multiply(expr[1], vector)
     return CProd(x.param_info, x.coeff, expr, Val(:nosimp)) 

@@ -93,6 +93,10 @@ struct ConstrainedIndexBlock
 end
 Base.length(block::ConstrainedIndexBlock) = length(block.indexes)
 Base.getindex(block::ConstrainedIndexBlock, i::Int) = block.indexes[i]
+copy_empty(block::ConstrainedIndexBlock)::ConstrainedIndexBlock = ConstrainedIndexBlock(block.outer, block.ensemble_size, block.how_many_non_sum)
+Base.copy(block::ConstrainedIndexBlock)::ConstrainedIndexBlock = ConstrainedIndexBlock(
+    block.outer,
+    block.ensemble_size, block.how_many_non_sum, copy(block.indexes), map(copy, block.constraints))
 
 function push_index_trues!(block::ConstrainedIndexBlock, idx::SubSpaceIndex, summation::Int)::ConstrainedIndexBlock # assume idx belongs into this block! 
     # find correct location in block.indexes where to insert idx (bubble sort)
@@ -256,7 +260,7 @@ Enumerate all ways to resolve allowed equalities for `block` against the provide
 function neq_expand(block::ConstrainedIndexBlock, where_defined::BitVector)::Vector{NeqBranch}
     length(where_defined) == block.ensemble_size || error("where_defined length must equal block ensemble size.")
     results = NeqBranch[]
-    _neq_expand!(results, _clone_block(block), copy(where_defined), 1, NeqAction[])
+    _neq_expand!(results, copy(block), copy(where_defined), 1, NeqAction[])
     return results
 end
 
@@ -277,7 +281,7 @@ function _neq_expand!(results::Vector{NeqBranch}, block::ConstrainedIndexBlock, 
     end
 
     @inbounds for col in candidates
-        eq_block = _clone_block(block)
+        eq_block = copy(block)
         eq_where = copy(where_defined)
         eq_idx = eq_block.indexes[row_idx]
         deleteat!(eq_block.indexes, row_idx)
@@ -292,7 +296,7 @@ function _neq_expand!(results::Vector{NeqBranch}, block::ConstrainedIndexBlock, 
         _neq_expand!(results, eq_block, eq_where, row_idx, new_actions)
     end
 
-    next_block = _clone_block(block)
+    next_block = copy(block)
     if !isempty(candidates)
         row_next = next_block.constraints[row_idx]
         for col in candidates
@@ -310,14 +314,3 @@ end
         row[a], row[b] = row[b], row[a]
     end
 end
-
-function _clone_block(block::ConstrainedIndexBlock)::ConstrainedIndexBlock
-    return ConstrainedIndexBlock(
-        block.outer,
-        block.ensemble_size,
-        block.how_many_non_sum,
-        copy(block.indexes),
-        BitVector[BitVector(row) for row in block.constraints],
-    )
-end
-clone_blocks(blocks::Vector{ConstrainedIndexBlock}) = [_clone_block(block) for block in blocks]

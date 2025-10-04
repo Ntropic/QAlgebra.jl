@@ -33,8 +33,9 @@ abstract type QAtom <: QObj end # elementary operator definitions
 """ 
     QComposite
 
-The abstract type `QComposite` is a subtype of `QObj` and represents composite expressions, 
-such as QSum and QAtomProduct which consist of QAtom, QAbstract or QComposite objects themselves. 
+The abstract type `QComposite` is a subtype of `QObj` and represents composite expressions,
+such as `AbstractQSum` (and its aliases `QSum`/`QIntegral`) and `QAtomProduct`, which consist of `QAtom`,
+`QAbstract` or `QComposite` objects themselves.
 """
 abstract type QComposite <: QObj end  # products and sums of operator definitions
 """ 
@@ -176,7 +177,6 @@ struct diffQEq <: QParent
 end
 
 
-
 """
     diffQEq(lhs::QTerm, rhs::QExpr, qspace::QSpace)
 
@@ -211,7 +211,7 @@ function diffQEq(qspace::QSpace, left_hand_side::QAtomProduct, expr::QExpr)
     left_hand_side, expr = _normalize_diff_time(qspace, left_hand_side, expr)
     left_hand_side = Expectation(left_hand_side)
     expr = Expectation(expr)
-    @assert !(contains_non_simple_QObj(expr)) "Differential requires simple QSums, i.e. no QSums in QComposites (such as QExp, QLog...) and no nested QSums (multiple and complex indexing at the same level is possible, and immediate nesting is automatically simplified to composite indexes)."
+    @assert !(contains_non_simple_QObj(expr)) "Differential requires simple AbstractQSums, i.e. no aggregators in QComposites (such as QExp, QLog...) and no nested AbstractQSums (multiple and complex indexing at the same level is possible, and immediate nesting is automatically simplified to composite indexes)."
     if !contains_abstract(left_hand_side) && !contains_abstract(expr)
         return reorder(neq(diffQEq(qspace, left_hand_side, expr, Val(:nosimp))))
     else

@@ -108,7 +108,7 @@ function _parse_time_token(token::AbstractString)::Int
     m === nothing && error("Invalid time index token '$token'. Expected forms like :t, :t1, :t_2.")
     return parse(Int, m.captures[1])
 end
-@inline function _parse_time_token(token::Integer)::Int
+@inline function _parse_time_token(token::Int)::Int
     token < 0 && error("Time indexes must be non-negative, got $token.")
     return Int(token)
     return _ResolvedIndexSubstitution(from, to)
@@ -307,7 +307,7 @@ function _substitute(targ::T, sp::Substitution) where {T<:QComposite}
     return modify_expr(targ, _substitute(targ.expr, sp))
 end
 
-function _substitute(target::QSum, sp::Substitution)
+function _substitute(target::AbstractQSum, sp::Substitution)
     new_expr = _substitute(target.expr, sp)
     new_expr === target.expr && return QComposite[target]
     return modify_expr(target, new_expr, Val(:nodecollision))
@@ -418,7 +418,7 @@ function _substitute(target::QAtomProduct, ctx::TimeSubContext)::QAtomProduct
     return modify_coeff_expr(target, new_coeff, new_expr)
 end
 
-function _substitute(target::QSum, ctx::TimeSubContext)::QSum 
+function _substitute(target::AbstractQSum, ctx::TimeSubContext)::AbstractQSum 
     new_expr = _substitute( target.expr, ctx)
     return only(modify_expr(target, new_expr))
 end
@@ -512,7 +512,7 @@ function _substitute(target::QAtomProduct, ctx::IndexSubContext)::QAtomProduct
 end
 
 
-function _substitute(target::QSum, ctx::IndexSubContext)::QSum
+function _substitute(target::AbstractQSum, ctx::IndexSubContext)::AbstractQSum
     new_expr = _substitute(target.expr, ctx)
     qspace = target.qspace
     info = qspace.subspace_info
@@ -520,11 +520,11 @@ function _substitute(target::QSum, ctx::IndexSubContext)::QSum
     # ensemble != 0 || error("Index $(Index2String(ctx.from, info)) does not belong to an ensemble subspace.")
     target_block = target.blocks[ensemble]
     positions = findall(idx -> idx.expanded == ctx.from_exp, target_block.indexes)
-    isempty(positions) && return QSum(qspace, new_expr, target.blocks)
+    isempty(positions) && return QSum_like(target, new_expr, target.blocks)
 
     info.ensemble_index_by_outer_index[ctx.to.outer] == ensemble || error("Cannot substitute index $(Index2String(ctx.from, info)) with $(Index2String(ctx.to, info)): different ensemble blocks.")
 
-    blocks = clone_blocks(target.blocks)
+    blocks = copy.(target.blocks)
     block = blocks[ensemble]
 
     old_inner = ctx.from.inner
@@ -548,7 +548,7 @@ function _substitute(target::QSum, ctx::IndexSubContext)::QSum
         block.constraints[:] = sorted_constraints
     end
 
-    return QSum(qspace, new_expr, blocks)
+    return QSum_like(target, new_expr, blocks)
 end
 
 function _substitute(target::T, ctx::IndexSubContext)::T where T <: QComposite 

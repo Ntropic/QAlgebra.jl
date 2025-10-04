@@ -1,14 +1,64 @@
-function _sum_index_subscript(indexes::Vector{SubSpaceIndex}, info::SubSpaceInfo; do_latex::Bool=false)
-    isempty(indexes) && return do_latex ? "\\sum" : "∑"
+@inline aggregator_symbol(::Type{SumAggregator}, n::Int; do_latex::Bool=false) = do_latex ? "\\sum" : "∑"
+@inline function aggregator_symbol(::Type{IntegralAggregator}, n::Int; do_latex::Bool=false)
+    count = max(n, 1)
+    if do_latex
+        count == 1 && return "\\int"
+        count == 2 && return "\\iint"
+        count == 3 && return "\\iiint"
+        return "\\idotsint"
+    else
+        count == 1 && return "∫"
+        count == 2 && return "∬"
+        count == 3 && return "∭"
+        return repeat("∫", count)
+    end
+end
+@inline function aggregator_symbol(::Type{A}, n::Int; do_latex::Bool=false) where {A<:AbstractQAggregator}
+    error("No aggregator symbol defined for " * string(nameof(A)))
+end
+
+@inline aggregator_symbol(term::AbstractQSum, indexes::Vector{SubSpaceIndex}; do_latex::Bool=false) =
+    aggregator_symbol(aggregator_type(term), length(indexes); do_latex=do_latex)
+
+function _sum_index_subscript(term::AbstractQSum, indexes::Vector{SubSpaceIndex}, info::SubSpaceInfo; do_latex::Bool=false)
+    base = aggregator_symbol(term, indexes; do_latex=do_latex)
+    isempty(indexes) && return base
     labels = Index2String.(indexes, Ref(info))
+    is_integral = aggregator_type(term) === IntegralAggregator
     if do_latex
         body = join(labels, ",")
-        return "\\sum_{" * body * "}"
+        if is_integral
+            density = raw"\rho_{" * body * "}"
+            return base * "_{" * density * "}"
+        else
+            return base * "_{" * body * "}"
+        end
     else
         seq = join(labels, ",")
-        sub = length(labels) == 1 ? str2sub(seq) : str2sub("(" * seq * ")")
-        return "∑" * sub
+        formatted = length(labels) == 1 ? seq : "(" * seq * ")"
+        if is_integral
+            density = "ρ" * formatted
+            return base * str2sub(density)
+        else
+            sub = str2sub(formatted)
+            return base * sub
+        end
     end
+end
+
+function _integral_measure(term::AbstractQSum, indexes::Vector{SubSpaceIndex}, info::SubSpaceInfo; do_latex::Bool=false)
+    aggregator_type(term) === IntegralAggregator || return ""
+    isempty(indexes) && return ""
+    pieces = String[]
+    for idx in indexes
+        label = Index2String(idx, info)
+        if do_latex
+            push!(pieces, raw"\,\mathrm{d}" * label)
+        else
+            push!(pieces, " d" * label)
+        end
+    end
+    return join(pieces, "")
 end
 function _format_superscript(content::AbstractString; do_latex::Bool)
     isempty(content) && return ""
@@ -57,9 +107,10 @@ function eq_counter_and_neq_indexes(blocks::Vector{ConstrainedIndexBlock}, where
     return (eq_counter, neq_constraints)
 end
 
-function sum_symbol_str(term::QSum, where_acting::Vector{BitVector}; do_latex::Bool=false)
+function sum_symbol_str(term::AbstractQSum, where_acting::Vector{BitVector}; do_latex::Bool=false)
     subspace_info = term.qspace.subspace_info
-    base = _sum_index_subscript(all_indexes(term), subspace_info; do_latex=do_latex)
+    indexes = all_indexes(term)
+    base = _sum_index_subscript(term, indexes, subspace_info; do_latex=do_latex)
     eq_counter, neq_constraints = eq_counter_and_neq_indexes(term.blocks, where_acting, subspace_info) 
     sup = ""
     # three cases eq_counter == 0 => all neq 
@@ -73,5 +124,5 @@ function sum_symbol_str(term::QSum, where_acting::Vector{BitVector}; do_latex::B
         neq_condition_strs = _format_neq_condition.(neq_constraints, Ref(subspace_info), do_latex=do_latex)
         sup = _format_superscript(join(neq_condition_strs, ","), do_latex=do_latex)
     end
-    return base * sup
+    return base * sup, _integral_measure(term, indexes, subspace_info; do_latex=do_latex)
 end

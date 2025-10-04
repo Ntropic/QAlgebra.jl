@@ -119,7 +119,7 @@ end
 
 SparsePermutation(len::Int) = SparsePermutation(len, spzeros(Int, len))
 
-function sparseperm(perm::AbstractVector{<:Integer})
+function sparseperm(perm::AbstractVector{<:Int})
     n = length(perm)
     idxs = Int[]
     vals = Int[]

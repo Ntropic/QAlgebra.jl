@@ -831,7 +831,7 @@ function index_dict_to_vector(Dict)::Vector
     key_type = keytype(Dict)
     val_type = valtype(Dict)
     # key_type needs to be an integer
-    if !(key_type <: Integer) # <: is a subtype operator
+    if !(key_type <: Int) # <: is a subtype operator
         error("Key type is not an integer")
     end
     vec::Vector{val_type} = Vector{val_type}(undef, length(Dict))
