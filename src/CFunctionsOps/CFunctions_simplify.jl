@@ -1,6 +1,7 @@
 function simplify end
 
 simplify(s::CAtom) = s
+simplify(s::CAtomIndexed) = s
 simplify(s::CAbstract) = s
 simplify(s::CCustomType) = s
 simplify(s::CSum)  = simplify_CSum(s.param_info, s.expr)
@@ -58,6 +59,15 @@ function simplify_CPower(param_info::ParameterInfo, coeff::ComplexRational, x::C
         if _isint(q)
             n = Int(q)
             return simplify( coeff * CAtom(x.param_info, x.coeff^n, x.var_exponents .* n) )
+        else
+            return CPower(param_info, coeff, x, q, Val(:nosimp))
+        end
+
+    elseif x isa CAtomIndexed
+        if _isint(q)
+            n = Int(q)
+            new_coeff = coeff * (x.coeff^n)
+            return CAtomIndexed(x.param_info, new_coeff, x.var_exponents .* n, x.indexes)
         else
             return CPower(param_info, coeff, x, q, Val(:nosimp))
         end
@@ -152,7 +162,7 @@ function simplify_CRational(param_info::ParameterInfo, n::CFunction, d::CFunctio
     # if denom now has exactly one term, collapse back to a sum
     if length(d) == 0 || iszero(d)
         error("Dividing by zero: n=$n, d=$d.")
-    elseif isa(d, CAtom)
+    elseif isa(d, Union{CAtom, CAtomIndexed})
         if isnumeric(d)
             return n/d.coeff
         end

@@ -1,5 +1,6 @@
 module QExpressions
 using ..QSpaces
+using ..QSpaces: SubSpaceIndex
 using ..CFunctions
 import ..CFunctions: expand
 using ..StringUtils
@@ -304,7 +305,7 @@ include("QExpressionsOps/QSum_decollision.jl")
 include("QExpressionsOps/OrderedQExpressions.jl")
 include("QExpressionsOps/QExpressions_iterate.jl")
 
-import ..CFunctions: define_cabstract, define_ctype, list_cabstracts, list_ctypes, c_abstract_exists
+import ..CFunctions: define_cabstract, define_ctype, define_cintegral, list_cabstracts, list_ctypes, list_cintegrals, c_abstract_exists
 
 function QExpr2CFunction(q::QExpr)::CFunction 
     if isnumeric(q) 
@@ -320,6 +321,50 @@ function QExpr2CFunction(q::QExpr)::CFunction
         error("Requires numeric QExpr, no quantum operators present.") 
     end 
 end 
+
+
+function _extract_cfunction(qspace::QSpace, expr::QExpr, context::AbstractString)
+    expr.qspace === qspace || error("$context expects a QExpr belonging to the provided QSpace.")
+    length(expr.terms) == 1 || error("$context requires a QExpr with exactly one term.")
+    term = expr.terms[1]
+    isnumeric(term) || error("$context expects the term to be neutral (no quantum operators).")
+    return QExpr2CFunction(expr)
+end
+
+define_cabstract(qspace::QSpace, name::Union{Symbol,String}) = define_cabstract(qspace.param_info, name)
+
+function define_ctype(qspace::QSpace, name::Union{Symbol,String}, expr::QExpr)
+    cfun = _extract_cfunction(qspace, expr, "define_ctype")
+    define_ctype(qspace.param_info, name, cfun)
+end
+
+function define_ctype(name::Union{Symbol,String}, expr::QExpr)
+    qspace = expr.qspace
+    cfun = _extract_cfunction(qspace, expr, "define_ctype")
+    define_ctype(qspace.param_info, name, cfun)
+end
+
+function define_cintegral(qspace::QSpace, expr::QExpr, indexes::Vector{Vector{SubSpaceIndex}})
+    cfun = _extract_cfunction(qspace, expr, "define_cintegral")
+    define_cintegral(qspace.param_info, cfun, indexes)
+end
+
+function define_cintegral(qspace::QSpace, expr::QExpr)
+    cfun = _extract_cfunction(qspace, expr, "define_cintegral")
+    define_cintegral(qspace.param_info, cfun)
+end
+
+function define_cintegral(expr::QExpr, indexes::Vector{Vector{SubSpaceIndex}})
+    qspace = expr.qspace
+    cfun = _extract_cfunction(qspace, expr, "define_cintegral")
+    define_cintegral(qspace.param_info, cfun, indexes)
+end
+
+function define_cintegral(expr::QExpr)
+    qspace = expr.qspace
+    cfun = _extract_cfunction(qspace, expr, "define_cintegral")
+    define_cintegral(qspace.param_info, cfun)
+end
 
 """
     @define qspace, name
@@ -352,7 +397,7 @@ macro define(qspace, name, fun=nothing)
         return esc(quote
             # Register and build a QExpr for the new abstract
             const $(n_sym)::QExpr = begin
-                define_cabstract($qspace.param_info, $n_str)
+                define_cabstract($qspace, $n_str)
                 # Build the QExpr representing this abstract
                 let __ab__ = $qspace.param_info.abstract_definitions[end]
                     QExpr($qspace, [
@@ -369,7 +414,7 @@ macro define(qspace, name, fun=nothing)
         # 2) @define ss Name fun
         # fun is provided by the caller; don’t eval it in the macro. Convert at runtime.
         return esc(quote
-            const $(ctype_sym) = define_ctype($qspace.param_info, $n_str, QExpr2CFunction($fun))
+            const $(ctype_sym) = define_ctype($qspace, $n_str, $fun)
             if $(ctype_sym).has_abstract
                 # Constructor 3: Name(qs::QExpr...)
                 function $(n_sym)(qs::QExpr...)

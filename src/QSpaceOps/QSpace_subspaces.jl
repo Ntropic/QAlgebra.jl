@@ -1,3 +1,5 @@
+import ..SubSpaceIndex
+
 """
     Ensemble(num_operator_indexes, num_sum_indexes, operator_set; kwargs...)
     Ensemble(num_operator_indexes, operator_set; kwargs...)
@@ -347,27 +349,19 @@ label_2_outer_inner_expanded(info::SubSpaceInfo, label::String) = label_2_outer_
 
 
 # Specifies a subsystem location
-struct SubSpaceIndex
-    outer::Int      # subspace index
-    inner::Int      # index in ensemble
-    expanded::Int  
-    function SubSpaceIndex(outer::Int, inner::Int, expanded::Int)
-        return new(outer, inner, expanded)
-    end
-    function SubSpaceIndex(expanded::Int, info::SubSpaceInfo)
-        outer,inner = expanded_2_outer_inner(info, expanded)
-        return new(outer, inner, expanded)
-    end
-    function SubSpaceIndex(outer::Int, inner::Int, info::SubSpaceInfo)
-        expanded = outer_inner_2_expanded(info, outer, inner)
-        return new(outer, inner, expanded)
-    end
-    function SubSpaceIndex(label::Union{String,Symbol}, info::SubSpaceInfo)      
-        outer, inner, expanded = label_2_outer_inner_expanded(info, label)
-        return new(outer, inner, expanded) 
-    end
+#SubSpaceIndex(outer::Int, inner::Int, expanded::Int) = SubSpaceIndex(outer, inner, expanded)
+function SubSpaceIndex(expanded::Int, info::SubSpaceInfo)
+    outer, inner = expanded_2_outer_inner(info, expanded)
+    SubSpaceIndex(outer, inner, expanded)
 end
-Base.copy(x::SubSpaceIndex)::SubSpaceIndex = SubSpaceIndex(x.outer, x.inner, x.expanded)
+function SubSpaceIndex(outer::Int, inner::Int, info::SubSpaceInfo)
+    expanded = outer_inner_2_expanded(info, outer, inner)
+    SubSpaceIndex(outer, inner, expanded)
+end
+function SubSpaceIndex(label::Union{String,Symbol}, info::SubSpaceInfo)
+    outer, inner, expanded = label_2_outer_inner_expanded(info, label)
+    SubSpaceIndex(outer, inner, expanded)
+end
 @inline outer(i::SubSpaceIndex)    = i.outer
 @inline inner(i::SubSpaceIndex)    = i.inner
 @inline expanded(i::SubSpaceIndex) = i.expanded

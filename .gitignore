@@ -29,3 +29,8 @@ Manifest.toml
 *.md
 Markdown/
 .julia_depot/
+
+To_Do.md
+BCH_Reference/
+Markdown/
+Julia_Old/

@@ -79,14 +79,15 @@ export int_exponent2str, exponentdag2str
 
 include("CFunctions.jl")
 using .CFunctions
-export CFunction, CAbstractDefinition, CTypeDefinition, ParameterInfo, add_cabstract!, add_ctype!, CAbstract, CCustomType, CAtom, CSum, CRational, CProd, CExp, CLog
-export CMatrix, CVector, CPower
+CAbstract, CIntegral, CCustomType, CAtom, CSum, CRational, CProd, CExp, CLog
+export define_cabstract, define_ctype, define_cintegral
+export CMatrix, CVector, CPower, CAtomIndexed
 export reorder, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
 export coeff, var_exponents, expand, substitute
 export contains_non_simple_CFunction
-export define_cabstract, define_ctype, list_cabstracts, list_ctypes
+export list_cabstracts, list_ctypes, list_cintegrals
 export where_acting, where_acting!, which_ensemble_acting, which_ensemble_acting!
-export which_params_acting, which_params_acting!, separate_by_cond
+export which_params_acting, which_params_acting!, separate_by_cond, with_concrete_indexes, parameter_index_tuples
 
 include("Cumulants.jl")
 using .Cumulants
@@ -94,7 +95,7 @@ using .Cumulants
 include("QSpace.jl")
 using .QSpaces
 export OperatorSet, max_operator_magnitude
-export Ensemble, SubSpace, SubSpaceDefinitions 
+export Ensemble, SubSpace, SubSpaceDefinitions, ConcreteIndexes 
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
 export Parameter, ParameterInfo, ParameterDefinitions
 export QSpace
@@ -116,7 +117,7 @@ export contains_abstract, are_indexes_defined, which_summations_acting, which_su
 export Substitution, --> 
 export reorder, reorder_full, reorder_time, neq, flatsums, complexsums , Sum2Int
 # Preindexing
-export QAtomOrdered, QNeutral, OrderbyOperator
+export QAtomOrdered, QAtomIndexed, QNeutral, OrderbyOperator
 
 #include("Indexing.jl")
 #include("Combinatorics.jl")

@@ -28,7 +28,7 @@ end
 is_abs_one(c::ComplexRational)::Bool = (abs(c.a) == abs(c.c))
 function is_abs_one(c::CFunction)
     if isnumeric(c)
-        if isa(c, CAtom)
+        if isa(c, Union{CAtom, CAtomIndexed})
             return is_abs_one(c.coeff)
         elseif isa(c, CSum)
             if length(c) == 1
@@ -120,10 +120,23 @@ function stringer(a::CAtom; do_latex::Bool=false, do_frac::Bool=true, braced::Bo
     end
 end
 
+function stringer(a::CAtomIndexed; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=true)
+    return stringer(CAtom(a.param_info, a.coeff, a.var_exponents); do_latex=do_latex, do_frac=do_frac, braced=braced)
+end
+
 function stringer(C::CAbstract; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=false)
     base = do_latex ? C.abstract_def.latex : C.abstract_def.name
     base = exponentdag2str(base, C.exponent, C.dag; do_latex=do_latex)
     return with_coeff(C.coeff, base; do_latex=do_latex)
+end
+
+function stringer(I::CIntegral; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=false)
+    def = integral_definition(I)
+    sig_int, body_int = stringer(def.expr; do_latex=do_latex, do_frac=do_frac, braced=true)
+    base = do_latex ? raw"w_{\rho}" : "w_ρ"
+    inner = (sig_int ? "-" : "") * body_int
+    wrapper = base * "(" * inner * ")"
+    return with_coeff(I.coeff, wrapper; do_latex=do_latex)
 end
 
 function stringer(C::CCustomType; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=false)

@@ -11,6 +11,7 @@ function max_vec(a::Vector{Int}, b::Vector{Int})::Vector{Int}
 end
 max_exponents(a::CAtom) = Vector(abs.(a.var_exponents))
 max_exponents(a::CAbstract) = error("max_exponents can not be used for CAbstract.")
+max_exponents(::CIntegral) = error("max_exponents is undefined for CIntegral.")
 function max_exponents(s::CFunction)::Vector{Int}
     m = zeros(Int, dims(s))
     for leaf in leaf_iter
@@ -70,6 +71,9 @@ end
 function evaluate(a::CAbstract, x::VType{T}) where T <: Number
     error("CAbstract requires evaluated values for its substitution to be itself evaluated.")
 end
+function evaluate(i::CIntegral, ::VType{T}) where {T<:Number}
+    error("CIntegral evaluation requires a dedicated backend.")
+end
 function evaluate(s::CSum, x::VType{T}) where T <: Number
     sum(evaluate(t, x) for t in s.expr)
 end
@@ -122,6 +126,9 @@ function evaluate(a::CAbstract, x::VType{T}, abstract_vals::Vector{<: Number}, i
         new_val = new_val^a.exponent
     end
     return ctimes(a.coeff, new_val)
+end
+function evaluate(i::CIntegral, ::VType{T}, ::Vector{<:Number}, ::Vector{Int}) where {T<:Number}
+    error("CIntegral evaluation with substituted abstracts is not implemented.")
 end
 function evaluate(s::CSum, x::VType{T}, abstract_vals::Vector{<: Number}, index_map::Vector{Int})  where T <: Number
     sum(evaluate(t, x, abstract_vals, index_map) for t in s.expr)

@@ -145,11 +145,27 @@ function ParameterInfo(parameters::Vector{Parameter}, outer_labels_symbols::Vect
     end
 
     param_indexes = ParameterIndexes(subspace_info, indexed_parameter_indexes, where_acting_by_parameter, indexes_by_t_index)
+
+    parameter_index_tuples = Vector{Vector{Tuple{Int,Int}}}(undef, length(parameters))
+    for (idx, param) in enumerate(parameters)
+        if param.indexed_param
+            tuples = Vector{Tuple{Int,Int}}(undef, length(param.param_indexes))
+            @inbounds for (inner_pos, sub_idx) in enumerate(param.param_indexes)
+                ensemble = subspace_info.ensemble_index_by_outer_index[sub_idx.outer]
+                ensemble != 0 || error("Parameter index does not belong to an ensemble subspace.")
+                tuples[inner_pos] = (ensemble, sub_idx.inner)
+            end
+            parameter_index_tuples[idx] = tuples
+        else
+            parameter_index_tuples[idx] = Tuple{Int,Int}[]
+        end
+    end
+
     return ParameterInfo(outer_labels_symbols, inner_labels_symbols_flat, outer_labels, param_names,
         param_strs, param_latex, param_of_indexes, outer_group_by_index,
         t_index_by_index, ss_ensemble_indexes_by_group, ss_ensemble_present_by_group, indexed_parameter_indexes,
-        where_acting_by_parameter, acting_parameters_by_index, subspace_index_maps, t_index_transform, indexes_by_t_index,
-        indexes_of_t, ensemble_sizes, param_of_t, param_is_t, param_values, param_indexes)
+        where_acting_by_parameter, acting_parameters_by_index, parameter_index_tuples, subspace_index_maps, t_index_transform, indexes_by_t_index,
+        indexes_of_t, ensemble_sizes, param_of_t, param_is_t, param_values, subspace_info, param_indexes)
 end
 
 

@@ -1,17 +1,21 @@
 module CFunctions
 
 using ..StringUtils
+import ..SubSpaceIndex
+import ..ConcreteIndexes
 using ComplexRationals
 using SparseArrays
 using ..SparsePermutationTools: SparsePermutation
 using ..QAlgebra: get_default, FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
 
-export CFunction, CAbstractDefinition, CTypeDefinition, ParameterInfo, add_cabstract!, add_ctype!, CAbstract, CCustomType, CAtom, CSum, CRational, CProd, CExp, CLog, CPower, CVector, CMatrix
+export CFunction, CAbstractDefinition, CTypeDefinition, CIntegralDefinition, ParameterInfo
+export define_cabstract, define_ctype, define_cintegral
+export CAbstract, CIntegral, CCustomType, CAtom, CAtomIndexed, CSum, CRational, CProd, CExp, CLog, CPower, CVector, CMatrix
 export CMatrix, CVector, CPower
 export coeff, var_exponents, unique_first_terms
-export contains_non_simple_CFunction
-export define_cabstract, define_ctype, list_cabstracts, list_ctypes
-export where_acting, where_acting!, which_params_acting, which_params_acting!
+export contains_non_simple_CFunction, with_concrete_indexes
+export list_cabstracts, list_ctypes, list_cintegrals
+export where_acting, where_acting!, which_params_acting, which_params_acting!, parameter_index_tuples
 export which_ensemble_acting, which_ensemble_acting!, substitute, separate_by_cond
 
 import Base: copy, exp, log, length, getindex, iterate, size
@@ -20,30 +24,6 @@ import ..QAlgebra: vecvec_or, vecvec_or!, sort_unique!, variants_C
 
 const CR_ZERO = ComplexRational(0,0,1)
 const CR_ONE  = ComplexRational(1,0,1)
-
-"""
-    max_exponents(f::CFunction) -> Vector{Int}
-
-Return, for each variable, the maximum exponent appearing anywhere inside `f`.
-Useful when precomputing powers prior to numerical evaluation.
-"""
-function max_exponents end
-
-"""
-    build_xpows(x, max_exp) -> Vector{Vector}
-
-Precompute `x[j]^k` for `k = 0:max_exp[j]`, returning lookup tables suitable for
-[`evaluate`](@ref).
-"""
-function build_xpows end
-
-"""
-    evaluate(f::CFunction, args...) -> Number
-
-Numerically evaluate the coefficient expression `f`. Additional arguments accept
-either raw variable values or precomputed power tables.
-"""
-function evaluate end
 
 
 """
@@ -120,6 +100,20 @@ struct ParameterIndexes # Helps find the indexes (ensemble and time indexes) ass
     end
 end
 """
+    CIntegralDefinition
+
+Container describing a coefficient integral definition stored within a
+[`ParameterInfo`](@ref). It records the defining integrand `expr` and the
+subsystem indexes integrated over.
+"""
+struct CIntegralDefinition <: CDef
+    index::Int
+    sortkey::Int
+    expr::CFunction
+    indexes::Vector{Vector{SubSpaceIndex}}
+    param_info::AbstractParameterInfo
+end
+"""
     ParameterInfo
 
 Holds both clusters and the dimension of the polynomial variable space.
@@ -143,6 +137,7 @@ struct ParameterInfo <: AbstractParameterInfo
     indexed_parameter_indexes::Vector{Int}                  # where are the where_acting_by_parameter for an index
     where_acting_by_parameter::Vector{Vector{BitVector}}  # for each variable, where are they acting.
     parameters_acting_by_index::Vector{Vector{BitVector}} # for each ensemble/index, which parameters act on it.
+    parameter_index_tuples::Vector{Vector{Tuple{Int,Int}}} # cached (ensemble, inner) lookup per parameter exponent
 
     # Maps indexes for index transformation, once for switching subsystem indexes and once for time indexes
     subspace_index_maps::Vector{Array{SparsePermutation,2}}
@@ -155,29 +150,144 @@ struct ParameterInfo <: AbstractParameterInfo
     param_of_t::BitVector
     param_is_t::BitVector
     param_values::Vector   # specifies for example values or functions or vectors for the parameters (vectors of the index values), functions of time ...
-    
+    subspace_info::Any
     param_indexes::ParameterIndexes
     abstract_definitions::Vector{CAbstractDefinition}
     custom_ctype::Vector{CTypeDefinition}
+    integral_definitions::Vector{CIntegralDefinition}
 
     function ParameterInfo(
         outer_labels_symbols::Vector{Symbol}, inner_labels_symbols_flat::Vector{Symbol}, outer_labels::Vector{String}, params_name::Vector{String},
         params_str::Vector{String}, params_latex::Vector{String}, param_of_indexes::BitVector, outer_group_by_index::Vector{Int},
         t_index_by_index::Vector{Int}, ss_ensemble_indexes_by_group::Vector{Vector{Int}}, ss_ensemble_present_by_group::Vector{BitVector}, indexed_parameter_indexes::Vector{Int},
-        where_acting_by_parameter::Vector{Vector{BitVector}}, parameters_acting_by_index::Vector{Vector{BitVector}},
+        where_acting_by_parameter::Vector{Vector{BitVector}}, parameters_acting_by_index::Vector{Vector{BitVector}}, parameter_index_tuples::Vector{Vector{Tuple{Int,Int}}},
         subspace_index_maps::Vector{Array{SparsePermutation,2}}, t_index_transform::Array{SparsePermutation,2}, indexes_by_t_index::Vector{Vector{Int}},
-        indexes_of_t::Vector{Int}, how_many_by_ensemble::Vector{Int}, param_of_t::BitVector, param_is_t::BitVector, param_values::Vector, param_indexes::ParameterIndexes)
+        indexes_of_t::Vector{Int}, how_many_by_ensemble::Vector{Int}, param_of_t::BitVector, param_is_t::BitVector, param_values::Vector,
+        subspace_info::Any, param_indexes::ParameterIndexes)
         dims = length(inner_labels_symbols_flat)
         new(dims, outer_labels_symbols, inner_labels_symbols_flat, outer_labels,
             params_name, params_str, params_latex, param_of_indexes,
             outer_group_by_index, t_index_by_index, ss_ensemble_indexes_by_group, ss_ensemble_present_by_group,
-            indexed_parameter_indexes, where_acting_by_parameter, parameters_acting_by_index, subspace_index_maps, t_index_transform,
+            indexed_parameter_indexes, where_acting_by_parameter, parameters_acting_by_index, parameter_index_tuples,
+            subspace_index_maps, t_index_transform,
             indexes_by_t_index, indexes_of_t, how_many_by_ensemble, param_of_t, param_is_t, param_values,
-            param_indexes, CAbstractDefinition[], CTypeDefinition[])
+            subspace_info, param_indexes, CAbstractDefinition[], CTypeDefinition[], CIntegralDefinition[])
     end
 end
 
+"""
+    parameter_index_tuples(param_info::ParameterInfo, param_index::Int)
+
+Return the cached `(ensemble, inner)` tuples describing where parameter
+`param_index` acts. Non-indexed parameters yield an empty vector.
+"""
+function parameter_index_tuples(param_info::ParameterInfo, param_index::Int)
+    1 ≤ param_index ≤ length(param_info.parameter_index_tuples) ||
+        error("Parameter index $(param_index) out of bounds.")
+    return param_info.parameter_index_tuples[param_index]
+end
+
 ######################################################################################################################################################
+"""
+    list_cintegrals(param_info::ParameterInfo) -> Vector{CIntegralDefinition}
+
+Return all integral definitions registered in the provided [`ParameterInfo`](@ref).
+"""
+function list_cintegrals(param_info::ParameterInfo)
+    return param_info.integral_definitions
+end
+
+"""
+    define_cintegral(param_info::ParameterInfo, expr, indexes)
+
+Register a coefficient integral with integrand `expr` and integration indexes
+`indexes` (outer vector per ensemble, inner vector per integrated subsystem).
+
+`QExpressions` offers the following forwarding helpers built on top of this
+method:
+
+```
+define_cintegral(qspace::QSpace, expr::QExpr, indexes::Vector{Vector{SubSpaceIndex}})
+define_cintegral(qspace::QSpace, expr::QExpr)
+define_cintegral(expr::QExpr, indexes::Vector{Vector{SubSpaceIndex}})
+define_cintegral(expr::QExpr)
+```
+
+The overloads accepting `QExpr` perform the necessary neutrality checks and, in
+the variant without explicit indexes, derive the integration blocks from the
+ensembles touched by `expr` before delegating back here.
+"""
+function define_cintegral(param_info::ParameterInfo, expr::CFunction, indexes::Vector)::CIntegralDefinition
+    expr.param_info === param_info ||
+        error("Integral integrand belongs to a different ParameterInfo.")
+
+    subspace_info = param_info.subspace_info
+    subspace_info === nothing &&
+        error("ParameterInfo is missing subspace information required for integrals.")
+
+    acting = which_ensemble_acting(expr)
+    n_ensembles = length(acting)
+    n_expected = length(subspace_info.where_ensembles)
+    n_ensembles == n_expected ||
+        error("Mismatch between acting ensembles and stored subspace information.")
+    length(indexes) == n_expected ||
+        error("Expected $(n_expected) index groups, got $(length(indexes)).")
+
+    coerced = Vector{Vector{SubSpaceIndex}}(undef, n_expected)
+    for ensemble_idx in 1:n_expected
+        group = indexes[ensemble_idx]
+        coerced_group = Vector{SubSpaceIndex}(undef, length(group))
+        expected_outer = subspace_info.where_ensembles[ensemble_idx]
+        bits = acting[ensemble_idx]
+        bitlen = length(bits)
+
+        for (j, idx) in enumerate(group)
+            idx isa SubSpaceIndex ||
+                error("Index #$(j) in ensemble #$(ensemble_idx) is not a SubSpaceIndex.")
+            idx.outer == expected_outer ||
+                error("Index ensemble mismatch: expected outer $(expected_outer), got $(idx.outer).")
+            1 ≤ idx.inner ≤ bitlen ||
+                error("Index inner position $(idx.inner) out of range for ensemble #$(ensemble_idx).")
+            bits[idx.inner] ||
+                error("Integral index $(idx) does not appear in the integrand.")
+            coerced_group[j] = idx
+        end
+
+        for inner in findall(bits)
+            any(idx.inner == inner for idx in coerced_group) ||
+                error("Missing integration index for ensemble #$(ensemble_idx), position $(inner).")
+        end
+
+        coerced[ensemble_idx] = coerced_group
+    end
+
+    index = length(param_info.integral_definitions) + 1
+    sortkey = index + 2_000_000
+
+    c_def = CIntegralDefinition(index, sortkey, expr, coerced, param_info)
+    push!(param_info.integral_definitions, c_def)
+    return c_def
+end
+
+function define_cintegral(param_info::ParameterInfo, expr::CFunction)::CIntegralDefinition
+    acting = which_ensemble_acting(expr)
+    subspace_info = param_info.subspace_info
+    subspace_info === nothing &&
+        error("ParameterInfo is missing subspace information required for integrals.")
+
+    indexes = Vector{Vector{SubSpaceIndex}}(undef, length(acting))
+    for (ensemble_idx, bits) in enumerate(acting)
+        outer = subspace_info.where_ensembles[ensemble_idx]
+        idxs = SubSpaceIndex[]
+        for inner in findall(bits)
+            push!(idxs, SubSpaceIndex(outer, inner, subspace_info))
+        end
+        indexes[ensemble_idx] = idxs
+    end
+    return define_cintegral(param_info, expr, indexes)
+end
+
+
 """
     list_cabstracts(param_info::ParameterInfo) -> Vector{CAbstractDefinition}
 
@@ -193,6 +303,13 @@ end
 Register a new abstract coefficient symbol identified by `name`. The symbol is
 stored inside `param_info` and can later be referenced when constructing
 `CAbstract` terms.
+
+Convenience wrappers exposed via `QExpressions` forward to this implementation
+and accept a `QSpace` directly:
+
+```
+define_cabstract(qspace::QSpace, name)
+```
 """
 function define_cabstract(param_info::ParameterInfo,  name::Union{Symbol, String})::CAbstractDefinition
     name_str, name_latex = symbol2formatted(String(name))
@@ -234,6 +351,17 @@ end
 Register a custom coefficient function `name` whose body is given by `fun`
 (a `CFunction`). The new type is available for constructing `CCustomType`
 instances and is tracked inside `param_info`.
+
+In `QExpressions` the following helper methods are provided for convenience:
+
+```
+define_ctype(qspace::QSpace, name, expr::QExpr)
+define_ctype(name, expr::QExpr)
+```
+
+The QExpr overloads require `expr` to be a single-term, operator-neutral
+expression; the wrapper validates these constraints and converts to the
+primitive `CFunction` before delegating here.
 """
 function define_ctype(param_info::ParameterInfo, name::Union{Symbol,String}, fun::CFunction)::CTypeDefinition
     CName, Name, base = variants_C(name)
@@ -267,23 +395,6 @@ function define_ctype(param_info::ParameterInfo, name::Union{Symbol,String}, fun
     return c_type_def
 end
 
-"""
-    add_cabstract!(param_info::ParameterInfo, name) -> CAbstractDefinition
-
-Convenience wrapper around [`define_cabstract`](@ref) that mutates
-`param_info` in place and returns the created abstract symbol definition.
-"""
-add_cabstract!(param_info::ParameterInfo, name::Union{Symbol,String}) = define_cabstract(param_info, name)
-
-"""
-    add_ctype!(param_info::ParameterInfo, name, fun) -> CTypeDefinition
-
-Convenience wrapper around [`define_ctype`](@ref), registering a new custom
-coefficient function and returning its definition object.
-"""
-add_ctype!(param_info::ParameterInfo, name::Union{Symbol,String}, fun::CFunction) = define_ctype(param_info, name, fun)
-
-
 
 # =====================================================> CFunction Types <=====================================================================================================
 """
@@ -316,6 +427,30 @@ struct CAbstract <: AbstractCAbstract
     end
 end
 """
+    CIntegral
+
+Coefficient atom referencing a registered integral definition stored inside the
+owning [`ParameterInfo`](@ref).
+"""
+struct CIntegral <: CAtomic
+    param_info::ParameterInfo
+    coeff::ComplexRational
+    index::Int
+    definition::CIntegralDefinition
+
+    function CIntegral(param_info::ParameterInfo, coeff::ComplexRational, index::Int)
+        1 ≤ index ≤ length(param_info.integral_definitions) ||
+            error("Integral index $index out of bounds for supplied ParameterInfo.")
+        return new(param_info, coeff, index, param_info.integral_definitions[index])
+    end
+end
+CIntegral(param_info::ParameterInfo, index::Int) = CIntegral(param_info, ComplexRational(1,0,1), index)
+CIntegral(def::CIntegralDefinition) = CIntegral(def.param_info, ComplexRational(1,0,1), def.index)
+
+@inline integral_definition(int::CIntegral) = int.definition
+@inline integral_indexes(int::CIntegral) = int.definition.indexes
+@inline integral_expr(int::CIntegral) = int.definition.expr
+"""
     coeff(f::CFunction) -> Vector{ComplexRational}
 
 Return the scalar coefficients present in `f`. For atomic objects this is the
@@ -324,6 +459,7 @@ scalars contributed by each branch.
 """
 function coeff end
 coeff(a::CAbstract) = [a.coeff]
+coeff(i::CIntegral) = [i.coeff]
 exponent(a::CAbstract) = a.exponent
 """
     var_exponents(f::CFunction) -> Vector{Int}
@@ -334,6 +470,7 @@ zero vector.
 """
 function var_exponents end
 var_exponents(a::CAbstract) = spzeros(Int, a.param_info.dims)
+var_exponents(i::CIntegral) = spzeros(Int, i.param_info.dims)
 isdag(a::CAbstract) = a.dag
 modify_coeff(a::CAbstract, c::ComplexRational) = CAbstract(a.param_info, c, a.index, a.exponent, a.dag)
 modify_exponent(a::CAbstract, q::Rational{Int}) = CAbstract(a.param_info, a.coeff, a.index, q, a.dag)
@@ -341,6 +478,9 @@ modify_exponent(a::CAbstract, n::Int) = modify_exponent(a, n//1)
 modify_dag(a::CAbstract, d::Bool=true) = CAbstract(a.param_info, a.coeff, a.index, a.exponent, d)
 toggle_dag(a::CAbstract) = modify_dag(a, !a.dag)
 repartition(::CAbstract, ::Vector{Tuple{Int,Int}}) = error("You should not repartition abstract parameters! Remove them before repartitioning.")
+length(::CIntegral) = 1
+modify_coeff(i::CIntegral, c::ComplexRational) = CIntegral(i.param_info, c, i.index)
+repartition(::CIntegral, ::Vector{Tuple{Int,Int}}) = error("Cannot repartition integral definitions. Register a new integral if needed.")
 
 """
     CCustomType(param_info, def_id, coeff, x)
@@ -423,6 +563,86 @@ end
 end
 @inline function zero_catom(param_info::ParameterInfo)
     return CAtom(param_info, CR_ZERO, spzeros(Int, param_info.dims))
+end
+
+@inline function _validate_concrete_indexes(param_info::ParameterInfo, indexes::ConcreteIndexes)
+    expected = param_info.how_many_by_ensemble
+    indexes.expected_lengths == expected ||
+        error("Concrete indexes do not match ensemble sizes of the provided ParameterInfo.")
+    return indexes
+end
+
+function _validate_concrete_indexes(param_info::ParameterInfo, indexes::AbstractVector{<:AbstractVector{<:Integer}})
+    expected = param_info.how_many_by_ensemble
+    vectors = [Vector{Int}(idxs) for idxs in indexes]
+    return _validate_concrete_indexes(param_info, ConcreteIndexes(expected, vectors))
+end
+
+ConcreteIndexes(param_info::ParameterInfo) =
+    ConcreteIndexes(param_info.how_many_by_ensemble)
+ConcreteIndexes(param_info::ParameterInfo, indexes::AbstractVector{<:AbstractVector{<:Integer}}) =
+    _validate_concrete_indexes(param_info, indexes)
+ConcreteIndexes(param_info::ParameterInfo, indexes::ConcreteIndexes) =
+    _validate_concrete_indexes(param_info, indexes)
+
+"""
+    CAtomIndexed(param_info, coeff, var_exponents, indexes)
+
+Create a coefficient atom that stores concrete ensemble indexes alongside the
+standard sparse exponent representation. `indexes` may be a
+[`ConcreteIndexes`](@ref) instance or a vector of integer vectors with one
+entry per ensemble subspace of `param_info`.
+"""
+struct CAtomIndexed <: CAtomic
+    param_info::ParameterInfo
+    coeff::ComplexRational
+    var_exponents::SparseVector{Int,Int}
+    indexes::ConcreteIndexes
+    function CAtomIndexed(param_info::ParameterInfo, coeff::ComplexRational,
+                          var_exponents::SparseVector{Int,Int}, indexes::ConcreteIndexes)
+        return new(param_info, coeff, var_exponents, _validate_concrete_indexes(param_info, indexes))
+    end
+end
+
+CAtomIndexed(param_info::ParameterInfo, var_exponents, indexes) =
+    CAtomIndexed(CAtom(param_info, var_exponents), indexes)
+CAtomIndexed(param_info::ParameterInfo, coeff::Number, var_exponents, indexes::AbstractVector{<:AbstractVector{<:Integer}}) =
+    CAtomIndexed(CAtom(param_info, coeff, var_exponents), indexes)
+CAtomIndexed(param_info::ParameterInfo, coeff::ComplexRational, var_exponents, indexes::AbstractVector{<:AbstractVector{<:Integer}}) =
+    CAtomIndexed(CAtom(param_info, coeff, var_exponents), indexes)
+CAtomIndexed(param_info::ParameterInfo, coeff::Complex, var_exponents, indexes::AbstractVector{<:AbstractVector{<:Integer}}) =
+    CAtomIndexed(CAtom(param_info, coeff, var_exponents), indexes)
+CAtomIndexed(param_info::ParameterInfo, coeff::ComplexRational, var_exponents::SparseVector{Int,Int}, indexes::AbstractVector{<:AbstractVector{<:Integer}}) =
+    CAtomIndexed(param_info, coeff, var_exponents, _validate_concrete_indexes(param_info, indexes))
+
+function CAtomIndexed(atom::CAtom, indexes)
+    checked = _validate_concrete_indexes(atom.param_info, indexes)
+    return CAtomIndexed(atom.param_info, atom.coeff, atom.var_exponents, checked)
+end
+
+"""
+    with_concrete_indexes(atom::CAtom, indexes)
+
+Attach concrete ensemble indexes to `atom` and return a `CAtomIndexed`.
+`indexes` may be a [`ConcreteIndexes`](@ref) or a vector of integer vectors
+matching the ensemble layout of `atom.param_info`.
+"""
+with_concrete_indexes(atom::CAtom, indexes) = CAtomIndexed(atom, indexes)
+
+var_exponents(a::CAtomIndexed) = a.var_exponents
+coeff(a::CAtomIndexed)::Vector{ComplexRational} = [a.coeff]
+length(::CAtomIndexed) = 1
+
+function modify_exponents(a::CAtomIndexed, var_exponents)
+    return CAtomIndexed(a.param_info, a.coeff, var_exponents, a.indexes)
+end
+
+modify_coeff(a::CAtomIndexed, coeff::ComplexRational) =
+    CAtomIndexed(a.param_info, coeff, a.var_exponents, a.indexes)
+
+function modify_indexes(a::CAtomIndexed, indexes)
+    checked = _validate_concrete_indexes(a.param_info, indexes)
+    return CAtomIndexed(a.param_info, a.coeff, a.var_exponents, checked)
 end
 coeff(a::CAtom)::Vector{ComplexRational} = [a.coeff]
 modify_exponents(a::CAtom, var_exponents) = CAtom(a.param_info, a.coeff, var_exponents)
@@ -764,6 +984,7 @@ Render `f` as a plain-text string using the coefficient formatting preferences.
 """
 function to_string end
 contains_non_simple_CFunction(c::CAtom)::Bool = false 
+contains_non_simple_CFunction(c::CAtomIndexed)::Bool = false
 contains_non_simple_CFunction(c::CSum)::Bool = any(contains_non_simple_CFunction, c.expr)
 # Not sure if CRational should be counted here?! -> Design choices 
 

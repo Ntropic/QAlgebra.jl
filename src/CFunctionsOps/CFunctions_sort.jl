@@ -60,6 +60,7 @@ cf_tag(::CPower)    = 6
 cf_tag(::CVector)   = 7
 cf_tag(::CMatrix)   = 8
 cf_tag(c::CAbstract)   = c.abstract_def.sortkey
+cf_tag(c::CIntegral)   = c.definition.sortkey
 cf_tag(c::CCustomType) = c.ctype_def.sortkey
 
 # -------------------------------
@@ -115,6 +116,10 @@ function isless_same(a::CAbstract, b::CAbstract)
     return a.exponent < b.exponent 
 end
 
+function isless_same(::CIntegral, ::CIntegral)
+    return false
+end
+
 function isless_same(a::CCustomType, b::CCustomType)
     return less_vec(a.expr, b.expr)
 end
@@ -130,5 +135,9 @@ end
 
 function isless(a::CAbstract, b::CAbstract)
     a.index == b.index && return a.dag < b.dag
+    return a.index < b.index
+end
+
+function isless(a::CIntegral, b::CIntegral)
     return a.index < b.index
 end

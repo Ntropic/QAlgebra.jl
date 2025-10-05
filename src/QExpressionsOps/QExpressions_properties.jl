@@ -1,6 +1,6 @@
 export is_t_var, is_t, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, contains_which_t_indexes, max_order_of_terms, which_abstracts, iter_QAtomProducts, iter_QInts
 export is_unitary, is_hermitian, substitution_properties_fulfilled, same_qspace, qspace_check
-import ..CFunctions: isnumeric, CFunction, CAtom, where_acting, where_acting!
+import ..CFunctions: isnumeric, CFunction, CAtom, CAtomIndexed, where_acting, where_acting!
 import ..bubble_insert_unique!
 import ..QSpaces: expanded
 """ 
@@ -53,7 +53,7 @@ function is_t_var(t::QExpr)::Bool
 
     coeff_fun = t.terms[1].coeff_fun
     # coeff_fun must be a CAtom with unit coefficient
-    if !isa(coeff_fun, CAtom) || !isone(coeff_fun.coeff)
+    if !(coeff_fun isa Union{CAtom, CAtomIndexed}) || !isone(coeff_fun.coeff)
         return false
     end
 

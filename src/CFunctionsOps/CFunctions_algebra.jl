@@ -1,7 +1,7 @@
 ############ CFunctions_algebra.jl (updated for new structs) ################
 import Base: +, -, *, /, ^, sqrt, ==, inv, adjoint, conj, transpose
 using ..CFunctions: CFunction, CAtomic, CComposite, CMultiComposite,
-                    CAbstract, CCustomType,
+                    CAbstract, CIntegral, CCustomType,
                     CAtom, CSum, CRational, CProd, CExp, CLog, CPower,
                     CVector, CMatrix, _CSum, coeff, length, modify_expr, modify_exprs
 using ComplexRationals: ComplexRational, crationalize
@@ -28,7 +28,7 @@ _terms(f::CFunction) = [f]
 _terms(s::CSum)      = s.expr
 
 # convenience
-const _ScalarLike = Union{CAtom, CAbstract, CSum, CRational, CCustomType}
+const _ScalarLike = Union{CAtom, CAbstract, CIntegral, CSum, CRational, CCustomType}
 
 # -------- addition ----------------------------------------------------------
 +(a::T) where {T<:CFunction} = a
@@ -58,6 +58,7 @@ end
 # -------- unary minus & subtraction ----------------------------------------
 -(a::CAtom)       = CAtom(pinfo(a), -a.coeff, a.var_exponents)
 -(a::CAbstract)   = CAbstract(a.param_info, -a.coeff, a.index, a.exponent, a.dag)
+-(i::CIntegral)   = CIntegral(i.param_info, -i.coeff, i.index)
 -(f::CCustomType) = CCustomType(f.param_info, -f.coeff, f.expr, f.ctype_def)
 
 -(s::CSum)        = _CSum(pinfo(s), [ -t for t in s.expr ], Val(:nosimp))
@@ -196,6 +197,7 @@ end
 
 # Number scaling for various types
 *(a::CAbstract, b::Number) = CAbstract(a.param_info, a.coeff*b, a.index, a.exponent, a.dag)
+*(i::CIntegral, b::Number) = CIntegral(i.param_info, i.coeff*b, i.index)
 *(a::CAtom,     b::Number) = CAtom(pinfo(a), a.coeff*b, a.var_exponents)
 *(s::CSum,      b::Number) = _CSum(pinfo(s), [ x*b for x in s.expr ])
 *(a::CRational, b::Number) = CRational(pinfo(a), a.numer*b, a.denom, Val(:nosimp))
@@ -203,6 +205,7 @@ end
 *(a::CLog,      b::Number) = CLog(pinfo(a),  b*a.coeff, a.expr, Val(:nosimp))
 *(a::CExp,      b::Number) = CExp(pinfo(a),  b*a.coeff, a.expr, Val(:nosimp))
 *(b::Number, a::CFunction) = a * b
+*(b::Number, i::CIntegral) = i * b
 
 # Vector/Matrix scaling and mixing
 *(k::Number, v::CVector)    = CVector(pinfo(v), v.coeff*k, v.expr; row=v.row)
@@ -285,6 +288,7 @@ Base.Broadcast.broadcasted(::typeof(*), s::CFunction, A::CMatrix) = CMatrix(pinf
 # -------- division ----------------------------------------------------------
 /(a::CAtom,     b::Number) = CAtom(pinfo(a), a.coeff/b, a.var_exponents)
 (/)(a::CAbstract, b::Number) = CAbstract(a.param_info, a.coeff/b, a.index, a.exponent, a.dag)
+(/)(i::CIntegral, b::Number) = CIntegral(i.param_info, i.coeff/b, i.index)
 (/)(f::CCustomType, b::Number) = CCustomType(f.param_info, f.coeff/b, f.expr, f.ctype_def)
 
 function /(A::CSum, b::CAtom)
@@ -411,6 +415,7 @@ end
 # -------- inverses & adjoints ----------------------------------------------
 inv(a::CAtom)     = CAtom(pinfo(a), inv(a.coeff), a.var_exponents .* (-1))
 inv(a::CAbstract) = CAbstract(a.param_info, inv(a.coeff), a.index, -a.exponent, a.dag)
+inv(i::CIntegral) = CIntegral(i.param_info, inv(i.coeff), i.index)
 inv(a::CSum)      = CRational(pinfo(a), one_atom(a), a)
 inv(a::CRational) = CRational(pinfo(a), inv(a.numer), inv(a.denom))
 inv(p::CPower)    = CPower(p.param_info, inv(p.coeff), p.expr, -p.exponent, Val(:nosimp))
@@ -420,6 +425,9 @@ function adjoint(f::CAtom)::CAtom
 end
 function adjoint(a::CAbstract)
     CAbstract(a.param_info, conj(a.coeff), a.index, a.exponent, !a.dag)
+end
+function adjoint(i::CIntegral)
+    CIntegral(i.param_info, conj(i.coeff), i.index)
 end
 function adjoint(f::CCustomType)
     CCustomType(f.param_info, conj(f.coeff), adjoint.(f.expr), f.ctype_def)
@@ -444,6 +452,7 @@ conj(A::CMatrix)      = CMatrix(pinfo(A), conj(A.coeff), adjoint.(A.expr))
 
 ==(a::CAtom, b::CAtom)           = (a.coeff == b.coeff && a.var_exponents == b.var_exponents)
 ==(a::CAbstract, b::CAbstract)   = (a.index == b.index && a.dag == b.dag && a.exponent == b.exponent && a.coeff == b.coeff)
+==(a::CIntegral, b::CIntegral)   = (a.index == b.index && a.coeff == b.coeff)
 ==(a::CSum, b::CSum)             = (length(a) == length(b) && a.expr == b.expr)
 ==(a::CRational, b::CRational)   = (a.numer == b.numer && a.denom == b.denom)
 ==(a::CProd, b::CProd)           = (length(a.expr) == length(b.expr) && a.coeff == b.coeff && a.expr == b.expr)

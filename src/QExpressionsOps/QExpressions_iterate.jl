@@ -1,5 +1,5 @@
 export tree_iter_composite, modify_coeff_funs_tree_composite
-const OrderedTypes = Union{QCumulantOrdered, QAtomOrdered, QNeutral} 
+const OrderedTypes = Union{QCumulantOrdered, QAtomOrdered, QAtomIndexed, QNeutral} 
 """
     tree_iter_composite(obj::QObj)
 

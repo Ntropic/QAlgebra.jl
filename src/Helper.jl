@@ -1,3 +1,46 @@
+struct SubSpaceIndex
+    outer::Int
+    inner::Int
+    expanded::Int
+end
+Base.copy(x::SubSpaceIndex) = SubSpaceIndex(x.outer, x.inner, x.expanded)
+
+"""
+    ConcreteIndexes(expected_lengths, indexes)
+
+Container that stores concrete ensemble indexes for ordered atoms.
+`expected_lengths` must match the number of tracked ensemble subspaces, and each
+entry in `indexes` must have the corresponding length.
+"""
+struct ConcreteIndexes
+    expected_lengths::Vector{Int}
+    indexes::Vector{Vector{Int}}
+    function ConcreteIndexes(expected_lengths::Vector{Int}, indexes::Vector{Vector{Int}})
+        length(expected_lengths) == length(indexes) ||
+            error("ConcreteIndexes: expected $(length(expected_lengths)) ensemble entries, got $(length(indexes)).")
+        copied_expected = copy(expected_lengths)
+        copied_indexes = Vector{Vector{Int}}(undef, length(indexes))
+        @inbounds for i in eachindex(indexes)
+            curr = copy(indexes[i])
+            length(curr) == copied_expected[i] ||
+                error("ConcreteIndexes: ensemble $(i) expects $(copied_expected[i]) entries, got $(length(curr)).")
+            copied_indexes[i] = curr
+        end
+        return new(copied_expected, copied_indexes)
+    end
+end
+
+ConcreteIndexes(expected_lengths::AbstractVector{<:Integer}) = begin
+    lengths = Vector{Int}(expected_lengths)
+    return ConcreteIndexes(lengths, [fill(0, lengths[i]) for i in eachindex(lengths)])
+end
+
+Base.getindex(ci::ConcreteIndexes, i::Int) = ci.indexes[i]
+Base.length(ci::ConcreteIndexes) = length(ci.indexes)
+Base.iterate(ci::ConcreteIndexes) = iterate(ci.indexes)
+Base.iterate(ci::ConcreteIndexes, state) = iterate(ci.indexes, state)
+
+
 function vecvec_or(A::AbstractVector{<:AbstractVector{Bool}}, B::AbstractVector{<:AbstractVector{Bool}})
     out = Vector{BitVector}(undef, length(A))
     @inbounds for i in eachindex(B)

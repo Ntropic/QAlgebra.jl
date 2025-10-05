@@ -119,6 +119,44 @@
         @test set_from_constructor isa diffQEqSetOrdered
         @test set_from_constructor.equations[1] == diff_ordered
     end
+    @testset "Concrete Index Attachments" begin
+        param_info = qspace.param_info
+        lengths = param_info.how_many_by_ensemble
+        concrete = ConcreteIndexes(param_info)
+        for (ensemble_idx, len) in enumerate(lengths)
+            for inner in 1:len
+                concrete.indexes[ensemble_idx][inner] = inner
+            end
+        end
+
+        indexed_param = findfirst(!iszero, param_info.indexed_parameter_indexes)
+        @test indexed_param !== nothing
+        idx_val = indexed_param::Int
+        tuples = parameter_index_tuples(param_info, idx_val)
+        @test !isempty(tuples)
+        @test all(t -> 1 ≤ t[1] ≤ length(lengths), tuples)
+        for (ensemble, inner) in tuples
+            @test concrete.indexes[ensemble][inner] == inner
+        end
+
+        exponents = zeros(Int, param_info.dims)
+        exponents[idx_val] = 1
+        coeff_atom = CAtom(param_info, exponents)
+        indexed_atom = with_concrete_indexes(coeff_atom, concrete)
+        @test indexed_atom isa CAtomIndexed
+        @test indexed_atom.indexes.indexes == concrete.indexes
+
+        base_atoms = base_operators(qspace, "i", by_ensemble=false)
+        xi_term = base_atoms[1].terms[1].expr[1]
+        yi_term = base_atoms[2].terms[1].expr[1]
+        ordered = OrderedQAtomProduct(QAtomProduct(qspace, QAtom[yi_term, xi_term]))
+        indexed_qatom = QAtomIndexed(ordered, concrete)
+        @test indexed_qatom isa QAtomIndexed
+        @test indexed_qatom.concrete_indexes.indexes == concrete.indexes
+        @test indexed_qatom.ensemble_indexes == ordered.ensemble_indexes
+
+        @test_throws ErrorException ConcreteIndexes(param_info, [[1]])
+    end
     @testset "PM Basis Rules" begin
         @test mh * ph == 1 / 2 * (I - zh)
         @test ph * mh == 1 / 2 * (zh + I)

@@ -1,4 +1,5 @@
-export QAtomOrdered, QNeutral, OrderbyOperator, decompose_sorted_blocks
+export QAtomOrdered, QAtomIndexed, QNeutral, OrderbyOperator, decompose_sorted_blocks
+import ..ConcreteIndexes
 
 # ===============> Sorting op_indices by subspaces, and returning the ensemble permutations 
 """
@@ -118,6 +119,39 @@ struct QAtomOrdered <: QComposite
     ensemble_indexes::Vector{Vector{Int}}
     time_index::Int
 end
+
+"""
+    QAtomIndexed(atom::QAtomOrdered, indexes)
+
+Ordered atom that carries concrete ensemble index assignments. `indexes` may be
+given as a [`ConcreteIndexes`](@ref) instance or as a vector with one integer
+vector per ensemble subspace in `atom.qspace`.
+"""
+struct QAtomIndexed <: QComposite
+    qspace::QSpace
+    coeff_fun::CFunction
+    op_indices::Vector{Vector{Is}}
+    ensemble_indexes::Vector{Vector{Int}}
+    concrete_indexes::ConcreteIndexes
+    time_index::Int
+    function QAtomIndexed(qspace::QSpace, coeff_fun::CFunction, op_indices::Vector{Vector{Is}},
+                          ensemble_indexes::Vector{Vector{Int}}, concrete_indexes::ConcreteIndexes, time_index::Int)
+        param_info = qspace.param_info
+        concrete_indexes.expected_lengths == param_info.how_many_by_ensemble ||
+            error("Concrete indexes do not match the ensemble sizes of the provided QSpace.")
+        return new(qspace, coeff_fun, op_indices, ensemble_indexes, concrete_indexes, time_index)
+    end
+end
+
+function QAtomIndexed(atom::QAtomOrdered, indexes)
+    param_info = atom.qspace.param_info
+    concrete = if indexes isa ConcreteIndexes
+        indexes
+    else
+        ConcreteIndexes(param_info.how_many_by_ensemble, [Vector{Int}(idxs) for idxs in indexes])
+    end
+    return QAtomIndexed(atom.qspace, atom.coeff_fun, atom.op_indices, atom.ensemble_indexes, concrete, atom.time_index)
+end
 struct QNeutral <: QComposite 
     qspace::QSpace
     coeff_fun::CFunction 
@@ -153,6 +187,7 @@ end
 Replace simple QAtomProducts (consisting only of QTerms) into QAtomOrdered, to sort 
 """
 OrderbyOperator(q::QAtomOrdered) = q
+OrderbyOperator(q::QAtomIndexed) = q
 OrderbyOperator(q::T) where T<: QAtom = error("Cannot Order by Operator for QAtom of type $(typeof(q)).") 
 
 # Core OrderbyOperator here!
@@ -196,4 +231,3 @@ end
 function OrderbyOperator(q::QCumulant)::QCumulantOrdered
     return QCumulantOrdered(q.qspace, q.coeff_fun, OrderbyOperator(q.atom), OrderbyOperator(q.expr), q.order, q.where_acting)
 end
-

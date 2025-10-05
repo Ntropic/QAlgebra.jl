@@ -1,9 +1,11 @@
 # tree_iter_sub iterates for a CCustomtype exclusively 
 _tree_iter_sub(n::CAtom,      ::CCustomType) =  (n,)
+_tree_iter_sub(n::CAtomIndexed, ::CCustomType) = (n,)
 function _tree_iter_sub(n::CAbstract,  c::CCustomType)
     argpos = c.ctype_def.index_map[n.index]
     return tree_iter(c.expr[argpos])
 end
+_tree_iter_sub(n::CIntegral, ::CCustomType) = (n,)
 _tree_iter_sub(n::CComposite, c::CCustomType) = Iterators.flatten(((n,), _tree_iter_sub(n.expr, c)))
 _tree_iter_sub(n::CMultiComposite, c::CCustomType) = Iterators.flatten(((n,), (_tree_iter_sub(ch, c) for ch in n.expr)))
 _tree_iter_sub(n::CRational,  c::CCustomType) = Iterators.flatten(((n,), _tree_iter_sub(n.numer, c), _tree_iter_sub(n.denom, c)))
@@ -18,7 +20,9 @@ Iterator that yields a node `f` and then all of its children,
 recursively (depth-first, pre-order).
 """
 tree_iter(a::CAtom)     = (a,)                # leaf
+tree_iter(a::CAtomIndexed) = (a,)
 tree_iter(a::CAbstract) = (a,)                # leaf
+tree_iter(a::CIntegral) = (a,)                # leaf
 tree_iter(f::CComposite) = Iterators.flatten(((f,), tree_iter(f.expr)))
 tree_iter(f::CMultiComposite) = Iterators.flatten(((f,), (tree_iter(ch) for ch in f.expr)))
 tree_iter(r::CRational) = Iterators.flatten(((r,), tree_iter(r.numer), tree_iter(r.denom)))
@@ -32,10 +36,12 @@ function tree_iter(c::CCustomType)
 end
 
 _leaf_iter_sub(n::CAtom,      ::CCustomType) = (n,)
+_leaf_iter_sub(n::CAtomIndexed, ::CCustomType) = (n,)
 function _leaf_iter_sub(n::CAbstract,  c::CCustomType)
     argpos = c.ctype_def.index_map[n.index]
     leaf_iter(c.expr[argpos])
 end
+_leaf_iter_sub(n::CIntegral, ::CCustomType) = (n,)
 _leaf_iter_sub(n::CComposite, c::CCustomType) = _leaf_iter_sub(n.expr, c)
 _leaf_iter_sub(n::CMultiComposite, c::CCustomType) = Iterators.flatten((_leaf_iter_sub(ch, c) for ch in n.expr))
 _leaf_iter_sub(n::CRational,  c::CCustomType) = Iterators.flatten((_leaf_iter_sub(n.numer, c), _leaf_iter_sub(n.denom, c)))
@@ -50,7 +56,9 @@ A "leaf" is either a `CAtom` or a `CAbstract`.
 All composite/container nodes are skipped.
 """
 leaf_iter(a::CAtom)     = (a,)       # leaf
+leaf_iter(a::CAtomIndexed) = (a,)
 leaf_iter(a::CAbstract) = (a,)       # leaf
+leaf_iter(a::CIntegral) = (a,)       # leaf
 leaf_iter(f::CComposite) = leaf_iter(f.expr)
 leaf_iter(f::CMultiComposite) = Iterators.flatten((leaf_iter(ch) for ch in f.expr))
 leaf_iter(r::CRational) = Iterators.flatten((leaf_iter(r.numer), leaf_iter(r.denom)))
@@ -103,10 +111,10 @@ function which_params_acting(f::CFunction)::BitVector
 end
 
 function which_params_acting!(f::CFunction, out::BitVector)::BitVector
-    @inbounds for lead in leaf_iter(f) 
-        which_params_acting!(f, out) 
-    end 
-    return out 
+    @inbounds for lead in leaf_iter(f)
+        which_params_acting!(lead, out)
+    end
+    return out
 end
 function which_params_acting!(f::CAtom, out::BitVector)::BitVector  
     vexp_inds = f.var_exponents.nzind
@@ -115,7 +123,17 @@ function which_params_acting!(f::CAtom, out::BitVector)::BitVector
     end
     return out 
 end
+function which_params_acting!(f::CAtomIndexed, out::BitVector)::BitVector
+    vexp_inds = f.var_exponents.nzind
+    for ind in vexp_inds
+        out[ind] = true
+    end
+    return out
+end
 which_params_acting!(f::CAbstract, out::BitVector) = error("Cannot determine the acting parameters for a CAbstract. Use abstracts only in CType definitions.") 
+function which_params_acting!(f::CIntegral, out::BitVector)::BitVector
+    return which_params_acting!(integral_expr(f), out)
+end
 
 
 """ 
@@ -130,17 +148,32 @@ function which_ensemble_acting(f::CFunction)::Vector{BitVector}
     return which_ensemble_acting!(f, where_non_trivial)
 end
 function which_ensemble_acting!(f::CFunction, where_non_trivial::Vector{BitVector})::Vector{BitVector}
-    @inbounds for leaf in leaf_iter(f) 
+    @inbounds for leaf in leaf_iter(f)
         which_ensemble_acting!(leaf, where_non_trivial)
     end
     return where_non_trivial
 end
 which_ensemble_acting!(f::CAbstract, where_non_trivial::Vector{BitVector}) = error("Cannot determine the acting ensembles for a CAbstract. Use abstracts only in CType definitions.") 
+function which_ensemble_acting!(f::CIntegral, where_non_trivial::Vector{BitVector})::Vector{BitVector}
+    return which_ensemble_acting!(integral_expr(f), where_non_trivial)
+end
 function which_ensemble_acting!(f::CAtom, where_non_trivial::Vector{BitVector})::Vector{BitVector}
     vexp_inds = f.var_exponents.nzind
     which_inds = f.param_info.indexed_parameter_indexes
     where_actings = f.param_info.where_acting_by_parameter
     for ind in vexp_inds 
+        curr_which_ind = which_inds[ind]
+        if curr_which_ind != 0
+            vecvec_or!(where_non_trivial, where_actings[curr_which_ind])
+        end
+    end
+    return where_non_trivial
+end
+function which_ensemble_acting!(f::CAtomIndexed, where_non_trivial::Vector{BitVector})::Vector{BitVector}
+    vexp_inds = f.var_exponents.nzind
+    which_inds = f.param_info.indexed_parameter_indexes
+    where_actings = f.param_info.where_acting_by_parameter
+    for ind in vexp_inds
         curr_which_ind = which_inds[ind]
         if curr_which_ind != 0
             vecvec_or!(where_non_trivial, where_actings[curr_which_ind])
@@ -159,16 +192,25 @@ function where_acting(f::CFunction)::BitVector
     where_acting!(f, acting)
     return acting
 end
-function where_acting!(f::CFunction, acting::BitVector )::BitVector
-    for leaf in leaf_iter(f) 
+function where_acting!(f::CFunction, acting::BitVector)::BitVector
+    for leaf in leaf_iter(f)
         where_acting!(leaf, acting)
     end
     return acting
 end
 where_acting!(f::CAbstract, acting::BitVector) = error("Cannot determine where acting for a CAbstract. Use abstracts only in CType definitions. ")
+function where_acting!(f::CIntegral, acting::BitVector)::BitVector
+    return where_acting!(integral_expr(f), acting)
+end
 function where_acting!(f::CAtom, acting::BitVector)::BitVector
     # or operation between acting and f.var_exponents being overwritten on acting 
     #acting .|= (f.var_exponents .!= 0)   # ==> changed to sparse matrices 
+    for idx in f.var_exponents.nzind
+        acting[idx] = true
+    end
+    return acting
+end
+function where_acting!(f::CAtomIndexed, acting::BitVector)::BitVector
     for idx in f.var_exponents.nzind
         acting[idx] = true
     end
@@ -209,7 +251,9 @@ function var_exponents_iter(f::CFunction)
     Iterators.map(_leaf2exps, leaf_iter(f))
 end
 _leaf2exps(a::CAtom)     = a.var_exponents
+_leaf2exps(a::CAtomIndexed) = a.var_exponents
 _leaf2exps(a::CAbstract) = spzeros(Int, dims(a))
+_leaf2exps(a::CIntegral) = spzeros(Int, dims(a))
 
 """
     var_exponents_iter_simple(f::CFunction)
@@ -219,6 +263,7 @@ Like `var_exponents_iter`, but only includes exponents from
 Other function types contribute trivial exponents.
 """
 var_exponents_iter_simple(a::CAtom) = (a.var_exponents,)
+var_exponents_iter_simple(a::CAtomIndexed) = (a.var_exponents,)
 var_exponents_iter_simple(s::CSum)  = Iterators.flatten(var_exponents_iter_simple.(s.expr))
 var_exponents_iter_simple(p::CProd) = Iterators.flatten(var_exponents_iter_simple.(p.expr))
 var_exponents_iter_simple(f::CFunction) = (spzeros(Int, dims(f)),)
@@ -284,7 +329,9 @@ import Base: isnumeric
 True if all exponents in all terms are zero.
 """
 isnumeric(f::CAtom) = iszero(f.coeff) || all(==(0), f.var_exponents)
+isnumeric(f::CAtomIndexed) = iszero(f.coeff) || all(==(0), f.var_exponents)
 isnumeric(f::CAbstract) = false
+isnumeric(::CIntegral) = false
 isnumeric(f::CFunction) = all(leaf -> isnumeric(leaf) , leaf_iter(f))
 
 import Base: iszero, isempty, isone
@@ -314,9 +361,11 @@ isempty(s::CMultiComposite)        = isempty(s.expr)
 
 isone(c::CFunction) = false 
 isone(a::CAtom)     = isnumeric(a) && isone(a.coeff)
+isone(a::CAtomIndexed) = isnumeric(a) && isone(a.coeff)
 
 # only used for printing the signs! doesn't mean evaluated function is negative! 
 allnegative(a::CAtom) = is_negative(a.coeff)
+allnegative(a::CAtomIndexed) = is_negative(a.coeff)
 allnegative(s::CSum)  = !isempty(s.expr) && all(allnegative, s.expr)
 allnegative(p::CProd) = is_negative(p.coeff)
 allnegative(r::CRational) = allnegative(r.numer)
@@ -458,11 +507,17 @@ end
 function isonelike(f::CAtom)::Bool
     return isonelike(f.coeff) && isnumeric(f)
 end
+function isonelike(f::CAtomIndexed)::Bool
+    return isonelike(f.coeff) && isnumeric(f)
+end
 function simple_CSum(f::CSum)::Bool
-    return !any(term -> typeof(term)==CAtom, f.expr)
+    return !any(term -> term isa Union{CAtom, CAtomIndexed}, f.expr)
 end
 function simple_CSum(f::CAtom)::Bool
     return true 
+end
+function simple_CSum(f::CAtomIndexed)::Bool
+    return true
 end
 function simple_CSum(f::CFunction)::Bool
     return false 
@@ -474,7 +529,7 @@ end
 function separate_CSum(f::CSum)::Tuple{Bool, Union{CAtom,Nothing}, CSum}
     # treat as "simple" if every summand is a monomial-like term (e.g. CAtom)
     # (adjust this predicate if you later support more term kinds)
-    if all(t -> t isa CAtom, f.expr)
+    if all(t -> t isa Union{CAtom, CAtomIndexed}, f.expr)
         # scalar coeffs of each term
         coeffs = ComplexRational[first(coeff(t)) for t in f.expr]
 
@@ -486,7 +541,15 @@ function separate_CSum(f::CSum)::Tuple{Bool, Union{CAtom,Nothing}, CSum}
             offset = common_exponent_offset(vs)
 
             # rebuild normalized terms with adjusted coeffs/exponents
-            new_terms = [CAtom(f.param_info, m, v .- offset) for (m, v) in zip(multiples, vs)]
+            new_terms = Vector{CFunction}(undef, length(f.expr))
+            for (i, (m, v, term)) in enumerate(zip(multiples, vs, f.expr))
+                if term isa CAtomIndexed
+                    indexed_term = term::CAtomIndexed
+                    new_terms[i] = CAtomIndexed(f.param_info, m, v .- offset, indexed_term.indexes)
+                else
+                    new_terms[i] = CAtom(f.param_info, m, v .- offset)
+                end
+            end
 
             # shared factor in front
             pre_f = CAtom(f.param_info, base, offset)
