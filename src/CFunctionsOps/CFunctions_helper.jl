@@ -1,6 +1,8 @@
 # tree_iter_sub iterates for a CCustomtype exclusively 
 _tree_iter_sub(n::CAtom,      ::CCustomType) =  (n,)
 _tree_iter_sub(n::CAtomIndexed, ::CCustomType) = (n,)
+_tree_iter_sub(n::CAtom,      ::CCustomTypeIndexed) = (n,)
+_tree_iter_sub(n::CAtomIndexed, ::CCustomTypeIndexed) = (n,)
 function _tree_iter_sub(n::CAbstract,  c::CCustomType)
     argpos = c.ctype_def.index_map[n.index]
     return tree_iter(c.expr[argpos])
@@ -34,9 +36,18 @@ function tree_iter(c::CCustomType)
         return Iterators.flatten(((c,), (tree_iter(ch) for ch in c.expr)))
     end
 end
+function tree_iter(c::CCustomTypeIndexed)
+    if c.ctype_def.has_abstract
+        return Iterators.flatten(((c,), _tree_iter_sub(c.ctype_def.fun, c)))
+    else
+        return Iterators.flatten(((c,), (tree_iter(ch) for ch in c.expr)))
+    end
+end
 
 _leaf_iter_sub(n::CAtom,      ::CCustomType) = (n,)
 _leaf_iter_sub(n::CAtomIndexed, ::CCustomType) = (n,)
+_leaf_iter_sub(n::CAtom,      ::CCustomTypeIndexed) = (n,)
+_leaf_iter_sub(n::CAtomIndexed, ::CCustomTypeIndexed) = (n,)
 function _leaf_iter_sub(n::CAbstract,  c::CCustomType)
     argpos = c.ctype_def.index_map[n.index]
     leaf_iter(c.expr[argpos])
@@ -67,6 +78,13 @@ leaf_iter(M::CMatrix) = Iterators.flatten((leaf_iter(ch) for ch in M.expr[:]))
 function leaf_iter(c::CCustomType)
     if c.ctype_def.has_abstract 
         return _leaf_iter_sub(c.ctype_def.fun, c) 
+    else
+        return Iterators.flatten((leaf_iter(ch) for ch in c.expr))
+    end
+end
+function leaf_iter(c::CCustomTypeIndexed)
+    if c.ctype_def.has_abstract
+        return _leaf_iter_sub(c.ctype_def.fun, c)
     else
         return Iterators.flatten((leaf_iter(ch) for ch in c.expr))
     end
@@ -354,6 +372,11 @@ function iszero(c::CCustomType)
     # 2. Substitute arguments into the base definition
     substituted = simplify(substitute(c.ctype_def.fun, c.ctype_def.abstract_parameters, c.expr))
     # 3. Check if the expanded form is zero
+    return iszero(substituted)
+end
+function iszero(c::CCustomTypeIndexed)
+    iszero(c.coeff) && return true
+    substituted = simplify(substitute(c.ctype_def.fun, c.ctype_def.abstract_parameters, c.expr))
     return iszero(substituted)
 end
 

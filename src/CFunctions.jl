@@ -7,16 +7,18 @@ using ComplexRationals
 using SparseArrays
 using ..SparsePermutationTools: SparsePermutation
 using ..QAlgebra: get_default, FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
+using ..QDistributions: QDistribution, QEnsembleFunction
 
 export CFunction, CAbstractDefinition, CTypeDefinition, CIntegralDefinition, ParameterInfo
 export define_cabstract, define_ctype, define_cintegral
-export CAbstract, CIntegral, CCustomType, CAtom, CAtomIndexed, CSum, CRational, CProd, CExp, CLog, CPower, CVector, CMatrix
+export CAbstract, CIntegral, CCustomType, CCustomTypeIndexed, CAtom, CAtomIndexed, CSum, CRational, CProd, CExp, CLog, CPower, CVector, CMatrix
 export CMatrix, CVector, CPower
 export coeff, var_exponents, unique_first_terms
-export contains_non_simple_CFunction, with_concrete_indexes
+export contains_non_simple_CFunction, Indexed, has_indexed_parameters
 export list_cabstracts, list_ctypes, list_cintegrals
-export where_acting, where_acting!, which_params_acting, which_params_acting!, parameter_index_tuples
+export where_acting, where_acting!, which_params_acting, which_params_acting!, param_index_tuples
 export which_ensemble_acting, which_ensemble_acting!, substitute, separate_by_cond
+export ParameterValues, set_param!, set_time!, get_parameter_index, param_value, ensure_functions!
 
 import Base: copy, exp, log, length, getindex, iterate, size
 import ComplexRationals: isonelike
@@ -122,34 +124,42 @@ struct ParameterInfo <: AbstractParameterInfo
     dims::Int
     outer_labels_symbols::Vector{Symbol}
     inner_labels_symbols_flat::Vector{Symbol}
-    
+
     outer_labels::Vector{String}
+    outer_labels_str::Vector{String}
+    outer_labels_latex::Vector{String}
     params_name::Vector{String}
     params_str::Vector{String}
     params_latex::Vector{String}
 
-    param_of_indexes::BitVector   
-    outer_group_by_index::Vector{Int}   
-    t_index_by_index::Vector{Int}       # -1 for parameters that aren't of t. 
-    ss_ensemble_indexes_by_group::Vector{Vector{Int}}    # which ss ensembles are used for indexing in each group. 
-    ss_ensemble_present_by_group::Vector{BitVector}   # which ss ensembles are present in each group.
+    param_of_indexes::BitVector
+    param_group_by_index::Vector{Int}
+    t_index_by_index::Vector{Int}
+    ss_ensemble_indexes_by_group::Vector{Vector{Int}}
+    ss_ensemble_present_by_group::Vector{BitVector}
 
-    indexed_parameter_indexes::Vector{Int}                  # where are the where_acting_by_parameter for an index
-    where_acting_by_parameter::Vector{Vector{BitVector}}  # for each variable, where are they acting.
-    parameters_acting_by_index::Vector{Vector{BitVector}} # for each ensemble/index, which parameters act on it.
-    parameter_index_tuples::Vector{Vector{Tuple{Int,Int}}} # cached (ensemble, inner) lookup per parameter exponent
+    indexed_parameter_indexes::Vector{Int}
+    where_acting_by_parameter::Vector{Vector{BitVector}}
+    params_acting_by_index::Vector{Vector{BitVector}}
+    param_index_tuples::Vector{Vector{Tuple{Int,Int}}}
 
-    # Maps indexes for index transformation, once for switching subsystem indexes and once for time indexes
     subspace_index_maps::Vector{Array{SparsePermutation,2}}
     t_index_transform::Array{SparsePermutation,2}
-    indexes_by_t_index::Vector{Vector{Int}}   # for each t_index which indexes have it? 
+    indexes_by_t_index::Vector{Vector{Int}}
     indexes_of_t::Vector{Int}
 
     how_many_by_ensemble::Vector{Int}
-
     param_of_t::BitVector
     param_is_t::BitVector
-    param_values::Vector   # specifies for example values or functions or vectors for the parameters (vectors of the index values), functions of time ...
+
+    group_distributions::Vector{Union{Nothing,QDistribution}}
+    group_functions::Vector{Union{Nothing,QEnsembleFunction}}
+    function_param_refs::Vector{Union{Nothing,Vector{Int}}}
+    group_time_counts::Vector{Int}
+    group_index_sizes::Vector{Vector{Int}}
+    param_coords::Vector{Vector{Int}}
+    params_by_group::Vector{Vector{Int}}
+
     subspace_info::Any
     param_indexes::ParameterIndexes
     abstract_definitions::Vector{CAbstractDefinition}
@@ -157,34 +167,40 @@ struct ParameterInfo <: AbstractParameterInfo
     integral_definitions::Vector{CIntegralDefinition}
 
     function ParameterInfo(
-        outer_labels_symbols::Vector{Symbol}, inner_labels_symbols_flat::Vector{Symbol}, outer_labels::Vector{String}, params_name::Vector{String},
-        params_str::Vector{String}, params_latex::Vector{String}, param_of_indexes::BitVector, outer_group_by_index::Vector{Int},
+        outer_labels_symbols::Vector{Symbol}, inner_labels_symbols_flat::Vector{Symbol}, outer_labels::Vector{String},
+        outer_labels_str::Vector{String}, outer_labels_latex::Vector{String}, params_name::Vector{String},
+        params_str::Vector{String}, params_latex::Vector{String}, param_of_indexes::BitVector, param_group_by_index::Vector{Int},
         t_index_by_index::Vector{Int}, ss_ensemble_indexes_by_group::Vector{Vector{Int}}, ss_ensemble_present_by_group::Vector{BitVector}, indexed_parameter_indexes::Vector{Int},
-        where_acting_by_parameter::Vector{Vector{BitVector}}, parameters_acting_by_index::Vector{Vector{BitVector}}, parameter_index_tuples::Vector{Vector{Tuple{Int,Int}}},
+        where_acting_by_parameter::Vector{Vector{BitVector}}, params_acting_by_index::Vector{Vector{BitVector}}, param_index_tuples::Vector{Vector{Tuple{Int,Int}}},
         subspace_index_maps::Vector{Array{SparsePermutation,2}}, t_index_transform::Array{SparsePermutation,2}, indexes_by_t_index::Vector{Vector{Int}},
-        indexes_of_t::Vector{Int}, how_many_by_ensemble::Vector{Int}, param_of_t::BitVector, param_is_t::BitVector, param_values::Vector,
+        indexes_of_t::Vector{Int}, how_many_by_ensemble::Vector{Int}, param_of_t::BitVector, param_is_t::BitVector,
+        group_distributions::Vector{Union{Nothing,QDistribution}}, group_functions::Vector{Union{Nothing,QEnsembleFunction}}, function_param_refs::Vector{Union{Nothing,Vector{Int}}},
+        group_time_counts::Vector{Int}, group_index_sizes::Vector{Vector{Int}}, param_coords::Vector{Vector{Int}}, params_by_group::Vector{Vector{Int}},
         subspace_info::Any, param_indexes::ParameterIndexes)
         dims = length(inner_labels_symbols_flat)
         new(dims, outer_labels_symbols, inner_labels_symbols_flat, outer_labels,
+            outer_labels_str, outer_labels_latex,
             params_name, params_str, params_latex, param_of_indexes,
-            outer_group_by_index, t_index_by_index, ss_ensemble_indexes_by_group, ss_ensemble_present_by_group,
-            indexed_parameter_indexes, where_acting_by_parameter, parameters_acting_by_index, parameter_index_tuples,
+            param_group_by_index, t_index_by_index, ss_ensemble_indexes_by_group, ss_ensemble_present_by_group,
+            indexed_parameter_indexes, where_acting_by_parameter, params_acting_by_index, param_index_tuples,
             subspace_index_maps, t_index_transform,
-            indexes_by_t_index, indexes_of_t, how_many_by_ensemble, param_of_t, param_is_t, param_values,
+            indexes_by_t_index, indexes_of_t, how_many_by_ensemble, param_of_t, param_is_t,
+            group_distributions, group_functions, function_param_refs,
+            group_time_counts, group_index_sizes, param_coords, params_by_group,
             subspace_info, param_indexes, CAbstractDefinition[], CTypeDefinition[], CIntegralDefinition[])
     end
 end
 
 """
-    parameter_index_tuples(param_info::ParameterInfo, param_index::Int)
+    param_index_tuples(param_info::ParameterInfo, param_index::Int)
 
 Return the cached `(ensemble, inner)` tuples describing where parameter
 `param_index` acts. Non-indexed parameters yield an empty vector.
 """
-function parameter_index_tuples(param_info::ParameterInfo, param_index::Int)
-    1 ≤ param_index ≤ length(param_info.parameter_index_tuples) ||
+function param_index_tuples(param_info::ParameterInfo, param_index::Int)
+    1 ≤ param_index ≤ length(param_info.param_index_tuples) ||
         error("Parameter index $(param_index) out of bounds.")
-    return param_info.parameter_index_tuples[param_index]
+    return param_info.param_index_tuples[param_index]
 end
 
 ######################################################################################################################################################
@@ -565,85 +581,6 @@ end
     return CAtom(param_info, CR_ZERO, spzeros(Int, param_info.dims))
 end
 
-@inline function _validate_concrete_indexes(param_info::ParameterInfo, indexes::ConcreteIndexes)
-    expected = param_info.how_many_by_ensemble
-    indexes.expected_lengths == expected ||
-        error("Concrete indexes do not match ensemble sizes of the provided ParameterInfo.")
-    return indexes
-end
-
-function _validate_concrete_indexes(param_info::ParameterInfo, indexes::AbstractVector{<:AbstractVector{<:Integer}})
-    expected = param_info.how_many_by_ensemble
-    vectors = [Vector{Int}(idxs) for idxs in indexes]
-    return _validate_concrete_indexes(param_info, ConcreteIndexes(expected, vectors))
-end
-
-ConcreteIndexes(param_info::ParameterInfo) =
-    ConcreteIndexes(param_info.how_many_by_ensemble)
-ConcreteIndexes(param_info::ParameterInfo, indexes::AbstractVector{<:AbstractVector{<:Integer}}) =
-    _validate_concrete_indexes(param_info, indexes)
-ConcreteIndexes(param_info::ParameterInfo, indexes::ConcreteIndexes) =
-    _validate_concrete_indexes(param_info, indexes)
-
-"""
-    CAtomIndexed(param_info, coeff, var_exponents, indexes)
-
-Create a coefficient atom that stores concrete ensemble indexes alongside the
-standard sparse exponent representation. `indexes` may be a
-[`ConcreteIndexes`](@ref) instance or a vector of integer vectors with one
-entry per ensemble subspace of `param_info`.
-"""
-struct CAtomIndexed <: CAtomic
-    param_info::ParameterInfo
-    coeff::ComplexRational
-    var_exponents::SparseVector{Int,Int}
-    indexes::ConcreteIndexes
-    function CAtomIndexed(param_info::ParameterInfo, coeff::ComplexRational,
-                          var_exponents::SparseVector{Int,Int}, indexes::ConcreteIndexes)
-        return new(param_info, coeff, var_exponents, _validate_concrete_indexes(param_info, indexes))
-    end
-end
-
-CAtomIndexed(param_info::ParameterInfo, var_exponents, indexes) =
-    CAtomIndexed(CAtom(param_info, var_exponents), indexes)
-CAtomIndexed(param_info::ParameterInfo, coeff::Number, var_exponents, indexes::AbstractVector{<:AbstractVector{<:Integer}}) =
-    CAtomIndexed(CAtom(param_info, coeff, var_exponents), indexes)
-CAtomIndexed(param_info::ParameterInfo, coeff::ComplexRational, var_exponents, indexes::AbstractVector{<:AbstractVector{<:Integer}}) =
-    CAtomIndexed(CAtom(param_info, coeff, var_exponents), indexes)
-CAtomIndexed(param_info::ParameterInfo, coeff::Complex, var_exponents, indexes::AbstractVector{<:AbstractVector{<:Integer}}) =
-    CAtomIndexed(CAtom(param_info, coeff, var_exponents), indexes)
-CAtomIndexed(param_info::ParameterInfo, coeff::ComplexRational, var_exponents::SparseVector{Int,Int}, indexes::AbstractVector{<:AbstractVector{<:Integer}}) =
-    CAtomIndexed(param_info, coeff, var_exponents, _validate_concrete_indexes(param_info, indexes))
-
-function CAtomIndexed(atom::CAtom, indexes)
-    checked = _validate_concrete_indexes(atom.param_info, indexes)
-    return CAtomIndexed(atom.param_info, atom.coeff, atom.var_exponents, checked)
-end
-
-"""
-    with_concrete_indexes(atom::CAtom, indexes)
-
-Attach concrete ensemble indexes to `atom` and return a `CAtomIndexed`.
-`indexes` may be a [`ConcreteIndexes`](@ref) or a vector of integer vectors
-matching the ensemble layout of `atom.param_info`.
-"""
-with_concrete_indexes(atom::CAtom, indexes) = CAtomIndexed(atom, indexes)
-
-var_exponents(a::CAtomIndexed) = a.var_exponents
-coeff(a::CAtomIndexed)::Vector{ComplexRational} = [a.coeff]
-length(::CAtomIndexed) = 1
-
-function modify_exponents(a::CAtomIndexed, var_exponents)
-    return CAtomIndexed(a.param_info, a.coeff, var_exponents, a.indexes)
-end
-
-modify_coeff(a::CAtomIndexed, coeff::ComplexRational) =
-    CAtomIndexed(a.param_info, coeff, a.var_exponents, a.indexes)
-
-function modify_indexes(a::CAtomIndexed, indexes)
-    checked = _validate_concrete_indexes(a.param_info, indexes)
-    return CAtomIndexed(a.param_info, a.coeff, a.var_exponents, checked)
-end
 coeff(a::CAtom)::Vector{ComplexRational} = [a.coeff]
 modify_exponents(a::CAtom, var_exponents) = CAtom(a.param_info, a.coeff, var_exponents)
 modify_coeff(a::CAtom, coeff::ComplexRational)::CAtom = CAtom(a.param_info, coeff, a.var_exponents)
@@ -940,6 +877,8 @@ getindex(M::CMatrix, i::Int, j::Int) = M.expr[i, j]
 repartition(M::CMatrix, var_tuples::Vector{Tuple{Int,Int}}) = CMatrix(M.param_info, M.coeff, reshape(repartition.(M.expr[:], Ref(var_tuples)), size(M.expr)))
 var_exponents(a::CMatrix) = spzeros(Int, a.param_info.dims)
 
+include("CFunctionsOps/CFunctions_Indexed.jl")
+
 
 #### Some basic functions ##############################################################################################
 
@@ -993,6 +932,7 @@ include("CFunctionsOps/CFunctions_algebra.jl")
 include("CFunctionsOps/CFunctions_sort.jl")
 include("CFunctionsOps/CFunctions_substitute.jl")
 include("CFunctionsOps/CFunctions_simplify.jl")
+include("CFunctionsOps/ParameterValues.jl")
 include("CFunctionsOps/CFunctions_orders_eval.jl")
 include("CFunctionsOps/CFunctions_expand.jl")
 include("CFunctionsOps/CFunctions_helper.jl")

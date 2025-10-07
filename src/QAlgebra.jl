@@ -77,17 +77,22 @@ using .StringUtils
 export symbol2formatted, str2sub, str2sup, brace, braket, indexes2str
 export int_exponent2str, exponentdag2str
 
+include("IndexingCombinationsSamples/Interpolations.jl")
+include("IndexingCombinationsSamples/Distributions.jl")
+using .QDistributions
+export QDistribution, QNormal, QUniform, QEnsembleFunction, pdf
+
 include("CFunctions.jl")
 using .CFunctions
-CAbstract, CIntegral, CCustomType, CAtom, CSum, CRational, CProd, CExp, CLog
+CFunction, CAbstract, CIntegral, CCustomType, CCustomTypeIndexed, CAtom, CSum, CRational, CProd, CExp, CLog
 export define_cabstract, define_ctype, define_cintegral
-export CMatrix, CVector, CPower, CAtomIndexed
-export reorder, max_exponents, build_xpows, evaluate, stringer, to_stringer, to_string, sort_key
+export CFunction, CAtom, CMatrix, CVector, CPower, CAtomIndexed, CCustomTypeIndexed
+export reorder, max_exponents, evaluate, stringer, to_stringer, to_string, sort_key
 export coeff, var_exponents, expand, substitute
-export contains_non_simple_CFunction
+export contains_non_simple_CFunction, has_indexed_parameters, Indexed
 export list_cabstracts, list_ctypes, list_cintegrals
 export where_acting, where_acting!, which_ensemble_acting, which_ensemble_acting!
-export which_params_acting, which_params_acting!, separate_by_cond, with_concrete_indexes, parameter_index_tuples
+export which_params_acting, which_params_acting!, separate_by_cond, param_index_tuples
 
 include("Cumulants.jl")
 using .Cumulants
@@ -117,10 +122,18 @@ export contains_abstract, are_indexes_defined, which_summations_acting, which_su
 export Substitution, --> 
 export reorder, reorder_full, reorder_time, neq, flatsums, complexsums , Sum2Int
 # Preindexing
-export QAtomOrdered, QAtomIndexed, QNeutral, OrderbyOperator
+export QAtomOrdered, QAtomIndexed, QNeutral, OrderbyOperator, OrderedQAtomProduct, OrderedQExpr, OrderedDiffQEq
 
-#include("Indexing.jl")
-#include("Combinatorics.jl")
+include("IndexingCombinationsSamples/Indexing.jl")
+using .Indexing
+export BinomialCache, _UsedBuf, EnsembleRankWorkspace, MultiEnsembleWorkspace
+export index_rank_for_ensemble!, index_rank_for_ensemble_continuum!
+export index_number_for_ensemble, index_number_for_ensemble_continuum
+export combined_index_for_ensembles!, combined_index_for_ensembles_continuum!
+
+include("IndexingCombinationsSamples/Combinatorics.jl")
+using .QCombinatorics
+export ensemble_iterator, ensemble_iterator_continuum, multi_ensemble_iterator, multi_ensemble_iterator_continuum
 
 #include("QEqSets.jl")
 #using .QEqSets

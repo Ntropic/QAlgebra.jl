@@ -1,18 +1,33 @@
 module Indexing 
 
+"""
+# Indexing usage
+
+Typical workflow:
+1. Build a workspace with `MultiEnsembleWorkspace(max_ns, as_continuum; max_threads)`.
+   The constructor caches binomials for each ensemble and records which ones
+   allow repeated indices (`as_continuum`). Passing `max_threads > 1` returns a
+   vector of workspaces so each thread can reuse its own buffers.
+2. When a concrete ensemble configuration is known (a vector of blocks), call
+   `combined_index_for_ensembles!` to obtain its mixed-radix rank. The function
+   mutates the workspace to avoid allocations, so reuse it across calls.
+"""
+
+const _DOCS_ANCHOR = nothing
+
 export BinomialCache, _UsedBuf, EnsembleRankWorkspace, MultiEnsembleWorkspace
+export index_rank_for_ensemble!, index_rank_for_ensemble_continuum!
+export index_number_for_ensemble, index_number_for_ensemble_continuum
+export combined_index_for_ensembles!, combined_index_for_ensembles_continuum!
 
 using Base.Threads
 #### Define Structs >===================================================<
 """
     BinomialCache(max_n::Int, max_k::Int)
 
-Cache of binomial coefficients C(n,k) for
-    n ∈ [max_n - max_k, max_n]
-    k ∈ [0, max_k], with k ≤ n
-
-All values are stored as `Int`.  
-⚠ Beware: `Int` will overflow if `C(n,k)` exceeds machine integer range.
+Compact cache of binomial coefficients `C(n,k)` covering
+`n ∈ [max_n - max_k, max_n]`, `k ∈ [0, max_k]`. Values are stored as
+`Int`; overflows are possible for large inputs.
 """
 struct BinomialCache
     max_n::Int
@@ -46,7 +61,7 @@ struct BinomialCache
             end
         end
 
-        return BinomialCache(max_n, max_k, min_n, vals)
+        return new(max_n, max_k, min_n, vals)
     end
 end
 function BinomialCache(max_n::Int)::BinomialCache
@@ -67,8 +82,16 @@ mutable struct _UsedBuf
     len::Int
 end
 @inline _usedbuf(cap::Int) = _UsedBuf(Vector{Int}(undef, cap), 0)
+"""
+    EnsembleRankWorkspace(bin_cache)
+
+Reusable buffers for ranking a single ensemble: keeps a `BinomialCache`, a
+cache for combinations with repetition, a scratch set of used indices, and
+per-block size/rank storage.
+"""
 mutable struct EnsembleRankWorkspace
     bin_cache::BinomialCache
+    repeat_cache::Dict{Tuple{Int,Int},Int}
     used::_UsedBuf
     block_sizes::Vector{Int}
     ranks_by_blk::Vector{Int}
@@ -76,49 +99,78 @@ end
 function EnsembleRankWorkspace(bin_cache::BinomialCache)
     # max #blocks ≤ max_k (each block must have ≥1 element)
     max_blocks = bin_cache.max_k
-    EnsembleRankWorkspace(bin_cache, _usedbuf(bin_cache.max_k), Vector{Int}(undef, max_blocks), Vector{Int}(undef, max_blocks))
+    repeat_cache = Dict{Tuple{Int,Int},Int}()
+    EnsembleRankWorkspace(bin_cache, repeat_cache, _usedbuf(bin_cache.max_k), Vector{Int}(undef, max_blocks), Vector{Int}(undef, max_blocks))
 end
 
 ######## Multi-ensemble workspace ########
 
+"""
+    MultiEnsembleWorkspace(bin_caches)
+
+Bundle of `EnsembleRankWorkspace`s plus mixed-radix accumulators used to rank
+and enumerate multiple ensembles at once. Prefer constructing via
+`MultiEnsembleWorkspace(max_ns, as_continuum; max_threads=1)`, which derives the
+necessary binomial caches from the `max_ns` vector and records the continuum
+mask. When `max_threads > 1` it returns a vector of identical workspaces so each
+worker can reuse its own buffers.
+"""
 mutable struct MultiEnsembleWorkspace
     rank_ws::Vector{EnsembleRankWorkspace}
     sizes::Vector{Int}
     ranks::Vector{Int}
+    as_continuum::BitVector
 end
 
-function MultiEnsembleWorkspace(bin_caches::Vector{BinomialCache})
+function MultiEnsembleWorkspace(bin_caches::Vector{BinomialCache}, as_continuum::BitVector)
     n = length(bin_caches)
+    @assert length(as_continuum) == n "as_continuum length $(length(as_continuum)) must equal number of ensembles $n"
     ensemble_work_space = Vector{EnsembleRankWorkspace}(undef, n)
     @inbounds for i in 1:n
         ensemble_work_space[i] = EnsembleRankWorkspace(bin_caches[i])
     end
-    MultiEnsembleWorkspace(ensemble_work_space, Vector{Int}(undef, n), Vector{Int}(undef, n))
+    MultiEnsembleWorkspace(ensemble_work_space, Vector{Int}(undef, n), Vector{Int}(undef, n), BitVector(as_continuum))
 end
-function MultiEnsembleWorkspace(max_ns::Vector{Int})::MultiEnsembleWorkspace
-    # sort unique to not regenerate bin_caches so that we get the values and where they are 
+
+function MultiEnsembleWorkspace(bin_caches::Vector{BinomialCache})
+    return MultiEnsembleWorkspace(bin_caches, falses(length(bin_caches)))
+end
+
+function MultiEnsembleWorkspace(max_ns::Vector{Int}, as_continuum::Union{Nothing,BitVector}=nothing; max_threads::Int=1)
     unique_max_ns = sort(unique(max_ns))
     bin_caches::Vector{BinomialCache} = BinomialCache[BinomialCache(max_n) for max_n in unique_max_ns]
     ordered_bin_caches::Vector{BinomialCache} = BinomialCache[]
     for max_n in max_ns 
         index = findfirst(x -> x == (max_n), unique_max_ns)
-        push!(ordered_bin_caches, bin_caches[index]
+        push!(ordered_bin_caches, bin_caches[index])
     end
-    return MultiEnsembleWorkspace(ordered_bin_caches)
-end
-function MultiEnsembleWorkspace(max_ns::Vector{Int}; max_threads::Int=1)::Vector{MultiEnsembleWorkspace}
-    unique_max_ns = sort(unique(max_ns))
-    bin_caches::Vector{BinomialCache} = BinomialCache[BinomialCache(max_n) for max_n in unique_max_ns]
-    ordered_bin_caches::Vector{BinomialCache} = BinomialCache[]
-    for max_n in max_ns 
-        index = findfirst(x -> x == (max_n), unique_max_ns)
-        push!(ordered_bin_caches, bin_caches[index]
-    end
-    return [MultiEnsembleWorkspace(ordered_bin_caches) for _ in 1:max_threads]
+    bitmask = as_continuum === nothing ? falses(length(max_ns)) : BitVector(as_continuum)
+    @assert length(bitmask) == length(max_ns) "as_continuum length $(length(bitmask)) must equal number of ensembles $(length(max_ns))"
+    base_ws = MultiEnsembleWorkspace(ordered_bin_caches, bitmask)
+    max_threads <= 1 && return base_ws
+    return [MultiEnsembleWorkspace(ordered_bin_caches, bitmask) for _ in 1:max_threads]
 end
 
 
 ##### Finding indexes ################################################################################
+@inline function _combination_with_repetition!(ws::EnsembleRankWorkspace, n::Int, k::Int)::Int
+    k == 0 && return 1
+    n <= 0 && return 0
+
+    key = (n, k)
+    cache = ws.repeat_cache
+    value = get(cache, key, nothing)
+    if value === nothing
+        acc::Int = 1
+        @inbounds for i in 1:k
+            acc = (acc * (n + i - 1)) ÷ i
+        end
+        cache[key] = acc
+        return acc
+    end
+    return value
+end
+
 function index_number_for_ensemble(block_sizes::Vector{Int}, bin_cache::BinomialCache)::Int
     # @assert sum(block_sizes) <= bin_cache.max_k "Cumulative block sizes exceed BinomialCache's max k value."
     if isempty(block_sizes)
@@ -144,6 +196,25 @@ function bubble_insert_return_index!(used_indexes::Vector{Int}, val::Int, curren
     return current_index+1
 end
 
+@inline function _rank_non_decreasing_block(block::Vector{Int}, n::Int, ws::EnsembleRankWorkspace)::Int
+    rank::Int = 0
+    start_val::Int = 1
+    k = length(block)
+    @inbounds for i in 1:k
+        current = block[i]
+        current < start_val && throw(ArgumentError("Block entries must be sorted nondecreasing."))
+        current > n && throw(ArgumentError("Block entry $(current) exceeds maximum index $(n)."))
+        remaining = k - i
+        for val in start_val:(current - 1)
+            available = n - val + 1
+            available > 0 || continue
+            rank += _combination_with_repetition!(ws, available, remaining)
+        end
+        start_val = current
+    end
+    return rank
+end
+
 
 @inline function _insert_return_next!(ub::_UsedBuf, val::Int, current_index::Int)::Int
     @inbounds begin
@@ -158,6 +229,11 @@ end
         ub.len = n + 1
         return j + 2 # new starting index
     end
+end
+
+@inline function index_rank_by_block_continuum!(blocked_indexes::Vector{Int}, ensemble_work_space::EnsembleRankWorkspace)::Int
+    n = ensemble_work_space.bin_cache.max_n
+    return _rank_non_decreasing_block(blocked_indexes, n, ensemble_work_space)
 end
 
 @inline function index_rank_by_block!(blocked_indexes::Vector{Int}, ensemble_work_space::EnsembleRankWorkspace)::Int
@@ -211,6 +287,29 @@ end
     return total_index
 end
 
+@inline function index_rank_for_ensemble_continuum!(blocked_indexes::Vector{Vector{Int}}, ensemble_work_space::EnsembleRankWorkspace)::Int
+    nb = length(blocked_indexes)
+    nb == 0 && return 1
+
+    bc = ensemble_work_space.bin_cache
+    n = bc.max_n
+    @inbounds for i in 1:nb
+        ensemble_work_space.block_sizes[i] = length(blocked_indexes[i])
+        ensemble_work_space.ranks_by_blk[i] = index_rank_by_block_continuum!(blocked_indexes[i], ensemble_work_space)
+    end
+
+    total_rank::Int = 0
+    combs_to_right::Int = 1
+    @inbounds for k in nb:-1:1
+        bs = ensemble_work_space.block_sizes[k]
+        r  = ensemble_work_space.ranks_by_blk[k]
+        total_rank += r * combs_to_right
+        combs_to_right *= _combination_with_repetition!(ensemble_work_space, n, bs)
+    end
+
+    return total_rank + 1
+end
+
 @inline function index_rank_for_ensemble!(blocked_indexes::Vector{Vector{Int}}, ensemble_work_space::EnsembleRankWorkspace)::Int
     bc = ensemble_work_space.bin_cache
     if isempty(blocked_indexes); return 1; end
@@ -242,6 +341,22 @@ end
     end
 
     return total_rank + 1
+end
+
+@inline function index_number_for_ensemble_continuum(blocked_indexes::Vector{Vector{Int}}, ensemble_work_space::EnsembleRankWorkspace)::Int
+    if isempty(blocked_indexes)
+        return 1
+    end
+    n = ensemble_work_space.bin_cache.max_n
+    total::Int = 1
+    @inbounds for block in blocked_indexes
+        total *= _combination_with_repetition!(ensemble_work_space, n, length(block))
+    end
+    return total
+end
+
+@inline function index_number_for_ensemble_continuum(blocked_indexes::Vector{Vector{Int}}, bin_cache::BinomialCache)::Int
+    return index_number_for_ensemble_continuum(blocked_indexes, EnsembleRankWorkspace(bin_cache))
 end
 
 """
@@ -277,12 +392,29 @@ Returns 1-based mixed-radix index where the **last ensemble varies fastest**:
 total = 1 + Σᵢ (rankᵢ - 1) * Π_{j>i} sizeⱼ
 """
 @inline function combined_index_for_ensembles!(ensembles::Vector{Vector{Vector{Int}}},  multi_ensemble_workspace::MultiEnsembleWorkspace)::Int
+    return combined_index_for_ensembles!(ensembles, multi_ensemble_workspace, multi_ensemble_workspace.as_continuum)
+end
+
+@inline function combined_index_for_ensembles!(ensembles::Vector{Vector{Vector{Int}}},  multi_ensemble_workspace::MultiEnsembleWorkspace, as_continuum::BitVector)::Int
     ne = length(ensembles)
+    @assert length(as_continuum) == ne
+
+    if length(multi_ensemble_workspace.as_continuum) == ne
+        multi_ensemble_workspace.as_continuum .= as_continuum
+    else
+        multi_ensemble_workspace.as_continuum = BitVector(as_continuum)
+    end
+    mask = multi_ensemble_workspace.as_continuum
 
     @inbounds for i in 1:ne
         ensemble_work_space = multi_ensemble_workspace.rank_ws[i]
-        multi_ensemble_workspace.ranks[i] = index_rank_for_ensemble!(ensembles[i], ensemble_work_space)
-        multi_ensemble_workspace.sizes[i] = index_number_for_ensemble(ensembles[i], ensemble_work_space.bin_cache)
+        if mask[i]
+            multi_ensemble_workspace.ranks[i] = index_rank_for_ensemble_continuum!(ensembles[i], ensemble_work_space)
+            multi_ensemble_workspace.sizes[i] = index_number_for_ensemble_continuum(ensembles[i], ensemble_work_space)
+        else
+            multi_ensemble_workspace.ranks[i] = index_rank_for_ensemble!(ensembles[i], ensemble_work_space)
+            multi_ensemble_workspace.sizes[i] = index_number_for_ensemble(ensembles[i], ensemble_work_space.bin_cache)
+        end
     end
 
     total::Int  = 1
@@ -292,6 +424,11 @@ total = 1 + Σᵢ (rankᵢ - 1) * Π_{j>i} sizeⱼ
         factor *= multi_ensemble_workspace.sizes[i]
     end
     return total
+end
+
+@inline function combined_index_for_ensembles_continuum!(ensembles::Vector{Vector{Vector{Int}}},  multi_ensemble_workspace::MultiEnsembleWorkspace)::Int
+    trues_vec = trues(length(ensembles))
+    return combined_index_for_ensembles!(ensembles, multi_ensemble_workspace, trues_vec)
 end
 
 end

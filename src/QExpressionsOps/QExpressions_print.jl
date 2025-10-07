@@ -135,6 +135,26 @@ function QComposite2string(q::QAtomProduct, ::Vector{BitVector}; do_latex::Bool=
         end
     end
 end
+
+function QComposite2string(q::QAtomIndexed, where_acting::Vector{BitVector}; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)
+    coeff_sign, coeff_str = to_stringer(q.coeff_fun; braced=true, do_frac=do_frac, has_op=true, do_latex=do_latex)
+    full_indices = recompose_op_indices(q.op_indices, q.ensemble_indexes, q.qspace)
+    term = QTerm(full_indices, q.time_index)
+    operator_str = qAtom2string(term, q.qspace; do_latex=do_latex)
+
+    flat_indexes = [string(idx) for ensemble in q.concrete_indexes.indexes for idx in ensemble]
+    if !isempty(flat_indexes)
+        operator_str *= indexes2str(flat_indexes; do_latex=do_latex)
+    end
+
+    connector = do_latex ? raw" " : ""
+    total = coeff_str * connector * operator_str
+    if return_if_braced
+        return coeff_sign, total, false
+    else
+        return coeff_sign, total
+    end
+end
 function QComposite2string(term::AbstractQSum, where_acting::Vector{BitVector}; do_latex::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     sum_str, measure = sum_symbol_str(term, where_acting; do_latex=do_latex)
     first_sign, total_string, single_group = QExpr2string(term.expr, where_acting; do_latex=do_latex, braced=braced, do_frac=do_frac, return_grouping=true, do_braket=do_braket)

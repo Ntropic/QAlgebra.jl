@@ -166,6 +166,11 @@ mutable struct QSpace
 
         # ==========> 3rd Parameters <==========
         params, param_info = ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
+        final_group_count = length(param_info.outer_labels_symbols)
+        for ss in subspaces
+            resize!(ss.parameter_group_acting, final_group_count)
+            resize!(ss.parameter_group_distribution, final_group_count)
+        end
     
         # Generate the string representations
         c_one = CAtom(param_info, spzeros(Int, length(params)))
@@ -193,10 +198,10 @@ function Base.show(io::IO, qspace::QSpace)
     if length(qspace.params) < 12
         param_str = join([p.param_str for p in qspace.params], ",")
     else
-        max_val = maximum(qspace.param_info.outer_group_by_index)
+        max_val = maximum(qspace.param_info.param_group_by_index)
         indexes = Int[] 
         for i in 1:max_val
-            push!(indexes, findfirst(==(i), qspace.param_info.outer_group_by_index))
+            push!(indexes, findfirst(==(i), qspace.param_info.param_group_by_index))
         end
         param_str = join([qspace.params[i].param_str for i in indexes], ",")
     end

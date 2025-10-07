@@ -1,39 +1,75 @@
-export max_exponents, build_xpows, evaluate
-"""
-    max_exponents(a::CFunction)    -> Vector{Int}
-    max_exponents(a::AbstractVector{CFunction}) -> Vector{Int}
+export max_exponents, evaluate
 
-Computes the elementwise maximum of variable exponents, 
-ideal for getting the maximum requied orders for `build_xpows`.
-"""
+import ..CFunctions
+using ..CFunctions: has_indexed_parameters, ParameterValues, set_param!, param_value, ensure_functions!
+
 function max_vec(a::Vector{Int}, b::Vector{Int})::Vector{Int}
     return max.(a, b)
 end
+
 max_exponents(a::CAtom) = Vector(abs.(a.var_exponents))
-max_exponents(a::CAbstract) = error("max_exponents can not be used for CAbstract.")
+max_exponents(a::CAtomIndexed) = Vector(abs.(a.var_exponents))
+max_exponents(a::CAbstract) = error("max_exponents cannot be computed for CAbstract.")
 max_exponents(::CIntegral) = error("max_exponents is undefined for CIntegral.")
-function max_exponents(s::CFunction)::Vector{Int}
-    m = zeros(Int, dims(s))
-    for leaf in leaf_iter
-        m = max_vec(m, max_exponents(leaf))
-    end
-    return m
-end
 
-"""
-    build_xpows(x::Vector{<:Number}, max_exp::Vector{Int}) -> Vector{Vector}
-
-Precomputes powers of each variable for fast evaluation:
-- Returns `xpows` such that `xpows[j][k+1] == x[j]^k` for `k = 0:max_exp[j]`.
-- Lengths of `x` and `max_exp` must agree.
-"""
-function build_xpows(x::Vector{T}, max_exp::Vector{Int})::Vector{Vector{T}}  where T <: Number
-    @assert length(x) == length(max_exp)
-    xpows = [Vector{typeof(x[i])}(undef, length(x)) for i in eachindex(x)]
-    for j in eachindex(x)
-        xpows[j] = [ x[j]^k for k in 0:max_exp[j] ]
+function max_exponents(f::CFunction)::Vector{Int}
+    if f isa CAtom
+        return max_exponents(f::CAtom)
+    elseif f isa CAtomIndexed
+        return max_exponents(f::CAtomIndexed)
+    elseif f isa CSum
+        dims = dims(f)
+        m = zeros(Int, dims)
+        for term in f.expr
+            m = max_vec(m, max_exponents(term))
+        end
+        return m
+    elseif f isa CProd
+        dims = dims(f)
+        m = zeros(Int, dims)
+        for term in f.expr
+            m = max_vec(m, max_exponents(term))
+        end
+        return m
+    elseif f isa CPower
+        return max_exponents(f.expr)
+    elseif f isa CLog
+        return max_exponents(f.expr)
+    elseif f isa CExp
+        return max_exponents(f.expr)
+    elseif f isa CRational
+        return max_vec(max_exponents(f.numer), max_exponents(f.denom))
+    elseif f isa CVector
+        dims = dims(f)
+        m = zeros(Int, dims)
+        for term in f.expr
+            m = max_vec(m, max_exponents(term))
+        end
+        return m
+    elseif f isa CMatrix
+        dims = dims(f)
+        m = zeros(Int, dims)
+        for term in f.expr
+            m = max_vec(m, max_exponents(term))
+        end
+        return m
+    elseif f isa CCustomType
+        dims = dims(f)
+        m = zeros(Int, dims)
+        for term in f.expr
+            m = max_vec(m, max_exponents(term))
+        end
+        return m
+    elseif f isa CCustomTypeIndexed
+        dims = dims(f)
+        m = zeros(Int, dims)
+        for term in f.expr
+            m = max_vec(m, max_exponents(term))
+        end
+        return m
+    else
+        error("max_exponents not implemented for $(typeof(f)).")
     end
-    return xpows
 end
 
 # Rational exponent on a numeric base
@@ -41,123 +77,96 @@ end
     if denominator(q) == 1
         return y ^ Int(q)
     else
-        return y ^ float(q)    # works for real/complex bases
+        return y ^ float(q)
     end
 end
-ctimes(c::ComplexRational, d::T) where T <: Number = (c.a+im*c.b)/c.c * d
 
-const VType{T<:Number} = Union{Vector{T}, Vector{Vector{T}}}
-"""
-    evaluate(p::CFunction, x::Vector{<:Number})        -> Number
-    evaluate(p::CFunction, xpows::Vector{Vector{T}})   -> Number where T<:Number
+ctimes(c::ComplexRational, d::T) where T <: Number = (c.a + im*c.b) / c.c * d
 
-Evaluate a `CFunction` by multiplying its coefficient with the evaluations of each factor.
-- In the first form, each factor is evaluated directly at the point `x`.
-- In the second form, each factor is evaluated using precomputed powers `xpows`, see the `build_xpows` function.
-"""
-function evaluate(a::CAtom, x::Vector{<:Number})
-    ctimes(a.coeff , prod(x[i]^a.var_exponents[i] for i in eachindex(a.var_exponents)))
-end
-
-function evaluate(a::CAtom, xpows::Vector{Vector{T}}) where T <: Number
-    ctimes(a.coeff , prod(
-        a.var_exponents[i] >= 0 ?
-            xpows[i][a.var_exponents[i] + 1] :
-            1 / xpows[i][abs(a.var_exponents[i]) + 1]
-        for i in eachindex(a.var_exponents)))
-end
-
-# Navigate the tree 
-function evaluate(a::CAbstract, x::VType{T}) where T <: Number
-    error("CAbstract requires evaluated values for its substitution to be itself evaluated.")
-end
-function evaluate(i::CIntegral, ::VType{T}) where {T<:Number}
-    error("CIntegral evaluation requires a dedicated backend.")
-end
-function evaluate(s::CSum, x::VType{T}) where T <: Number
-    sum(evaluate(t, x) for t in s.expr)
-end
-function evaluate(r::CRational, x::VType{T}) where T <: Number
-    evaluate(r.numer, expr) / evaluate(r.denom, x)
-end
-function evaluate(e::CExp, x::VType{T}) where T <: Number
-    ctimes(e.coeff , exp(evaluate(e.expr, x)))
-end
-function evaluate(l::CLog, x::VType{T}) where T <: Number
-    ctimes(l.coeff , log(evaluate(l.expr, x)))
-end
-function evaluate(p::CProd, x::VType{T}) where T <: Number
-    # coefficient times the product of all term‐evaluations
-    ctimes(p.coeff, prod(evaluate(term, x) for term in p.terms))
-end
-function evaluate(p::CPower, x::VType{T}) where T <: Number
-    ctimes(p.coeff, _pow_r(evaluate(p.expr, x), p.exponent))
-end
-function evaluate(v::CVector, x::VType{T}) where T <: Number
-    [ ctimes(v.coeff, evaluate(e, x)) for e in v.expr ]
-end
-function evaluate(M::CMatrix, x::VType{T}) where T <: Number
-    m, n = size(M.expr)
-    reshape([ ctimes(M.coeff, evaluate(e, x)) for e in M.expr ], m, n)
-end
-function evaluate(c::CCustomType, x::VType{T}) where T <: Number
-    arg_values = [evaluate(e, x) for e in c.expr]
-    val = evaluate(c.ctype_def.fun, arg_values, c.ctype_def.index_map)
-    return ctimes(c.coeff, val)
-end
-
-# With substitutions 
-function evaluate(a::CAtom, x::Vector{<:Number}, abstract_vals::Vector{<:Number}, index_map::Vector{Int}) 
-    ctimes(a.coeff , prod(x[i]^a.var_exponents[i] for i in eachindex(a.var_exponents)))
-end
-function evaluate(a::CAtom, xpows::Vector{Vector{T}}, abstract_vals::Vector{<:Number}, index_map::Vector{Int}) where T <: Number
-    ctimes(a.coeff , prod(
-        a.var_exponents[i] >= 0 ?
-            xpows[i][a.var_exponents[i] + 1] :
-            1 / xpows[i][abs(a.var_exponents[i]) + 1]
-        for i in eachindex(a.var_exponents)))
-end
-function evaluate(a::CAbstract, x::VType{T}, abstract_vals::Vector{<: Number}, index_map::Vector{Int})  where T <: Number
-    new_val = abstract_vals[index_map[a.index]]
-    if a.dag
-        new_val = new_val'
+function _evaluate_atom(a::CAtom, pv::ParameterValues)
+    prod_val = one(Float64)
+    first_term = true
+    for idx in a.var_exponents.nzind
+        val = param_value(pv, idx)
+        exp = a.var_exponents[idx]
+        term = val ^ exp
+        if first_term
+            prod_val = term
+            first_term = false
+        else
+            prod_val *= term
+        end
     end
-    if a.exponent != 1 
-        new_val = new_val^a.exponent
+    return ctimes(a.coeff, prod_val)
+end
+
+function _evaluate_atom(a::CAtomIndexed, pv::ParameterValues)
+    prod_val = one(Float64)
+    first_term = true
+    for idx in a.var_exponents.nzind
+        val = param_value(pv, idx)
+        exp = a.var_exponents[idx]
+        term = val ^ exp
+        if first_term
+            prod_val = term
+            first_term = false
+        else
+            prod_val *= term
+        end
     end
-    return ctimes(a.coeff, new_val)
+    return ctimes(a.coeff, prod_val)
 end
-function evaluate(i::CIntegral, ::VType{T}, ::Vector{<:Number}, ::Vector{Int}) where {T<:Number}
-    error("CIntegral evaluation with substituted abstracts is not implemented.")
+
+function _evaluate(f::CFunction, pv::ParameterValues)
+    if f isa CAtom
+        has_indexed_parameters(f) && error("Cannot evaluate indexed atom without converting to CAtomIndexed.")
+        return _evaluate_atom(f::CAtom, pv)
+    elseif f isa CAtomIndexed
+        return _evaluate_atom(f::CAtomIndexed, pv)
+    elseif f isa CAbstract
+        error("CAbstract requires substitution before evaluation.")
+    elseif f isa CIntegral
+        error("CIntegral evaluation requires a dedicated backend.")
+    elseif f isa CSum
+        return sum(_evaluate(term, pv) for term in f.expr)
+    elseif f isa CProd
+        return ctimes(f.coeff, prod(_evaluate(term, pv) for term in f.expr))
+    elseif f isa CRational
+        return _evaluate(f.numer, pv) / _evaluate(f.denom, pv)
+    elseif f isa CExp
+        return ctimes(f.coeff, exp(_evaluate(f.expr, pv)))
+    elseif f isa CLog
+        return ctimes(f.coeff, log(_evaluate(f.expr, pv)))
+    elseif f isa CPower
+        return ctimes(f.coeff, _pow_r(_evaluate(f.expr, pv), f.exponent))
+    elseif f isa CVector
+        return [ctimes(f.coeff, _evaluate(term, pv)) for term in f.expr]
+    elseif f isa CMatrix
+        m, n = size(f.expr)
+        return reshape([ctimes(f.coeff, _evaluate(term, pv)) for term in f.expr], m, n)
+    elseif f isa CCustomType
+        arg_values = [_evaluate(term, pv) for term in f.expr]
+        val = evaluate(f.ctype_def.fun, arg_values, f.ctype_def.index_map)
+        return ctimes(f.coeff, val)
+    elseif f isa CCustomTypeIndexed
+        arg_values = [_evaluate(term, pv) for term in f.expr]
+        val = evaluate(f.ctype_def.fun, arg_values, f.ctype_def.index_map)
+        return ctimes(f.coeff, val)
+    else
+        error("Evaluation not implemented for $(typeof(f)).")
+    end
 end
-function evaluate(s::CSum, x::VType{T}, abstract_vals::Vector{<: Number}, index_map::Vector{Int})  where T <: Number
-    sum(evaluate(t, x, abstract_vals, index_map) for t in s.expr)
+
+function evaluate(f::CFunction, pv::ParameterValues)
+    ensure_functions!(pv)
+    return _evaluate(f, pv)
 end
-function evaluate(r::CRational, x::VType{T}, abstract_vals::Vector{<: Number}, index_map::Vector{Int})  where T <: Number
-    evaluate(r.numer, x, abstract_vals, index_map) / evaluate(r.denom, x, abstract_vals, index_map)
-end
-function evaluate(e::CExp, x::VType{T}, abstract_vals::Vector{<: Number}, index_map::Vector{Int})  where T <: Number
-    ctimes(e.coeff , exp(evaluate(e.expr, x, abstract_vals, index_map)))
-end
-function evaluate(l::CLog, x::VType{T}, abstract_vals::Vector{<: Number}, index_map::Vector{Int})  where T <: Number
-    ctimes(l.coeff , log(evaluate(l.expr, x, abstract_vals, index_map)))
-end
-function evaluate(p::CProd, x::VType{T}, abstract_vals::Vector{<: Number}, index_map::Vector{Int})  where T <: Number
-    # coefficient times the product of all term‐evaluations
-    ctimes(p.coeff, prod(evaluate(term, x, abstract_vals, index_map) for term in p.expr))
-end
-function evaluate(p::CPower, x::VType{T}, abstract_vals::Vector{<: Number}, index_map::Vector{Int})  where T <: Number
-    ctimes(p.coeff, _pow_r(evaluate(p.expr, x, abstract_vals, index_map), p.exponent))
-end
-function evaluate(v::CVector, x::VType{T}, abstract_vals::Vector{<: Number}, index_map::Vector{Int})  where T <: Number
-    [ ctimes(v.coeff, evaluate(e, x, abstract_vals, index_map)) for e in v.expr ]
-end
-function evaluate(M::CMatrix, x::VType{T}, abstract_vals::Vector{<: Number}, index_map::Vector{Int})  where T <: Number
-    m, n = size(M.expr)
-    reshape([ ctimes(M.coeff, evaluate(e, x, abstract_vals, index_map)) for e in M.expr ], m, n)
-end
-function evaluate(c::CCustomType, x::VType{T}, abstract_vals::Vector{<: Number}, index_map::Vector{Int})  where T <: Number
-    arg_values = [evaluate(e, x, abstract_vals, index_map) for e in c.expr]
-    val = evaluate(c.ctype_def.fun, arg_values, c.ctype_def.index_map)
-    return ctimes(c.coeff, val)
+
+function evaluate(f::CFunction, x::AbstractVector{<:Number})
+    pv = ParameterValues(f.param_info)
+    n = min(length(x), length(pv.param_info.params_name))
+    for idx in 1:n
+        set_param!(pv, idx, x[idx])
+    end
+    return evaluate(f, pv)
 end

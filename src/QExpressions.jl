@@ -293,7 +293,6 @@ include("QExpressionsOps/QExpressions_simplify.jl")
 
 include("QExpressionsOps/QExpressions_properties.jl")
 include("QExpressionsOps/QExpressions_algebra.jl")
-include("QExpressionsOps/QExpressions_print.jl")
 
 include("QExpressionsOps/QSum_modify.jl")
 
@@ -303,6 +302,8 @@ include("QExpressionsOps/QExpressions_reorder.jl")
 include("QExpressionsOps/QSum_decollision.jl") 
 
 include("QExpressionsOps/OrderedQExpressions.jl")
+include("QExpressions_Indexed.jl")
+include("QExpressionsOps/QExpressions_print.jl")
 include("QExpressionsOps/QExpressions_iterate.jl")
 
 import ..CFunctions: define_cabstract, define_ctype, define_cintegral, list_cabstracts, list_ctypes, list_cintegrals, c_abstract_exists

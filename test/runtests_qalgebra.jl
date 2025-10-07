@@ -3,7 +3,12 @@
     # === SETUP ===
     subspace_def = SubSpaceDefinitions(h=QubitPM(), i=Ensemble(3, 2, QubitPauli()), b=Ladder())
     op_def = OperatorDefinitions()
-    param_def = ParameterDefinitions("alpha", "beta(t)", "gamma_i", "delta_i")
+    gamma_dist = QUniform(-1.0, 1.0, 32)
+    delta_dist = QNormal(0.0, 1.0, 3.0, 32)
+    param_def = ParameterDefinitions("alpha",
+                                     "beta(t)",
+                                     "gamma_i" => gamma_dist,
+                                     "delta_i" => delta_dist)
     qspace = QSpace(subspace_def, op_def, param_def)
 
     xi, yi, zi = base_operators(qspace, "i", by_ensemble=false)
@@ -29,6 +34,28 @@
         @test qspace.ensembles[1] === ensemble_cfg
         @test ensemble_cfg.qspace_ref !== nothing
         @test ensemble_cfg.qspace_ref.value === qspace
+
+        param_syms = qspace.param_info.outer_labels_symbols
+        alpha_idx = findfirst(==(Symbol("alpha")), param_syms)
+        gamma_idx = findfirst(==(Symbol("gamma")), param_syms)
+        delta_idx = findfirst(==(Symbol("delta")), param_syms)
+        @test alpha_idx !== nothing
+        @test gamma_idx !== nothing
+        @test delta_idx !== nothing
+        acting = qspace.subspaces[2].parameter_group_acting
+        dist_mask = qspace.subspaces[2].parameter_group_distribution
+        @test !acting[alpha_idx::Int]
+        @test acting[gamma_idx::Int]
+        @test acting[delta_idx::Int]
+        @test !dist_mask[alpha_idx::Int]
+        @test dist_mask[gamma_idx::Int]
+        @test dist_mask[delta_idx::Int]
+        group_dists = qspace.param_info.group_distributions
+        group_funcs = qspace.param_info.group_functions
+        @test group_dists[gamma_idx::Int] isa QDistribution
+        @test group_dists[delta_idx::Int] isa QDistribution
+        @test group_dists[alpha_idx::Int] === nothing
+        @test all(f -> f === nothing, group_funcs)
     end
 
     @testset "Ensemble Naming" begin
@@ -132,7 +159,7 @@
         indexed_param = findfirst(!iszero, param_info.indexed_parameter_indexes)
         @test indexed_param !== nothing
         idx_val = indexed_param::Int
-        tuples = parameter_index_tuples(param_info, idx_val)
+        tuples = param_index_tuples(param_info, idx_val)
         @test !isempty(tuples)
         @test all(t -> 1 ≤ t[1] ≤ length(lengths), tuples)
         for (ensemble, inner) in tuples
@@ -142,7 +169,7 @@
         exponents = zeros(Int, param_info.dims)
         exponents[idx_val] = 1
         coeff_atom = CAtom(param_info, exponents)
-        indexed_atom = with_concrete_indexes(coeff_atom, concrete)
+        indexed_atom = Indexed(coeff_atom, concrete)
         @test indexed_atom isa CAtomIndexed
         @test indexed_atom.indexes.indexes == concrete.indexes
 
@@ -200,6 +227,62 @@
         @test_throws ErrorException ∑([:l], expr_sum, constraint)
         @test_throws ErrorException ∑([:l, :m], expr_sum, neq(:l, :l))
         @test_throws ErrorException ∑([:l, :m], expr_sum, neq(:l, :h))
+    end
+
+    @testset "Distributions" begin
+        uni = QUniform(-2.0, 2.0, 32)
+        @test uni.minimum == -2.0
+        @test uni.maximum == 2.0
+        @test uni.normalize
+        @test isapprox(uni.normalization_constant, 0.25; atol=1e-8)
+        @test isapprox(pdf(uni, 0.0), 0.25; atol=1e-8)
+        @test pdf(uni, -3.0) == 0.0
+
+        normal = QNormal(0.0, 1.0, 3.0, 64)
+        @test normal.minimum == -3.0
+        @test normal.maximum == 3.0
+        @test normal.normalize
+        @test normal.normalization_constant > 0
+        @test pdf(normal, -10.0) == 0.0
+    end
+
+    @testset "Ensemble Functions" begin
+        sub_def = SubSpaceDefinitions(i=Ensemble(2, 0, QubitPauli()), j=Ensemble(2, 0, QubitPauli()))
+        op_def = OperatorDefinitions()
+        alpha_dist = QUniform(-1.0, 1.0, 16)
+        beta_dist = QUniform(-1.0, 1.0, 16)
+        gamma_fun = (t, alpha, beta) -> alpha + beta + t
+        param_def = ParameterDefinitions(
+            "alpha_i" => alpha_dist,
+            "beta_j" => beta_dist,
+            "gamma_{i,j}(t, alpha, beta)" => gamma_fun,
+        )
+        q_fun = QSpace(sub_def, op_def, param_def)
+        param_syms_fun = q_fun.param_info.outer_labels_symbols
+        gamma_idx_fun = findfirst(==(Symbol("gamma")), param_syms_fun)::Int
+        alpha_idx_fun = findfirst(==(Symbol("alpha")), param_syms_fun)::Int
+        beta_idx_fun = findfirst(==(Symbol("beta")), param_syms_fun)::Int
+        funcs = q_fun.param_info.group_functions
+        @test funcs[gamma_idx_fun] isa QEnsembleFunction
+        ens_fun = funcs[gamma_idx_fun]
+        @test ens_fun.argument_symbols == [:t, :alpha, :beta]
+        dists_fun = q_fun.param_info.group_distributions
+        @test dists_fun[alpha_idx_fun] isa QDistribution
+        @test dists_fun[beta_idx_fun] isa QDistribution
+        @test dists_fun[gamma_idx_fun] === nothing
+        @test funcs[alpha_idx_fun] === nothing
+        @test funcs[beta_idx_fun] === nothing
+        for ss in q_fun.subspaces
+            @test length(ss.parameter_group_acting) >= gamma_idx_fun
+            @test length(ss.parameter_group_distribution) >= gamma_idx_fun
+        end
+        @test q_fun.subspaces[1].parameter_group_acting[gamma_idx_fun]
+        @test q_fun.subspaces[2].parameter_group_acting[gamma_idx_fun]
+        @test !q_fun.subspaces[1].parameter_group_distribution[gamma_idx_fun]
+        @test !q_fun.subspaces[2].parameter_group_distribution[gamma_idx_fun]
+
+        bad_param_def = ParameterDefinitions("gamma_{i,j}" => QUniform(-1.0, 1.0, 8))
+        @test_throws ErrorException QSpace(sub_def, op_def, bad_param_def)
     end
 
 end

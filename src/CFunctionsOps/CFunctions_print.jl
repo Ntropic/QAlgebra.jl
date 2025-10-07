@@ -1,4 +1,5 @@
 using LaTeXStrings
+using ..CFunctions
 export stringer, to_stringer, to_string
 
 # --- Small, inlined helpers used everywhere ---
@@ -67,38 +68,31 @@ function stringer(f::CFunction; do_latex::Bool=false, do_frac::Bool=true, braced
     error("No stringer method for type $(typeof(f)) with variable names")
 end
 
-function stringer(a::CAtom; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=true)
-    params = get_params(a, do_latex=do_latex)
-    exps = a.var_exponents
-    @assert length(params) == length(exps) "Number of symbols must match number of variables"
-
-    c = a.coeff
-    if isnumeric(a)
-        return sign_string(c, do_latex)
+function _stringer_atom(coeff::ComplexRational, exps::SparseVector{Int,Int}, params::Vector{String};
+                        do_latex::Bool, do_frac::Bool, is_numeric::Bool)
+    if is_numeric
+        return sign_string(coeff, do_latex)
     end
 
     if !do_frac
-        param_str = join((int_exponent2str(b, x; do_latex=do_latex) for (b,x) in zip(params, exps)), "")
-        return with_coeff(c, param_str; do_latex=do_latex)
+        param_str = join((int_exponent2str(b, x; do_latex=do_latex) for (b, x) in zip(params, exps)), "")
+        return with_coeff(coeff, param_str; do_latex=do_latex)
     else
-        # split into positive/negative exponents ⇒ build fraction
         pos_inds = findall(>(0), exps)
         neg_inds = findall(<(0), exps)
 
-        pos_str = join((int_exponent2str(b, x; do_latex=do_latex) for (b,x) in zip(params[pos_inds], exps[pos_inds])), "")
-        neg_str = join((int_exponent2str(b, abs(x); do_latex=do_latex) for (b,x) in zip(params[neg_inds], exps[neg_inds])), "")
+        pos_str = join((int_exponent2str(b, x; do_latex=do_latex) for (b, x) in zip(params[pos_inds], exps[pos_inds])), "")
+        neg_str = join((int_exponent2str(b, abs(x); do_latex=do_latex) for (b, x) in zip(params[neg_inds], exps[neg_inds])), "")
 
         if isempty(neg_inds)
-            return with_coeff(c, pos_str; do_latex=do_latex)
+            return with_coeff(coeff, pos_str; do_latex=do_latex)
         else
-            # separate coefficient into num/den for a clean a/b form
-            c_num = ComplexRational(c.a, c.b, 1)
-            c_den = ComplexRational(c.c, 0, 1)
+            c_num = ComplexRational(coeff.a, coeff.b, 1)
+            c_den = ComplexRational(coeff.c, 0, 1)
 
             _, c_pos = sign_string(c_num, do_latex)
             _, c_neg = sign_string(c_den, do_latex)
 
-            # apply spacing consistently
             if !is_abs_one(c_num) || isempty(pos_inds)
                 c_pos *= connector(do_latex)
             else
@@ -113,15 +107,25 @@ function stringer(a::CAtom; do_latex::Bool=false, do_frac::Bool=true, braced::Bo
             num_str   = c_pos * pos_str
             denom_str = c_neg * neg_str
 
-            sig, _ = sign_string(c, do_latex)
+            sig, _ = sign_string(coeff, do_latex)
             body = do_latex ? raw"\frac{" * num_str * "}{" * denom_str * "}" : num_str * "/(" * denom_str * ")"
             return sig, body
         end
     end
 end
 
+function stringer(a::CAtom; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=true)
+    params = get_params(a, do_latex=do_latex)
+    exps = a.var_exponents
+    @assert length(params) == length(exps) "Number of symbols must match number of variables"
+    return _stringer_atom(a.coeff, exps, params; do_latex=do_latex, do_frac=do_frac, is_numeric=isnumeric(a))
+end
+
 function stringer(a::CAtomIndexed; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=true)
-    return stringer(CAtom(a.param_info, a.coeff, a.var_exponents); do_latex=do_latex, do_frac=do_frac, braced=braced)
+    params = CFunctions._indexed_parameter_names(a, do_latex)
+    exps = a.var_exponents
+    @assert length(params) == length(exps) "Number of symbols must match number of variables"
+    return _stringer_atom(a.coeff, exps, params; do_latex=do_latex, do_frac=do_frac, is_numeric=isnumeric(a))
 end
 
 function stringer(C::CAbstract; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=false)
@@ -159,6 +163,37 @@ function stringer(C::CCustomType; do_latex::Bool=false, do_frac::Bool=true, brac
         base *= indexes2str(indexes; do_latex=do_latex)
         if !isempty(times); base *= "(" * join(times, ",") * ")"; end
     end
+
+    return with_coeff(C.coeff, base; do_latex=do_latex)
+end
+
+function stringer(C::CCustomTypeIndexed; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=false)
+    base::String = if do_latex
+        latex_str = C.ctype_def.latex
+        startswith(latex_str, '\\') ? latex_str : (raw"\textrm{" * latex_str * "}")
+    else
+        C.ctype_def.plain
+    end
+
+    if C.ctype_def.has_abstract
+        args = String[]
+        for x in C.expr
+            s, b = stringer(x; do_latex=do_latex, do_frac=do_frac, braced=braced)
+            push!(args, (s ? "-" : "") * b)
+        end
+        if !isempty(args)
+            base *= "(" * join(args, ",") * ")"
+        end
+    else
+        indexes, times = where_acting_to_index_strings(C; do_latex=do_latex)
+        base *= indexes2str(indexes; do_latex=do_latex)
+        if !isempty(times)
+            base *= "(" * join(times, ",") * ")"
+        end
+    end
+
+    suffix = CFunctions._indexes_suffix(C.indexes, do_latex)
+    base *= suffix
 
     return with_coeff(C.coeff, base; do_latex=do_latex)
 end

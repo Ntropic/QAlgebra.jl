@@ -1,5 +1,7 @@
 import ..SubSpaceIndex
 
+const INITIAL_PARAMETER_GROUP_MASK_SIZE = 64
+
 """
     Ensemble(num_operator_indexes, num_sum_indexes, operator_set; kwargs...)
     Ensemble(num_operator_indexes, operator_set; kwargs...)
@@ -82,6 +84,8 @@ end
 
 SubSpace defines a Subspace of a Hilbert space. It contains an operator set, aswell as additional information to reference and work with a subspace. 
 Subspaces can be divided into of sub-subsystems (internally referred to as inner subsystems), multiple copies of the same subspace, so as to support ensemble descriptions.
+`parameter_group_acting` records which outer parameter groups act on this subspace and is resized once all parameters are constructed.
+`parameter_group_distribution` marks parameter groups that use `QDistribution` (true) versus a function (false).
 """
 struct SubSpace
     key_symbol::Symbol
@@ -102,6 +106,8 @@ struct SubSpace
     min_ints::Vector{Int}
     max_ints::Vector{Int}           # -1 entries signal unbounded axes
     max_operator_magnitude::Int
+    parameter_group_acting::BitVector
+    parameter_group_distribution::BitVector
 end
 # Define the custom show for SubSpace.
 function Base.show(io::IO, qspace::SubSpace)
@@ -119,10 +125,10 @@ function _numeric_labels(base::String, num_op::Int, num_sum::Int)
     labels = String[]
     labels_latex = String[]
     for idx in 0:(total-1)
-        push!(labels_symbol, Symbol(base * string(idx)))
-        
-        push!(labels, base * str2sub(string(idx)))
-        push!(labels_latex, base * "_{" * string(idx), "}") 
+        label_str = base * string(idx)
+        push!(labels_symbol, Symbol(label_str))
+        push!(labels, label_str)
+        push!(labels_latex, base * "_{" * string(idx) * "}") 
     end
     return labels_symbol, labels, labels_latex
 end
@@ -200,24 +206,22 @@ struct SubSpaceDefinitions
                 keys = _alphabetic_labels(key_char, ensemble_size)
                 keys_symbols = Symbol.(keys) 
                 keys_latex = keys
-                if any(sym-> sym in used_symbols, keys_symbols)
+                if any(sym-> sym in used_symbols, keys_symbols) || any(lbl -> lbl in reserved_current, keys)
                     keys_symbols, keys, keys_latex = _numeric_labels(key, num_operator_indexes, num_sum_indexes)
                 end
             else 
-                keys = String[key*string(i) for i in 1:ensemble_size]
-                keys_symbols = Symbol.(keys)
-                keys_latex = keys
-                if any(sym-> sym in used_symbols, keys_symbols)
-                    keys_symbols, keys, keys_latex = _numeric_labels(key, num_operator_indexes, num_sum_indexes)
-                end
+                keys_symbols, keys, keys_latex = _numeric_labels(key, num_operator_indexes, num_sum_indexes)
             end
             if any(x->x in used_symbols, keys_symbols) 
                 error("Symbol $key already used")
             end 
             curr_inds = key_counter .+ collect(1:ensemble_size)
+            mask_act = BitVector(fill(false, INITIAL_PARAMETER_GROUP_MASK_SIZE))
+            mask_dist = BitVector(fill(false, INITIAL_PARAMETER_GROUP_MASK_SIZE))
             curr_subspace = SubSpace(key_symbol, keys_symbols, key, keys, keys_latex, outer_ind, curr_inds, is_ensemble_ss, 
                         ensemble_size, as_continuum, num_operator_indexes, num_sum_indexes, op_set.particle_type, op_set, ensemble_cfg,
-                        copy(op_set.min_ints), copy(op_set.max_ints), max_op_mag) 
+                        copy(op_set.min_ints), copy(op_set.max_ints), max_op_mag,
+                        mask_act, mask_dist) 
             key_counter += ensemble_size
             push!(subspaces, curr_subspace)
             union!(used_symbols, keys_symbols)
