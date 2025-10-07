@@ -4,11 +4,13 @@ using ComplexRationals
 using ..CFunctions
 using ..StringUtils
 using ..Cumulants: ReducedCumulantList
+using ..QDistributions
 using Base: WeakRef, GC
 using SparseArrays
 
 export OperatorSet, operator_magnitude, max_operator_magnitude
 export Ensemble, SubSpace, SubSpaceDefinitions, SubSpaceInfo, SubSpaceIndex, outer, inner, expanded, Index2Symbol, Index2String, Index2Ensemble, Index2Ensemble_and_Summation, SummationIndex2SubSpaceIndex
+export AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
 export Parameter, ParameterDefinitions, map_by_subspace, map_by_tindex
 export QSpace
@@ -124,6 +126,8 @@ include("OperatorSets/Ladder.jl")
 include("QSpaceOps/QSpace_subspaces.jl")
 include("QSpaceOps/QSpace_abstract.jl")
 include("QSpaceOps/QSpace_parameters.jl")
+include("QSpaceOps/Sampler.jl")
+using .Sampler
 
 """
     QSpace(subspace_def::SubSpaceDefinitions, op_def::OperatorDefinitions, param_def::ParameterDefinitions; max_t_ind::Int=0) -> QSpace
@@ -166,11 +170,35 @@ mutable struct QSpace
         operatortype_info = OperatorTypeInfo(operatortypes, commute_fun=op_def.commute_fun, check_n=op_def.check_n) 
 
         # ==========> 3rd Parameters <==========
-        params, param_info, param_values = ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
+        params, param_info, param_values, ensemble_group_distributions =
+            ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
         final_group_count = length(param_info.outer_labels_symbols)
         for ss in subspaces
             resize!(ss.parameter_group_acting, final_group_count)
             resize!(ss.parameter_group_distribution, final_group_count)
+        end
+        outer_symbols = param_info.outer_labels_symbols
+        outer_names = param_info.outer_labels
+
+        for ss in subspaces
+            ens = ss.ensemble
+            ens === nothing && continue
+            raw_pairs = [(idx, ensemble_group_distributions[idx]) for idx in ens.parameter_group_indices
+                         if ensemble_group_distributions[idx] !== nothing]
+            isempty(raw_pairs) && continue
+            group_indices = [p[1] for p in raw_pairs]
+            dists = [p[2] for p in raw_pairs]
+            group_symbols = [outer_symbols[idx] for idx in group_indices]
+            group_names = [outer_names[idx] for idx in group_indices]
+            sample = if ens.as_continuum
+                build_continuous_samples(ens, group_indices, group_symbols, group_names, dists;
+                    method=ens.continuous_method)
+            else
+                build_discrete_samples(ens, group_indices, group_symbols, group_names, dists;
+                    method=ens.discrete_method)
+            end
+            ens.sample = sample
+            attach_samples!(param_values, sample)
         end
     
         # Generate the string representations

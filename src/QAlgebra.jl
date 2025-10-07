@@ -82,6 +82,10 @@ include("IndexingCombinationsSamples/Distributions.jl")
 using .QDistributions
 export QDistribution, QNormal, QUniform, QEnsembleFunction, pdf
 
+include("EnsembleSamples.jl")
+using .EnsembleSamples
+export AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
+
 include("CFunctions.jl")
 using .CFunctions
 CFunction, CAbstract, CIntegral, CCustomType, CCustomTypeIndexed, CAtom, CSum, CRational, CProd, CExp, CLog
@@ -106,6 +110,7 @@ export OperatorType, OperatorTypeInfo, OperatorDefinitions
 export Parameter, ParameterInfo, ParameterDefinitions
 export QSpace
 export QubitPauli, QubitPM, Ladder
+export DiscreteSamples, ContinuousSamples
 
 include("QExpressions.jl")
 using .QExpressions

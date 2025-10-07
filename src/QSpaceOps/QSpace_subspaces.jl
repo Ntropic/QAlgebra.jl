@@ -1,4 +1,5 @@
 import ..SubSpaceIndex
+using ..EnsembleSamples: AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 
 const INITIAL_PARAMETER_GROUP_MASK_SIZE = 64
 
@@ -21,16 +22,13 @@ Create an `Ensemble`: a container for ensemble–subspace metadata.
 - `max_operator_order::Int = -1`: Maximum operator order allowed (convention: `-1` = unbounded).
 - `as_continuum::Bool = false`: Whether a continuum approximation is planned.
 - `parameter_groups::Vector{Symbol} = Symbol[]`: Symbols for parameter groups (e.g. `:gamma`).
-- `samples::Vector{<:AbstractVector{<:Real}} = Vector{Vector{Float64}}()`: Sample points in
-  parameter space. Each vector is converted internally to `Vector{Float64}`.
+- `parameter_group_indices::Vector{Int} = Int[]`: Indices of groups on this ensemble backed by `QDistribution`.
+- `parameter_function_group_indices::Vector{Int} = Int[]`: Indices of groups acting via functions (no distribution).
+- `discrete_method::Symbol = :random`: Preferred discrete sampling method (`:random`, `:density`, ...).
+- `continuous_method::Symbol = :chebychev`: Preferred continuum grid method (delegated to interpolator).
+- `sample::Union{Nothing,AbstractEnsembleSample} = nothing`: Optional precomputed sample descriptor.
 - `qspace_ref::Union{Nothing,WeakRef} = nothing`: Optional weak reference back to a `QSpace`.
 
-# Behavior
-- `samples` are copied and converted element-wise to `Float64`.
-- `parameter_groups` is copied (`copy(parameter_groups)`) to avoid external mutation side-effects.
-- Internal storage types:
-  - `samples :: Vector{Vector{Float64}}`
-  - `parameter_groups :: Vector{Symbol}`
 """
 mutable struct Ensemble
     num_operator_indexes::Int
@@ -40,23 +38,26 @@ mutable struct Ensemble
     max_operator_order::Int
     as_continuum::Bool
     parameter_groups::Vector{Symbol}
-    samples::Vector{Vector{Float64}}
+    parameter_group_indices::Vector{Int}
+    parameter_function_group_indices::Vector{Int}
+    discrete_method::Symbol
+    continuous_method::Symbol
+    sample::Union{Nothing,AbstractEnsembleSample}
     qspace_ref::Union{Nothing,WeakRef}
     function Ensemble(num_operator_indexes::Int, num_sum_indexes::Int, operator_set::OperatorSet;
                       num_modes::Int=-1,
                       max_operator_order::Int=-1,
                       as_continuum::Bool=false,
                       parameter_groups::Vector{Symbol}=Symbol[],
-                      samples::Vector{<:AbstractVector{<:Real}}=Vector{Vector{Float64}}(),
+                      parameter_group_indices::Vector{Int}=Int[],
+                      parameter_function_group_indices::Vector{Int}=Int[],
+                      discrete_method::Symbol=:random,
+                      continuous_method::Symbol=:chebychev,
+                      sample::Union{Nothing,AbstractEnsembleSample}=nothing,
                       qspace_ref::Union{Nothing,WeakRef}=nothing)
-        sample_store = Vector{Vector{Float64}}()
-        if !isempty(samples)
-            for sample in samples
-                push!(sample_store, Float64.(sample))
-            end
-        end
         return new(num_operator_indexes, num_sum_indexes, operator_set, num_modes,
-                   max_operator_order, as_continuum, copy(parameter_groups), sample_store, qspace_ref)
+                   max_operator_order, as_continuum, copy(parameter_groups), copy(parameter_group_indices),
+                   copy(parameter_function_group_indices), discrete_method, continuous_method, sample, qspace_ref)
     end
     function Ensemble(num_operator_indexes::Int, operator_set::OperatorSet; kwargs...)
         return Ensemble(num_operator_indexes, 0, operator_set; kwargs...)
@@ -76,6 +77,17 @@ function Base.show(io::IO, ensemble::Ensemble)
     end
     if !isempty(ensemble.parameter_groups)
         print(io, ", parameter_groups=" , ensemble.parameter_groups)
+    end
+    if !isempty(ensemble.parameter_group_indices)
+        print(io, ", parameter_group_indices=" , ensemble.parameter_group_indices)
+    end
+    if !isempty(ensemble.parameter_function_group_indices)
+        print(io, ", parameter_function_group_indices=" , ensemble.parameter_function_group_indices)
+    end
+    if ensemble.sample !== nothing
+        sample = ensemble.sample
+        kind = sample isa ContinuousSamples ? ":continuous" : ":discrete"
+        print(io, ", sample_method=" , kind, "/", sample.method)
     end
 end
 

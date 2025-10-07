@@ -1,15 +1,16 @@
 const _GroupStorage = Union{Nothing, Number, AbstractArray}
 
-using ..QDistributions: QDistribution, QEnsembleFunction
+using ..QDistributions: QEnsembleFunction
+using ..EnsembleSamples: AbstractEnsembleSample
 
 """
-    ParameterValues(param_info::ParameterInfo; ensemble_group_distributions,
+    ParameterValues(param_info::ParameterInfo; ensemble_group_samples,
                     ensemble_group_functions, group_functions)
 
 Concrete value store that mirrors the parameter layout described by
 `param_info`. Each group owns either a scalar, a time vector, or a dense array
 over `(time, indexes...)`.  The optional keyword arguments allow callers to pass
-in the per-group ensemble distributions (`ensemble_group_distributions`), the
+in precomputed ensemble sample descriptors (`ensemble_group_samples`), the
 ensemble functions that produce indexed values (`ensemble_group_functions`), and
 plain scalar functions for non-indexed groups (`group_functions`)—the same
 values populated by `QSpace` during construction.  If omitted, entries default
@@ -27,7 +28,7 @@ struct ParameterValues
     group_values::Vector{_GroupStorage}
     # Info about which group has which properties -> necessary to process time updates in the correct order. 
     group_initialized::BitVector
-    ensemble_group_distributions::Vector{Union{Nothing,QDistribution}}
+    ensemble_group_samples::Vector{Union{Nothing,AbstractEnsembleSample}}
     ensemble_group_functions::Vector{Union{Nothing,QEnsembleFunction}}
     group_functions::Vector{Union{Nothing,Function}}
     no_index_function_of_t::Vector{Int}
@@ -62,7 +63,7 @@ end
 end
 
 function ParameterValues(param_info::ParameterInfo;
-                         ensemble_group_distributions::Vector{Union{Nothing,QDistribution}}=fill!(Vector{Union{Nothing,QDistribution}}(undef, length(param_info.outer_labels_symbols)), nothing),
+                         ensemble_group_samples::Vector{Union{Nothing,AbstractEnsembleSample}}=fill!(Vector{Union{Nothing,AbstractEnsembleSample}}(undef, length(param_info.outer_labels_symbols)), nothing),
                          ensemble_group_functions::Vector{Union{Nothing,QEnsembleFunction}}=fill!(Vector{Union{Nothing,QEnsembleFunction}}(undef, length(param_info.outer_labels_symbols)), nothing),
                          group_functions::Vector{Union{Nothing,Function}}=fill!(Vector{Union{Nothing,Function}}(undef, length(param_info.outer_labels_symbols)), nothing))
     group_count = length(param_info.outer_labels_symbols)
@@ -95,7 +96,7 @@ function ParameterValues(param_info::ParameterInfo;
     time_group_index = time_group === nothing ? 0 : time_group
 
     return ParameterValues(param_info, group_values, group_initialized,
-                           ensemble_group_distributions, ensemble_group_functions, group_functions,
+                           ensemble_group_samples, ensemble_group_functions, group_functions,
                            no_index_function_of_t, indexed_function_of_t,
                            time_group_index)
 end

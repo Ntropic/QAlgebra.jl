@@ -45,7 +45,7 @@ end
               var_suffix::String="")
 
 Container describing a single parameter instance in the `QSpace`. Ensemble distributions
-are tracked per parameter group and available through `ParameterValues.ensemble_group_distributions`.
+are tracked per parameter group and materialise in `EnsembleSamples` stored on the ensembles.
 """
 mutable struct Parameter
     param_symbol::Symbol
@@ -81,7 +81,7 @@ time-dependent groups. Ensemble parameters must be provided together with either
 `QDistribution` or a `QEnsembleFunction`, supplied as `(definition, payload)` tuples
 or `definition => payload`. Constructing a parameter that references ensemble indexes
 without one of these payloads throws an error. Distributions/functions are stored
-once per parameter group and exposed via `qspace.param_values.ensemble_group_distributions`
+once per parameter group and exposed via `qspace.ensembles[i].sample`
 and `qspace.param_values.ensemble_group_functions` after construction.
 
 For example, providing a multi-ensemble function can be written as:
@@ -557,7 +557,7 @@ end
 
 function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info::SubSpaceInfo,
                                          subspaces::Vector{SubSpace}, used_symbols::Set{Symbol},
-                                         max_t_ind::Int)::Tuple{Vector{Parameter}, ParameterInfo, ParameterValues}
+                                         max_t_ind::Int)::Tuple{Vector{Parameter}, ParameterInfo, ParameterValues, Vector{Union{Nothing,QDistribution}}}
     # --- start from a local copy and auto-add t if not present ---
     var_param = copy(vd.var_param)
     if all(group.name != "t" for group in var_param) && !(:t in used_symbols)
@@ -753,12 +753,41 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
                              param_of_indexes, ss_ensemble_indexes_by_group, ss_ensemble_present_by_group,
                              subspace_index_maps, t_index_transform, subspace_info)
 
+    # Synchronize ensemble parameter-group metadata now that group indices are finalized.
+    for subspace in subspaces
+        ens = subspace.ensemble
+        ens === nothing && continue
+        dist_idxs = Int[]
+        func_idxs = Int[]
+        ordered_syms = Symbol[]
+        seen_syms = Set{Symbol}()
+        for group_sym in ens.parameter_groups
+            if !(group_sym in seen_syms)
+                push!(ordered_syms, group_sym)
+                push!(seen_syms, group_sym)
+            end
+            group_idx = get(group_name_to_index, group_sym, nothing)
+            group_idx === nothing && continue
+            if ensemble_group_distributions[group_idx] !== nothing
+                if !(group_idx in dist_idxs)
+                    push!(dist_idxs, group_idx)
+                end
+            else
+                if !(group_idx in func_idxs)
+                    push!(func_idxs, group_idx)
+                end
+            end
+        end
+        ens.parameter_groups = ordered_syms
+        ens.parameter_group_indices = dist_idxs
+        ens.parameter_function_group_indices = func_idxs
+    end
+
     param_values = ParameterValues(var_info;
-        ensemble_group_distributions=ensemble_group_distributions,
         ensemble_group_functions=ensemble_group_functions,
         group_functions=scalar_group_functions)
 
-    return parameters, var_info, param_values
+    return parameters, var_info, param_values, ensemble_group_distributions
 end
 
 #Return parameter mapping vector for switching ensemble inner index within a subspace.

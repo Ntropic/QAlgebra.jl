@@ -1,6 +1,6 @@
 module QInterpolations
 
-export Interpolator, eval_interpolation, nodes, basis_values, basis_values!
+export Interpolator, build_interpolation_nodes, eval_interpolation, nodes, basis_values, basis_values!
 
 using LoopVectorization
 using LinearAlgebra
@@ -242,11 +242,11 @@ struct Interpolator
     endpoints::Bool
 end
 
-function Interpolator(method::Symbol,
-                      params::AbstractVector{<:Tuple{<:Integer,<:Real,<:Real}};
-                      pdfs=nothing,
-                      endpoints::Bool=true,
-                      M::Int=0)
+function build_interpolation_nodes(method::Symbol,
+                                   params::AbstractVector{<:Tuple{<:Integer,<:Real,<:Real}};
+                                   pdfs=nothing,
+                                   endpoints::Bool=true,
+                                   M::Int=0)
     m = Symbol(lowercase(String(method)))
     m ∈ (:uniform, :chebychev, :leja, :fekete) || error("method must be one of :uniform, :chebychev, :leja, :fekete")
 
@@ -278,11 +278,35 @@ function Interpolator(method::Symbol,
         end
 
         nodesv[i] = xi
-        denom[i]  = basis_denoms(xi)
-        work[i]   = Scratch(zeros(n), ones(n), ones(n))
     end
+    return bounds, nodesv
+end
 
-    return Interpolator(dims, bounds, nodesv, denom, work, method, endpoints)
+function Interpolator(nodes::AbstractVector{<:AbstractVector{<:Real}},
+                      bounds::AbstractVector{<:Tuple{<:Real,<:Real}};
+                      method::Symbol=:custom,
+                      endpoints::Bool=true)
+    dims = length(nodes)
+    nodesv = Vector{Vector{Float64}}(undef, dims)
+    denom  = Vector{Vector{Float64}}(undef, dims)
+    work   = Vector{Scratch}(undef, dims)
+    for i in 1:dims
+        xi = Float64.(nodes[i])
+        nodesv[i] = xi
+        denom[i]  = basis_denoms(xi)
+        work[i]   = Scratch(zeros(length(xi)), ones(length(xi)), ones(length(xi)))
+    end
+    return Interpolator(dims, Vector{Tuple{Float64,Float64}}(bounds), nodesv, denom, work, method, endpoints)
+end
+
+function Interpolator(method::Symbol,
+                      params::AbstractVector{<:Tuple{<:Integer,<:Real,<:Real}};
+                      pdfs=nothing,
+                      endpoints::Bool=true,
+                      M::Int=0)
+    bounds, nodesv = build_interpolation_nodes(method, params; pdfs=pdfs, endpoints=endpoints, M=M)
+
+    return Interpolator(nodesv, bounds; method=method, endpoints=endpoints)
 end
 
 # ---------------------------
@@ -374,6 +398,11 @@ function eval_interpolation(inter::Interpolator,
         s += Float64(values[I]) * w
     end
     s
+end
+
+function (inter::Interpolator)(pos::AbstractVector{<:Real},
+                               values::AbstractArray{<:Real})
+    return eval_interpolation(inter, pos, values)
 end
 
 # ---------------------------

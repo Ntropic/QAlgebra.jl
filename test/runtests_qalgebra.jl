@@ -52,15 +52,30 @@
         @test !dist_mask[alpha_idx::Int]
         @test dist_mask[gamma_idx::Int]
         @test dist_mask[delta_idx::Int]
-        group_dists = qspace.param_values.ensemble_group_distributions
+        group_samples = qspace.param_values.ensemble_group_samples
         group_funcs = qspace.param_values.ensemble_group_functions
-        @test group_dists[gamma_idx::Int] isa QDistribution
-        @test group_dists[delta_idx::Int] isa QDistribution
-        @test group_dists[alpha_idx::Int] === nothing
+        @test group_samples[gamma_idx::Int] isa DiscreteSamples
+        @test group_samples[delta_idx::Int] isa DiscreteSamples
+        @test group_samples[alpha_idx::Int] === nothing
         @test all(f -> f === nothing, group_funcs)
 
+        for idx in (gamma_idx::Int, delta_idx::Int)
+            sample = group_samples[idx]
+            col = findfirst(==(idx), sample.group_indices)
+            @test col !== nothing
+            stored = qspace.param_values.group_values[idx]
+            expected = sample.samples[:, col]
+            if stored isa AbstractVector{<:Real}
+                @test stored == expected
+            elseif stored isa AbstractArray
+                @test all(val -> val == expected, stored[:])
+            else
+                @test stored == expected
+            end
+        end
+
         scalar_funcs = qspace.param_values.group_functions
-        @test scalar_funcs[beta_idx::Int] isa Function
+        @test scalar_funcs[beta_idx::Int] === nothing
         @test scalar_funcs[alpha_idx::Int] === nothing
     end
 
@@ -239,7 +254,6 @@
         uni = QUniform(-2.0, 2.0, 32)
         @test uni.minimum == -2.0
         @test uni.maximum == 2.0
-        @test uni.normalize
         @test isapprox(uni.normalization_constant, 0.25; atol=1e-8)
         @test isapprox(pdf(uni, 0.0), 0.25; atol=1e-8)
         @test pdf(uni, -3.0) == 0.0
@@ -247,7 +261,6 @@
         normal = QNormal(0.0, 1.0, 3.0, 64)
         @test normal.minimum == -3.0
         @test normal.maximum == 3.0
-        @test normal.normalize
         @test normal.normalization_constant > 0
         @test pdf(normal, -10.0) == 0.0
     end
@@ -261,7 +274,7 @@
         param_def = ParameterDefinitions(
             "alpha_i" => alpha_dist,
             "beta_j" => beta_dist,
-            "gamma_{i,j}(t, alpha, beta)" => gamma_fun,
+            "gamma_{i,j}(t, alpha_i, beta_j)" => gamma_fun,
         )
         q_fun = QSpace(sub_def, op_def, param_def)
         param_syms_fun = q_fun.param_info.outer_labels_symbols
@@ -272,10 +285,10 @@
         @test funcs[gamma_idx_fun] isa QEnsembleFunction
         ens_fun = funcs[gamma_idx_fun]
         @test ens_fun.argument_symbols == [:t, :alpha, :beta]
-        dists_fun = q_fun.param_values.ensemble_group_distributions
-        @test dists_fun[alpha_idx_fun] isa QDistribution
-        @test dists_fun[beta_idx_fun] isa QDistribution
-        @test dists_fun[gamma_idx_fun] === nothing
+        samples_fun = q_fun.param_values.ensemble_group_samples
+        @test samples_fun[alpha_idx_fun] isa DiscreteSamples
+        @test samples_fun[beta_idx_fun] isa DiscreteSamples
+        @test samples_fun[gamma_idx_fun] === nothing
         @test funcs[alpha_idx_fun] === nothing
         @test funcs[beta_idx_fun] === nothing
 

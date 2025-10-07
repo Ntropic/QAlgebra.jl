@@ -89,12 +89,15 @@ end
     @test !isnothing(gamma_idx)
     alpha_idx = alpha_idx::Int
     gamma_idx = gamma_idx::Int
-    group_dists = pv.ensemble_group_distributions
-    @test group_dists[alpha_idx] === nothing
-    @test group_dists[gamma_idx] isa QDistribution
+    group_syms = pinfo.outer_labels_symbols
+    alpha_group_idx = findfirst(==(Symbol(:alpha)), group_syms)::Int
+    gamma_group_idx = findfirst(==(Symbol(:gamma)), group_syms)::Int
+    group_samples = pv.ensemble_group_samples
+    @test group_samples[alpha_group_idx] === nothing
+    @test group_samples[gamma_group_idx] isa DiscreteSamples
     group_funcs = pv.ensemble_group_functions
-    @test group_funcs[alpha_idx] === nothing
-    @test group_funcs[gamma_idx] === nothing
+    @test group_funcs[alpha_group_idx] === nothing
+    @test group_funcs[gamma_group_idx] === nothing
 
     exps_alpha = zeros(Int, pinfo.dims)
     exps_alpha[alpha_idx] = 1
