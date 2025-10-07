@@ -18,7 +18,7 @@ export contains_non_simple_CFunction, Indexed, has_indexed_parameters
 export list_cabstracts, list_ctypes, list_cintegrals
 export where_acting, where_acting!, which_params_acting, which_params_acting!, param_index_tuples
 export which_ensemble_acting, which_ensemble_acting!, substitute, separate_by_cond
-export ParameterValues, set_param!, set_time!, get_parameter_index, param_value, ensure_functions!
+export ParameterValues, set_param!, set_time!, update_t!, get_parameter_index, value, param_value, recompute_functions!, ensure_functions!
 
 import Base: copy, exp, log, length, getindex, iterate, size
 import ComplexRationals: isonelike
@@ -115,6 +115,12 @@ struct CIntegralDefinition <: CDef
     indexes::Vector{Vector{SubSpaceIndex}}
     param_info::AbstractParameterInfo
 end
+struct ParameterDicts
+    group_name_to_index::Dict{Symbol,Int}
+    param_name_to_indices::Dict{Symbol,Vector{Int}}
+    time_slot_to_param::Dict{Int,Int}
+end
+
 """
     ParameterInfo
 
@@ -152,16 +158,17 @@ struct ParameterInfo <: AbstractParameterInfo
     param_of_t::BitVector
     param_is_t::BitVector
 
-    group_distributions::Vector{Union{Nothing,QDistribution}}
-    group_functions::Vector{Union{Nothing,QEnsembleFunction}}
     function_param_refs::Vector{Union{Nothing,Vector{Int}}}
     group_time_counts::Vector{Int}
     group_index_sizes::Vector{Vector{Int}}
     param_coords::Vector{Vector{Int}}
     params_by_group::Vector{Vector{Int}}
+    group_of_t::BitVector
+    group_is_t::BitVector
 
     subspace_info::Any
     param_indexes::ParameterIndexes
+    param_dicts::ParameterDicts
     abstract_definitions::Vector{CAbstractDefinition}
     custom_ctype::Vector{CTypeDefinition}
     integral_definitions::Vector{CIntegralDefinition}
@@ -174,9 +181,10 @@ struct ParameterInfo <: AbstractParameterInfo
         where_acting_by_parameter::Vector{Vector{BitVector}}, params_acting_by_index::Vector{Vector{BitVector}}, param_index_tuples::Vector{Vector{Tuple{Int,Int}}},
         subspace_index_maps::Vector{Array{SparsePermutation,2}}, t_index_transform::Array{SparsePermutation,2}, indexes_by_t_index::Vector{Vector{Int}},
         indexes_of_t::Vector{Int}, how_many_by_ensemble::Vector{Int}, param_of_t::BitVector, param_is_t::BitVector,
-        group_distributions::Vector{Union{Nothing,QDistribution}}, group_functions::Vector{Union{Nothing,QEnsembleFunction}}, function_param_refs::Vector{Union{Nothing,Vector{Int}}},
+        function_param_refs::Vector{Union{Nothing,Vector{Int}}},
         group_time_counts::Vector{Int}, group_index_sizes::Vector{Vector{Int}}, param_coords::Vector{Vector{Int}}, params_by_group::Vector{Vector{Int}},
-        subspace_info::Any, param_indexes::ParameterIndexes)
+        group_of_t::BitVector, group_is_t::BitVector,
+        subspace_info::Any, param_indexes::ParameterIndexes, param_dicts::ParameterDicts)
         dims = length(inner_labels_symbols_flat)
         new(dims, outer_labels_symbols, inner_labels_symbols_flat, outer_labels,
             outer_labels_str, outer_labels_latex,
@@ -185,9 +193,9 @@ struct ParameterInfo <: AbstractParameterInfo
             indexed_parameter_indexes, where_acting_by_parameter, params_acting_by_index, param_index_tuples,
             subspace_index_maps, t_index_transform,
             indexes_by_t_index, indexes_of_t, how_many_by_ensemble, param_of_t, param_is_t,
-            group_distributions, group_functions, function_param_refs,
-            group_time_counts, group_index_sizes, param_coords, params_by_group,
-            subspace_info, param_indexes, CAbstractDefinition[], CTypeDefinition[], CIntegralDefinition[])
+            function_param_refs,
+            group_time_counts, group_index_sizes, param_coords, params_by_group, group_of_t, group_is_t,
+            subspace_info, param_indexes, param_dicts, CAbstractDefinition[], CTypeDefinition[], CIntegralDefinition[])
     end
 end
 

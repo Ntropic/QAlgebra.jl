@@ -93,6 +93,7 @@ export contains_non_simple_CFunction, has_indexed_parameters, Indexed
 export list_cabstracts, list_ctypes, list_cintegrals
 export where_acting, where_acting!, which_ensemble_acting, which_ensemble_acting!
 export which_params_acting, which_params_acting!, separate_by_cond, param_index_tuples
+export ParameterValues, set_param!, set_time!, update_t!, get_parameter_index, value, param_value, recompute_functions!, ensure_functions!
 
 include("Cumulants.jl")
 using .Cumulants

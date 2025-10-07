@@ -37,9 +37,11 @@
 
         param_syms = qspace.param_info.outer_labels_symbols
         alpha_idx = findfirst(==(Symbol("alpha")), param_syms)
+        beta_idx = findfirst(==(Symbol("beta")), param_syms)
         gamma_idx = findfirst(==(Symbol("gamma")), param_syms)
         delta_idx = findfirst(==(Symbol("delta")), param_syms)
         @test alpha_idx !== nothing
+        @test beta_idx !== nothing
         @test gamma_idx !== nothing
         @test delta_idx !== nothing
         acting = qspace.subspaces[2].parameter_group_acting
@@ -50,12 +52,16 @@
         @test !dist_mask[alpha_idx::Int]
         @test dist_mask[gamma_idx::Int]
         @test dist_mask[delta_idx::Int]
-        group_dists = qspace.param_info.group_distributions
-        group_funcs = qspace.param_info.group_functions
+        group_dists = qspace.param_values.ensemble_group_distributions
+        group_funcs = qspace.param_values.ensemble_group_functions
         @test group_dists[gamma_idx::Int] isa QDistribution
         @test group_dists[delta_idx::Int] isa QDistribution
         @test group_dists[alpha_idx::Int] === nothing
         @test all(f -> f === nothing, group_funcs)
+
+        scalar_funcs = qspace.param_values.group_functions
+        @test scalar_funcs[beta_idx::Int] isa Function
+        @test scalar_funcs[alpha_idx::Int] === nothing
     end
 
     @testset "Ensemble Naming" begin
@@ -262,16 +268,19 @@
         gamma_idx_fun = findfirst(==(Symbol("gamma")), param_syms_fun)::Int
         alpha_idx_fun = findfirst(==(Symbol("alpha")), param_syms_fun)::Int
         beta_idx_fun = findfirst(==(Symbol("beta")), param_syms_fun)::Int
-        funcs = q_fun.param_info.group_functions
+        funcs = q_fun.param_values.ensemble_group_functions
         @test funcs[gamma_idx_fun] isa QEnsembleFunction
         ens_fun = funcs[gamma_idx_fun]
         @test ens_fun.argument_symbols == [:t, :alpha, :beta]
-        dists_fun = q_fun.param_info.group_distributions
+        dists_fun = q_fun.param_values.ensemble_group_distributions
         @test dists_fun[alpha_idx_fun] isa QDistribution
         @test dists_fun[beta_idx_fun] isa QDistribution
         @test dists_fun[gamma_idx_fun] === nothing
         @test funcs[alpha_idx_fun] === nothing
         @test funcs[beta_idx_fun] === nothing
+
+        scalar_funcs_fun = q_fun.param_values.group_functions
+        @test all(f -> f === nothing, scalar_funcs_fun)
         for ss in q_fun.subspaces
             @test length(ss.parameter_group_acting) >= gamma_idx_fun
             @test length(ss.parameter_group_distribution) >= gamma_idx_fun

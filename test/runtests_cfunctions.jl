@@ -81,6 +81,7 @@ end
     param_def = ParameterDefinitions("alpha", "gamma_i" => gamma_dist)
     qspace = QSpace(sub_def, op_def, param_def)
     pinfo = qspace.param_info
+    pv = qspace.param_values
 
     alpha_idx = findfirst(==(Symbol(:alpha)), pinfo.inner_labels_symbols_flat)
     gamma_idx = findfirst(!=0, pinfo.indexed_parameter_indexes)
@@ -88,10 +89,10 @@ end
     @test !isnothing(gamma_idx)
     alpha_idx = alpha_idx::Int
     gamma_idx = gamma_idx::Int
-    group_dists = pinfo.group_distributions
+    group_dists = pv.ensemble_group_distributions
     @test group_dists[alpha_idx] === nothing
     @test group_dists[gamma_idx] isa QDistribution
-    group_funcs = pinfo.group_functions
+    group_funcs = pv.ensemble_group_functions
     @test group_funcs[alpha_idx] === nothing
     @test group_funcs[gamma_idx] === nothing
 
@@ -111,7 +112,6 @@ end
     concrete.indexes[1] = [2, 1]
     atom_gamma_indexed = CAtomIndexed(pinfo, exps_gamma, concrete)
 
-    pv = ParameterValues(pinfo)
     set_param!(pv, :alpha, 1.0)
     set_time!(pv, 0.0)
 
@@ -123,7 +123,21 @@ end
     for (val_idx, param_idx) in enumerate(gamma_params)
         set_param!(pv, param_idx, gamma_values[val_idx])
     end
+    @test get_parameter_index(pv, :gamma_1) == gamma_params[1]
+    @test get_parameter_index(pv, :gamma_2) == gamma_params[2]
+    @test get_parameter_index(pv, :gamma_i) == gamma_params[1]
+    @test get_parameter_index(pv, :gamma_j) == gamma_params[2]
+    t0_idx = get_parameter_index(pv, :t0)
+    @test value(pv, gamma_params[1]) == 5.0
+    @test value(pv, :gamma_2) == 6.0
+    @test value(pv, t0_idx) == 0.0
+    @test value(pv, :t0) == 0.0
+    set_time!(pv, 1.5)
+    @test value(pv, :t0) == 1.5
+    @test value(pv, gamma_idx, concrete) == 6.0
+    @test_throws ErrorException value(pv, gamma_idx, ConcreteIndexes(pinfo))
     @test evaluate(atom_gamma_indexed, pv) == 6.0
+    @test evaluate(atom_gamma, pv; indexes=concrete) == 6.0
 
     indexed_sum = Indexed(CSum(pinfo, [atom_alpha, atom_gamma]), concrete)
     @test indexed_sum isa CSum

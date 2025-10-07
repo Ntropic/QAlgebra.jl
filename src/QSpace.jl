@@ -145,6 +145,7 @@ mutable struct QSpace
     # Parameter fields:
     params::Vector{Parameter}
     param_info::ParameterInfo
+    param_values::ParameterValues
 
     I_op::Vector{Is}               # Neutral Vector of all expanded subspaces
     I_ensemble_op::Vector{Vector{Is}}      # Neutral Vector of all expanded ensemble subspaces
@@ -165,7 +166,7 @@ mutable struct QSpace
         operatortype_info = OperatorTypeInfo(operatortypes, commute_fun=op_def.commute_fun, check_n=op_def.check_n) 
 
         # ==========> 3rd Parameters <==========
-        params, param_info = ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
+        params, param_info, param_values = ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
         final_group_count = length(param_info.outer_labels_symbols)
         for ss in subspaces
             resize!(ss.parameter_group_acting, final_group_count)
@@ -180,7 +181,7 @@ mutable struct QSpace
 
         qss = new( subspaces, subspace_info, ensembles,                           # Subspaces
                 operatortypes, operatortype_info,                                 # Abstract Operators 
-                params, param_info,                                               # Variables / Parameters
+                params, param_info, param_values,                                 # Variables / Parameters
                 I_op, I_ensemble_op, c_one, c_zero, cumulant_cache, max_t_ind)    # Precomputed operator blueprints 
 
         GC.@preserve qss begin

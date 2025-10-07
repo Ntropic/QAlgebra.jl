@@ -1,16 +1,51 @@
 using Combinatorics
 using SparseArrays
-using ..CFunctions: ParameterInfo, ParameterIndexes
+using ..CFunctions: ParameterInfo, ParameterIndexes, ParameterDicts, ParameterValues
 using ..StringUtils: symbol2formatted, str2sub
 using ..SparsePermutationTools: SparsePermutation, denseperm
 using ..QDistributions: QDistribution, QEnsembleFunction
+
+@inline function _register_param_key!(dict::Dict{Symbol,Vector{Int}}, key::Symbol, idx::Int)
+    key_str = String(key)
+    isempty(key_str) && return nothing
+    entry = get!(dict, key, Int[])
+    in(idx, entry) || push!(entry, idx)
+    return nothing
+end
+
+@inline function _normalize_param_placeholder(name::String)
+    stripped = strip(name)
+    isempty(stripped) && return nothing
+    cleaned = replace(stripped, '(' => '_', ')' => "", '{' => '_', '}' => "", ',' => "_", ' ' => "")
+    while occursin("__", cleaned)
+        cleaned = replace(cleaned, "__" => "_")
+    end
+    cleaned = strip(cleaned, '_')
+    isempty(cleaned) && return nothing
+    return Symbol(cleaned)
+end
+
+@inline function _numeric_param_key(base::String, coords::Vector{Int}, of_time::Bool)
+    core = strip(base)
+    isempty(core) && return nothing
+    parts = String[core]
+    time_idx = coords[1] - 1
+    if of_time || time_idx != 0
+        push!(parts, "t$(time_idx)")
+    end
+    for idx in coords[2:end]
+        push!(parts, string(idx))
+    end
+    length(parts) == 1 && return nothing
+    return Symbol(join(parts, "_"))
+end
 
 """ 
     Parameter(param_name::String, param_of_t::Bool, var_of_ensemble::Bool, var_ensemble_index::Int=0;
               var_suffix::String="")
 
 Container describing a single parameter instance in the `QSpace`. Ensemble distributions
-are tracked per parameter group and available through `ParameterInfo.group_distributions`.
+are tracked per parameter group and available through `ParameterValues.ensemble_group_distributions`.
 """
 mutable struct Parameter
     param_symbol::Symbol
@@ -34,6 +69,7 @@ struct ParameterGroupDefinition
     indexes::Vector{String}
     distribution::Union{Nothing,QDistribution}
     ensemble_function::Union{Nothing,QEnsembleFunction}
+    scalar_function::Union{Nothing,Function}
     function_args::Vector{String}
 end
 
@@ -45,8 +81,8 @@ time-dependent groups. Ensemble parameters must be provided together with either
 `QDistribution` or a `QEnsembleFunction`, supplied as `(definition, payload)` tuples
 or `definition => payload`. Constructing a parameter that references ensemble indexes
 without one of these payloads throws an error. Distributions/functions are stored
-once per parameter group and exposed via `qspace.param_info.group_distributions`
-and `qspace.param_info.group_functions` after construction.
+once per parameter group and exposed via `qspace.param_values.ensemble_group_distributions`
+and `qspace.param_values.ensemble_group_functions` after construction.
 
 For example, providing a multi-ensemble function can be written as:
 
@@ -66,7 +102,7 @@ struct ParameterDefinitions
             name, indexes = underscore_separate(pre)
             of_t = "t" in brace_elements
 
-            dist, qfun = _coerce_payload(name, brace_elements, payload)
+            dist, qfun, scalar_fun = _coerce_payload(name, brace_elements, payload, !isempty(indexes))
 
             if qfun === nothing
                 extra_args = filter(x -> x != "t", brace_elements)
@@ -79,15 +115,12 @@ struct ParameterDefinitions
                 end
             end
 
-            if isempty(indexes) && (dist !== nothing || qfun !== nothing)
-                error("Parameter \"$name\" does not reference ensemble indexes, so it must not be paired with a QDistribution or QEnsembleFunction.")
-            end
             if dist !== nothing && qfun !== nothing
                 error("Parameter \"$name\" received both a QDistribution and a QEnsembleFunction. Provide only one.")
             end
 
-            function_args = qfun === nothing ? String[] : copy(brace_elements)
-            push!(var_param, ParameterGroupDefinition(name, of_t, indexes, dist, qfun, function_args))
+            function_args = copy(brace_elements)
+            push!(var_param, ParameterGroupDefinition(name, of_t, indexes, dist, qfun, scalar_fun, function_args))
         end
         return new(var_param)
     end
@@ -145,21 +178,26 @@ function _set_parameter_group_distribution!(subspace::SubSpace, group_index::Int
     mask[group_index] = is_distribution
 end
 
-function _coerce_payload(name::String, brace_elements::Vector{String}, payload)
+function _coerce_payload(name::String, brace_elements::Vector{String}, payload, has_indexes::Bool)
     dist = nothing
     qfun = nothing
+    scalar_fun = nothing
     if payload === nothing
-        return dist, qfun
+        return dist, qfun, scalar_fun
     elseif payload isa QDistribution
         dist = payload
     elseif payload isa Function
-        qfun = _build_qensemble_function(name, brace_elements, payload)
+        if has_indexes
+            qfun = _build_qensemble_function(name, brace_elements, payload)
+        else
+            scalar_fun = payload
+        end
     elseif payload isa QEnsembleFunction
         qfun = payload
     else
         error("Unsupported payload type $(typeof(payload)) for parameter \"$name\".")
     end
-    return dist, qfun
+    return dist, qfun, scalar_fun
 end
 
 function ParameterIndexes(subspace_info::SubSpaceInfo, indexed_parameter_indexes::Vector{Int}, where_acting_by_parameter::Vector{Vector{BitVector}}, indexes_by_t_index::Vector{Vector{Int}})::ParameterIndexes
@@ -189,8 +227,8 @@ end
 
 function ParameterInfo(parameters::Vector{Parameter}, outer_labels_symbols::Vector{Symbol},
                        group_defs::Vector{ParameterGroupDefinition},
-                       group_distributions::Vector{Union{Nothing,QDistribution}},
-                       group_functions::Vector{Union{Nothing,QEnsembleFunction}},
+                       ensemble_group_functions::Vector{Union{Nothing,QEnsembleFunction}},
+                       scalar_group_functions::Vector{Union{Nothing,Function}},
                        param_of_indexes::BitVector,
                        ss_ensemble_indexes_by_group::Vector{Vector{Int}},
                        ss_ensemble_present_by_group::Vector{BitVector},
@@ -274,6 +312,8 @@ function ParameterInfo(parameters::Vector{Parameter}, outer_labels_symbols::Vect
     end
 
     group_count = length(group_defs)
+    group_of_t = BitVector(gd.of_t for gd in group_defs)
+    group_is_t = falses(group_count)
     group_name_to_index = Dict{Symbol,Int}(Symbol(def.name) => idx for (idx, def) in enumerate(group_defs))
     params_by_group = [Int[] for _ in 1:group_count]
     group_time_counts = fill(1, group_count)
@@ -312,20 +352,24 @@ function ParameterInfo(parameters::Vector{Parameter}, outer_labels_symbols::Vect
     for (idx, param) in enumerate(parameters)
         if param.is_t
             time_param_lookup[param.t_index] = idx
+            group_is_t[param.group_index] = true
         end
     end
 
     function_param_refs = Vector{Union{Nothing,Vector{Int}}}(undef, length(parameters))
     fill!(function_param_refs, nothing)
     for g in 1:group_count
-        qfun = group_functions[g]
+        qfun = ensemble_group_functions[g]
+        scalar_fun = scalar_group_functions[g]
         args = group_defs[g].function_args
-        qfun === nothing && continue
+        qfun === nothing && scalar_fun === nothing && continue
 
         for idx in params_by_group[g]
             param = parameters[idx]
             refs = Vector{Int}(undef, length(args))
             main_index_map = Dict{String,Int}()
+            required_index_tokens = Set(group_defs[g].indexes)
+            used_index_tokens = Set{String}()
             for (name, sub_idx) in zip(group_defs[g].indexes, param.param_indexes)
                 main_index_map[name] = sub_idx.inner
             end
@@ -342,6 +386,9 @@ function ParameterInfo(parameters::Vector{Parameter}, outer_labels_symbols::Vect
                     error("Unknown parameter group $arg_name referenced in ensemble function for $(param.param_name).")
                 end
                 target_def = group_defs[target_group_idx]
+                if qfun !== nothing
+                    ensemble_group_functions[target_group_idx] === nothing || error("Ensemble function for $(param.param_name) cannot depend on function-defined group $(target_def.name).")
+                end
                 if isempty(target_def.indexes)
                     !isempty(arg_tokens) && error("Argument $arg_str should not specify indexes for scalar parameter group $(target_def.name).")
                 else
@@ -353,25 +400,60 @@ function ParameterInfo(parameters::Vector{Parameter}, outer_labels_symbols::Vect
                     inner_val = get(main_index_map, tok) do
                         error("Index token $tok referenced in ensemble function for $(param.param_name) is undefined.")
                     end
+                    push!(used_index_tokens, tok)
                     target_coords[tok_idx+1] = inner_val
                 end
                 ref_idx = findfirst(j -> param_coords[j] == target_coords, params_by_group[target_group_idx])
                 ref_idx === nothing && error("Unable to locate parameter for $arg_str in group $(target_def.name) when evaluating $(param.param_name).")
                 refs[arg_pos] = params_by_group[target_group_idx][ref_idx]
             end
+            if !isempty(required_index_tokens) && !(required_index_tokens ⊆ used_index_tokens)
+                missing = setdiff(required_index_tokens, used_index_tokens)
+                signature = group_defs[g].name
+                if !isempty(group_defs[g].indexes)
+                    signature *= "_{" * join(group_defs[g].indexes, ",") * "}"
+                end
+                if group_defs[g].of_t
+                    signature *= "(t)"
+                end
+                message_missing = join(collect(missing), ", ")
+                error("Ensemble function for $(signature) does not reference index(es) $(message_missing). Each underscore index in $(signature) must appear in the function arguments.")
+            end
             function_param_refs[idx] = refs
         end
     end
 
-    @assert length(group_distributions) == length(outer_labels_symbols)
-    @assert length(group_functions) == length(outer_labels_symbols)
+    group_name_to_index = Dict{Symbol,Int}(Symbol(outer_labels_symbols[g]) => g for g in 1:group_count)
+    param_name_to_indices = Dict{Symbol,Vector{Int}}()
+    for idx in 1:length(parameters)
+        coords = param_coords[idx]
+        group_idx = param_group_by_index[idx]
+        base_symbol = String(outer_labels_symbols[group_idx])
+        sym_str = Symbol(param_strs[idx])
+        sym_name = Symbol(param_names[idx])
+        _register_param_key!(param_name_to_indices, sym_str, idx)
+        _register_param_key!(param_name_to_indices, sym_name, idx)
+        placeholder = _normalize_param_placeholder(param_names[idx])
+        placeholder !== nothing && _register_param_key!(param_name_to_indices, placeholder, idx)
+        numeric_key = _numeric_param_key(base_symbol, coords, param_of_t[idx])
+        numeric_key !== nothing && _register_param_key!(param_name_to_indices, numeric_key, idx)
+        if param_is_t[idx]
+            t_idx = coords[1] - 1
+            _register_param_key!(param_name_to_indices, Symbol("t$(t_idx)"), idx)
+        end
+    end
 
-    return ParameterInfo(outer_labels_symbols, inner_labels_symbols_flat, outer_labels, outer_labels_str, outer_labels_latex, param_names,
+    time_slot_to_param = Dict(time_param_lookup)
+
+    param_dicts = ParameterDicts(group_name_to_index, param_name_to_indices, time_slot_to_param)
+
+    return CFunctions.ParameterInfo(outer_labels_symbols, inner_labels_symbols_flat, outer_labels, outer_labels_str, outer_labels_latex, param_names,
         param_strs, param_latex, param_of_indexes, param_group_by_index,
         t_index_by_index, ss_ensemble_indexes_by_group, ss_ensemble_present_by_group, indexed_parameter_indexes,
         where_acting_by_parameter, params_acting_by_index, param_index_tuples, subspace_index_maps, t_index_transform, indexes_by_t_index,
-        indexes_of_t, ensemble_sizes, param_of_t, param_is_t, group_distributions, group_functions, function_param_refs,
-        group_time_counts, group_index_sizes, param_coords, params_by_group, subspace_info, param_indexes)
+        indexes_of_t, ensemble_sizes, param_of_t, param_is_t, function_param_refs,
+        group_time_counts, group_index_sizes, param_coords, params_by_group, group_of_t, group_is_t,
+        subspace_info, param_indexes, param_dicts)
 end
 
 
@@ -475,15 +557,19 @@ end
 
 function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info::SubSpaceInfo,
                                          subspaces::Vector{SubSpace}, used_symbols::Set{Symbol},
-                                         max_t_ind::Int)::Tuple{Vector{Parameter}, ParameterInfo}
+                                         max_t_ind::Int)::Tuple{Vector{Parameter}, ParameterInfo, ParameterValues}
     # --- start from a local copy and auto-add t if not present ---
     var_param = copy(vd.var_param)
     if all(group.name != "t" for group in var_param) && !(:t in used_symbols)
-        push!(var_param, ParameterGroupDefinition("t", true, String[], nothing, nothing, String[]))
+        push!(var_param, ParameterGroupDefinition("t", true, String[], nothing, nothing, nothing, String[]))
     end
 
-    group_distributions = Vector{Union{Nothing,QDistribution}}(undef, length(var_param))
-    group_functions = Vector{Union{Nothing,QEnsembleFunction}}(undef, length(var_param))
+    ensemble_group_distributions = Vector{Union{Nothing,QDistribution}}(undef, length(var_param))
+    ensemble_group_functions = Vector{Union{Nothing,QEnsembleFunction}}(undef, length(var_param))
+    scalar_group_functions = Vector{Union{Nothing,Function}}(undef, length(var_param))
+    fill!(ensemble_group_distributions, nothing)
+    fill!(ensemble_group_functions, nothing)
+    fill!(scalar_group_functions, nothing)
     group_defs = var_param
     group_name_to_index = Dict{Symbol,Int}(Symbol(def.name) => i for (i, def) in enumerate(group_defs))
     outer_labels_symbols::Vector{Symbol} = Symbol[]
@@ -501,8 +587,10 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
         index_strs = group_def.indexes
         dist = group_def.distribution
         qfun = group_def.ensemble_function
-        group_distributions[group_index] = dist
-        group_functions[group_index] = qfun
+        scalar_fun = group_def.scalar_function
+        ensemble_group_distributions[group_index] = dist
+        ensemble_group_functions[group_index] = qfun
+        scalar_group_functions[group_index] = scalar_fun
         var_name_sym::Symbol = Symbol(param_name)
         push!(outer_labels_symbols, var_name_sym)
         if var_name_sym in used_symbols
@@ -545,10 +633,6 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
             if length(unique_outers) > 1
                 qfun !== nothing || error("Parameter \"$param_name\" spans multiple ensemble subspaces and therefore requires a QEnsembleFunction, e.g. \"$param_name(t, ...)\" => (args -> ...).")
                 dist === nothing || error("Parameter \"$param_name\" spans multiple ensemble subspaces; QDistribution is not supported in this case.")
-            end
-        else
-            if dist !== nothing || qfun !== nothing
-                error("Parameter \"$param_name\" does not act on an ensemble; remove the QDistribution/QEnsembleFunction payload.")
             end
         end
 
@@ -664,11 +748,17 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
     #println(ensemble_index_maps)
     #println(t_index_maps)
     # ---- finalize ParameterInfo ----
-    var_info = ParameterInfo(parameters, outer_labels_symbols, group_defs, group_distributions, group_functions,
+    var_info = ParameterInfo(parameters, outer_labels_symbols, group_defs,
+                             ensemble_group_functions, scalar_group_functions,
                              param_of_indexes, ss_ensemble_indexes_by_group, ss_ensemble_present_by_group,
                              subspace_index_maps, t_index_transform, subspace_info)
 
-    return parameters, var_info
+    param_values = ParameterValues(var_info;
+        ensemble_group_distributions=ensemble_group_distributions,
+        ensemble_group_functions=ensemble_group_functions,
+        group_functions=scalar_group_functions)
+
+    return parameters, var_info, param_values
 end
 
 #Return parameter mapping vector for switching ensemble inner index within a subspace.
