@@ -148,18 +148,29 @@ struct QCumulantOrdered <: QComposite
 end
 
 """
-    OrderbyOperator(q::QObj; lt=isless)
+    OrderbyOperator(obj; lt=isless)
 
-Replace simple QAtomProducts (consisting only of QTerms) into QAtomOrdered, to sort 
+Return a version of `obj` (atom products, expressions, cumulants, …) where the
+operators within each ensemble are sorted according to `lt`, yielding canonical
+index orderings.
 """
+OrderbyOperator
+
 OrderbyOperator(q::QAtomOrdered) = q
 OrderbyOperator(q::T) where T<: QAtom = error("Cannot Order by Operator for QAtom of type $(typeof(q)).") 
 
+"""
+    OrderedQAtomProduct(atom)
+
+Wrap a `QAtomProduct` in its ordered counterpart by sorting ensemble indices via
+[`OrderbyOperator`](@ref). Non-atom inputs are forwarded to `OrderbyOperator`.
+"""
 OrderedQAtomProduct(q::QAtomProduct) = OrderbyOperator(q)
 OrderedQExpr(q::QExpr) = OrderbyOperator(q)
 OrderedDiffQEq(eq::diffQEq) = OrderbyOperator(eq)
 
 # Core OrderbyOperator here!
+
 function OrderbyOperator(q::QAtomProduct)
     n = length(q.expr)
     if n == 0

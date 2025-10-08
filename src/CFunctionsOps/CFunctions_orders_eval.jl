@@ -13,6 +13,13 @@ max_exponents(a::CAtomIndexed) = Vector(abs.(a.var_exponents))
 max_exponents(a::CAbstract) = error("max_exponents cannot be computed for CAbstract.")
 max_exponents(::CIntegral) = error("max_exponents is undefined for CIntegral.")
 
+"""
+    max_exponents(f::CFunction) -> Vector{Int}
+
+Return the maximum absolute exponent for each parameter appearing in `f`. Composite
+expressions propagate the per-variable maxima across their children; atoms yield the
+absolute values of their sparse exponent vector.
+"""
 function max_exponents(f::CFunction)::Vector{Int}
     if f isa CAtom
         return max_exponents(f::CAtom)
@@ -160,6 +167,15 @@ function _evaluate(f::CFunction, pv::ParameterValues, indexes::Union{Nothing,Con
     end
 end
 
+"""
+    evaluate(f::CFunction, values::ParameterValues; indexes=nothing)
+    evaluate(f::CFunction, x::AbstractVector)
+
+Numerically evaluate a coefficient expression. The first method consumes a
+[`ParameterValues`](@ref) table (optionally restricting evaluation to concrete
+index selections). The second method is a convenience wrapper that fills a fresh
+`ParameterValues` instance from the numeric vector `x`.
+"""
 function evaluate(f::CFunction, pv::ParameterValues; indexes::Union{Nothing,ConcreteIndexes}=nothing)
     recompute_functions!(pv)
     return _evaluate(f, pv, indexes)

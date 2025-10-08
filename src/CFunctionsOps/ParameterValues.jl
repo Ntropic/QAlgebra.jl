@@ -1,5 +1,7 @@
 const _GroupStorage = Union{Nothing, Number, AbstractArray}
 
+export attach_samples!
+
 using ..QDistributions: QEnsembleFunction
 using ..EnsembleSamples: AbstractEnsembleSample
 
@@ -307,6 +309,14 @@ end
     pv.group_initialized[group_idx] = true
 end
 
+"""
+    recompute_functions!(pv::ParameterValues)
+
+Evaluate all function-defined parameter groups attached to `pv`, respecting time
+dependencies and ensemble ordering. Scalar groups driven by pure functions are
+updated before time-dependent ensembles so that downstream evaluations see the
+latest values.
+"""
 function recompute_functions!(pv::ParameterValues)
     group_count = length(pv.group_values)
     has_scalar = any(!isnothing, pv.group_functions)
@@ -358,3 +368,26 @@ end
 ensure_functions!(pv::ParameterValues) = recompute_functions!(pv)
 
 param_value(pv::ParameterValues, args...) = value(pv, args...)
+
+
+function _assign_group_storage!(storage, values)
+    if storage === nothing || storage isa Number
+        return values
+    elseif storage isa AbstractArray
+        storage .= Ref(values)
+        return storage
+    else
+        error("Unsupported storage type $(typeof(storage)) for ensemble sample assignment.")
+    end
+end
+
+function attach_samples!(pv::ParameterValues, sample::AbstractEnsembleSample)
+    for (col, group_idx) in enumerate(sample.group_indices)
+        values = sample.samples[:, col]
+        storage = pv.group_values[group_idx]
+        pv.group_values[group_idx] = _assign_group_storage!(storage, values)
+        pv.group_initialized[group_idx] = true
+        pv.ensemble_group_samples[group_idx] = sample
+    end
+    return sample
+end

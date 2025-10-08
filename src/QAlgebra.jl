@@ -8,11 +8,12 @@ const DEFAULT_COEFF_PREFS = Dict(
     :EXPAND_CUMULANTS => false
     )
 
-""" 
+"""
     get_default(name::Symbol)
 
-Returns the current default value for the coefficient preference with the given name. If no such preference has been set 
-it returns the default value from `DEFAULT_COEFF_PREFS`.
+Fetch the persisted default for the printing/simplification preference identified by
+`name`. Falls back to the hard-coded setting in `DEFAULT_COEFF_PREFS` if no user
+override was stored via `Preferences.jl`.
 """
 function get_default(name::Symbol)
     return @load_preference(String(name), DEFAULT_COEFF_PREFS[name])
@@ -38,16 +39,19 @@ end
 """
     set_flip_if_first_term_negative(mode::Bool)
 
-Sets a new default value for the first mode and saves it persistently.
-First mode specifies whether braced terms with a leading negative are flipped or only if all terms are negative.
+Persist the behaviour for handling leading negative coefficients when pretty-printing.
+`true` flips the overall sign so the first term is positive; `false` keeps the original
+ordering even if the leading term is negative.
 """
 function set_flip_if_first_term_negative(mode::Bool)
     _update_pref!(:FLIP_IF_FIRST_TERM_NEGATIVE, mode)
 end
 
 """
-    set_do_braced(b::Bool)
-Sets a new default value for :DO_BRACED. Toggles whether terms are grouped when printing them, into groups with common coefficients. 
+    set_do_braced(mode::Bool)
+
+Toggle whether printed expressions bundle terms that share a common coefficient into
+braced groups. The choice is stored persistently across Julia sessions.
 """
 function set_do_braced(mode::Bool)
     _update_pref!(:DO_BRACED, mode)
@@ -56,8 +60,9 @@ end
 """
     set_expand_cumulants(mode::Bool)
 
-Set a new default for whether cumulants print in expanded form (`true`) or compact form (`false`).
-The preference persists via `Preferences.jl`.
+Choose whether cumulant expressions are emitted in fully expanded form (`true`) or kept
+in the more compact symbolic representation (`false`). The chosen mode is saved using
+`Preferences.jl`.
 """
 function set_expand_cumulants(mode::Bool)
     _update_pref!(:EXPAND_CUMULANTS, mode)
@@ -77,12 +82,20 @@ using .StringUtils
 export symbol2formatted, str2sub, str2sup, brace, braket, indexes2str
 export int_exponent2str, exponentdag2str
 
-include("IndexingCombinationsSamples/Interpolations.jl")
-include("IndexingCombinationsSamples/Distributions.jl")
+include("SampleHelpers/SampleHelpers.jl")
+using .SampleHelpers
+const QInterpolators = SampleHelpers.QInterpolators
+const QIntegrators = SampleHelpers.QIntegrators
+const QDistributions = SampleHelpers.QDistributions
+
+using .QInterpolators: QInterpolator, build_interpolation_nodes, eval_interpolation, nodes, basis_values, basis_values!
+using .QIntegrators: QIntegrator, integrate_node_funs, normalization_constant, eval_integration
 using .QDistributions
 export QDistribution, QNormal, QUniform, QEnsembleFunction, pdf
+export QInterpolator, build_interpolation_nodes, eval_interpolation, nodes, basis_values, basis_values!
+export QIntegrator, integrate_node_funs, normalization_constant, eval_integration
 
-include("EnsembleSamples.jl")
+include("QSpaceOps/Sampler.jl")
 using .EnsembleSamples
 export AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 
@@ -97,7 +110,7 @@ export contains_non_simple_CFunction, has_indexed_parameters, Indexed
 export list_cabstracts, list_ctypes, list_cintegrals
 export where_acting, where_acting!, which_ensemble_acting, which_ensemble_acting!
 export which_params_acting, which_params_acting!, separate_by_cond, param_index_tuples
-export ParameterValues, set_param!, set_time!, update_t!, get_parameter_index, value, param_value, recompute_functions!, ensure_functions!
+export ParameterValues, set_param!, set_time!, update_t!, get_parameter_index, value, param_value, recompute_functions!, ensure_functions!, attach_samples!
 
 include("Cumulants.jl")
 using .Cumulants

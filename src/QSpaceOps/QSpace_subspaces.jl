@@ -91,13 +91,13 @@ function Base.show(io::IO, ensemble::Ensemble)
     end
 end
 
-""" 
-    SubSpace(key::String, keys::Vector{String}, ss_outer_ind::Int, ss_inner_ind::Vector{Int}, op_set::OperatorSet, ensemble::Bool, fermion::Bool)
+"""
+    SubSpace(...)
 
-SubSpace defines a Subspace of a Hilbert space. It contains an operator set, aswell as additional information to reference and work with a subspace. 
-Subspaces can be divided into of sub-subsystems (internally referred to as inner subsystems), multiple copies of the same subspace, so as to support ensemble descriptions.
-`parameter_group_acting` records which outer parameter groups act on this subspace and is resized once all parameters are constructed.
-`parameter_group_distribution` marks parameter groups that use `QDistribution` (true) versus a function (false).
+Internal representation of a named subspace inside a [`QSpace`](@ref). Each subspace
+records the operator set it draws from, multiplicities for ensemble replication, and
+links back to the parent `Ensemble` when applicable. The public API constructs these
+objects through [`SubSpaceDefinitions`](@ref).
 """
 struct SubSpace
     key_symbol::Symbol
@@ -162,11 +162,13 @@ function _alphabetic_labels(base_char::Char, total::Int)
     return labels
 end
 
-""" 
+"""
     SubSpaceDefinitions(; kwargs...)
 
-SubSpaceDefinitions is a struct that processes the definition of the quantum subspaces, patth keyword arguments, the key being the Symbol used to identify the subspace,
-    and the argument either being an `OperatorSet` for simple subspaces or an `Ensemble` describing the ensemble configuration.
+Collect all subspace declarations for a [`QSpace`](@ref). Each keyword maps a symbolic
+identifier to either an `OperatorSet` (single subspace) or an [`Ensemble`](@ref)
+configuration. The constructor derives internal labels, ensemble metadata, and neutral
+elements for each subspace.
 """
 struct SubSpaceDefinitions 
     subspaces::Vector{SubSpace}  # Vector of all sub

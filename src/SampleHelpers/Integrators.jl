@@ -1,13 +1,17 @@
+module QIntegrators
+
+using ..QInterpolators: QInterpolator, basis_values!
+
 import QuadGK
 
-export normalization_constant, integrate_node_funs, Integrator, eval_integration
+export normalization_constant, integrate_node_funs, QIntegrator, eval_integration
 
 const _PDF_BOUND_ATOL = 1e-10
 const _PDF_BOUND_RTOL = 1e-8
 
 @inline _unity_function(::Any) = 1.0
 
-function normalization_constant(pdfs::AbstractVector{<:Function}, inter::Interpolator;
+function normalization_constant(pdfs::AbstractVector{<:Function}, inter::QInterpolator;
                                 atol::Float64=1e-9, rtol::Float64=1e-7)::Float64
     d = inter.dims
     length(pdfs) == d || error("normalization_constant requires one pdf per interpolation dimension (got $(length(pdfs)), expected $d).")
@@ -23,7 +27,7 @@ function normalization_constant(pdfs::AbstractVector{<:Function}, inter::Interpo
     return 1.0 / Z
 end
 
-function _integrate_node_funs(inter::Interpolator,
+function _integrate_node_funs(inter::QInterpolator,
                               pdfs::Vector{<:Function},
                               f::Function;
                               constant::Float64=1.0,
@@ -68,7 +72,7 @@ function _integrate_node_funs(inter::Interpolator,
 end
 
 """
-    integrate_node_funs(inter::Interpolator,
+    integrate_node_funs(inter::QInterpolator,
                         pdfs;
                         f::Union{Nothing,Function}=nothing,
                         constant::Float64=1.0,
@@ -80,7 +84,7 @@ Compute `W[j...] = ∫ ρ(x) f(x) L_j(x) dx` over the interpolation domain.
 When `f` is omitted it defaults to the constant-one function, yielding
 integration weights only.
 """
-function integrate_node_funs(inter::Interpolator,
+function integrate_node_funs(inter::QInterpolator,
                              pdfs::Vector{<:Function};
                              f::Union{Nothing,Function}=nothing,
                              constant::Float64=1.0,
@@ -91,7 +95,7 @@ function integrate_node_funs(inter::Interpolator,
                                 constant=constant, atol=atol, rtol=rtol)
 end
 
-function _evaluate_on_nodes(inter::Interpolator, f::Function)
+function _evaluate_on_nodes(inter::QInterpolator, f::Function)
     d = inter.dims
     sz = ntuple(i -> length(inter.nodes[i]), d)
     values = Array{Float64}(undef, sz)
@@ -105,11 +109,11 @@ function _evaluate_on_nodes(inter::Interpolator, f::Function)
     return values
 end
 
-struct Integrator{I<:Interpolator, W<:AbstractArray{Float64}, V}
+struct QIntegrator{I<:QInterpolator, W<:AbstractArray{Float64}, V}
     interpolator::I
     node_weights::W
     node_values::V
-    function Integrator(inter::Interpolator,
+    function QIntegrator(inter::QInterpolator,
                         node_weights::AbstractArray{<:Real},
                         node_values)
         weights = node_weights isa AbstractArray{Float64} ? node_weights : Array{Float64}(node_weights)
@@ -141,7 +145,7 @@ struct Integrator{I<:Interpolator, W<:AbstractArray{Float64}, V}
     end
 end
 
-function Integrator(inter::Interpolator,
+function QIntegrator(inter::QInterpolator,
                     pdfs::Vector{<:Function};
                     f::Union{Nothing,Function}=nothing,
                     constant::Float64=1.0,
@@ -152,22 +156,22 @@ function Integrator(inter::Interpolator,
                                   atol=atol,
                                   rtol=rtol)
     stored = f === nothing ? nothing : _evaluate_on_nodes(inter, f)
-    return Integrator(inter, weights, stored)
+    return QIntegrator(inter, weights, stored)
 end
 
 """
-    Integrator(inter::Interpolator,
-               distributions::Vector;
-               f::Union{Nothing,Function}=nothing,
-               atol::Float64=1e-9,
-               rtol::Float64=1e-7)
+    QIntegrator(inter::QInterpolator,
+                distributions::Vector;
+                f::Union{Nothing,Function}=nothing,
+                atol::Float64=1e-9,
+                rtol::Float64=1e-7)
 
 Accepts a vector of distribution-like objects (e.g. `Vector{QDistribution}`).
-Each entry must supply `pdf` and `normalization_constant` properties. Their
+Each entry must supply `:pdf` and `:normalization_constant` properties. Their
 normalization constants are multiplied into the resulting weights.
 """
-function Integrator(inter::Interpolator,
-                    distributions::Vector{QDistribution};
+function QIntegrator(inter::QInterpolator,
+                    distributions::Vector;
                     f::Union{Nothing,Function}=nothing,
                     atol::Float64=1e-9,
                     rtol::Float64=1e-7)
@@ -183,7 +187,7 @@ function Integrator(inter::Interpolator,
         scale *= Float64(getproperty(dist, :normalization_constant))
     end
 
-    return Integrator(inter, pdfs;
+    return QIntegrator(inter, pdfs;
                       f=f,
                       constant=scale,
                       atol=atol,
@@ -191,14 +195,14 @@ function Integrator(inter::Interpolator,
 end
 
 """
-    eval_integration(inter::Interpolator,
+    eval_integration(inter::QInterpolator,
                      values::Array{<:Number},
                      weights::Array{<:Number})
 
 Return the weighted sum `∑ weights[j] * values[j]`. The arrays must be dense
 and aligned with the interpolation grid.
 """
-function eval_integration(::Interpolator,
+function eval_integration(::QInterpolator,
                           values::Array{<:Number},
                           weights::Array{<:Number})
     T = promote_type(eltype(values), eltype(weights))
@@ -209,20 +213,22 @@ function eval_integration(::Interpolator,
     return total
 end
 
-function (int::Integrator)(values::AbstractArray{<:Number})
+function (int::QIntegrator)(values::AbstractArray{<:Number})
     values isa Array ||
         error("Integrator expects a dense Array of node values matching the interpolation grid.")
     return eval_integration(int.interpolator, values, int.node_weights)
 end
 
-function (int::Integrator)()
+function (int::QIntegrator)()
     values = int.node_values
     values === nothing &&
         error("Integrator constructed without stored node values; supply a values array or provide f at construction.")
     return eval_integration(int.interpolator, values, int.node_weights)
 end
 
-function (int::Integrator)(f::Function)
+function (int::QIntegrator)(f::Function)
     values = _evaluate_on_nodes(int.interpolator, f)
     return eval_integration(int.interpolator, values, int.node_weights)
 end
+
+end # module QIntegrators

@@ -2,8 +2,8 @@ module QDistributions
 
 export QDistribution, pdf, QNormal, QUniform, QEnsembleFunction
 
-using ..QInterpolations: Interpolator, normalization_constant
-import ..QInterpolations: integrate_node_funs, Integrator
+using ..QInterpolators: QInterpolator, build_interpolation_nodes
+import ..QIntegrators: integrate_node_funs, QIntegrator, normalization_constant
 
 const PDF_BOUND_ATOL = 1e-10
 const PDF_BOUND_RTOL = 1e-8
@@ -59,7 +59,7 @@ function QDistribution(minimum::Real, maximum::Real, pdf::Function, num_samples:
 
     base_pdf = x -> Float64(pdf(Float64(x)))
 
-    inter = Interpolator(:uniform, [(max(num_samples, 2), minv, maxv)])
+    inter = QInterpolator(:uniform, [(max(num_samples, 2), minv, maxv)])
     norm = normalization_constant([base_pdf], inter)
 
     return QDistribution{typeof(base_pdf)}(minv, maxv, base_pdf, num_samples, norm)
@@ -116,7 +116,7 @@ struct QEnsembleFunction
     end
 end
 
-function _pdfs_and_scaling(inter::Interpolator,
+function _pdfs_and_scaling(inter::QInterpolator,
                            distributions::Vector{QDistribution})
     d = inter.dims
     length(distributions) == d ||
@@ -143,7 +143,7 @@ function _pdfs_and_scaling(inter::Interpolator,
     return pdfs, scale
 end
 
-function integrate_node_funs(inter::Interpolator,
+function integrate_node_funs(inter::QInterpolator,
                              distributions::Vector{QDistribution};
                              f::Union{Nothing,Function}=nothing,
                              constant::Float64=1.0,
@@ -151,24 +151,24 @@ function integrate_node_funs(inter::Interpolator,
                              rtol::Float64=1e-7)
     pdfs, scale = _pdfs_and_scaling(inter, distributions)
     total_constant = constant * scale
-    return QInterpolations.integrate_node_funs(inter, pdfs;
-                                               f=f,
-                                               constant=total_constant,
-                                               atol=atol,
-                                               rtol=rtol)
+    return integrate_node_funs(inter, pdfs;
+                               f=f,
+                               constant=total_constant,
+                               atol=atol,
+                               rtol=rtol)
 end
 
-function Integrator(inter::Interpolator,
+function Integrator(inter::QInterpolator,
                     distributions::Vector{QDistribution};
                     f::Union{Nothing,Function}=nothing,
                     atol::Float64=1e-9,
                     rtol::Float64=1e-7)
     pdfs, scale = _pdfs_and_scaling(inter, distributions)
-    return QInterpolations.Integrator(inter, pdfs;
-                                      f=f,
-                                      constant=scale,
-                                      atol=atol,
-                                      rtol=rtol)
+    return QIntegrator(inter, pdfs;
+                      f=f,
+                      constant=scale,
+                      atol=atol,
+                      rtol=rtol)
 end
 
 end # module QDistributions

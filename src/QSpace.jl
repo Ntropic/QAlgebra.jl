@@ -5,6 +5,7 @@ using ..CFunctions
 using ..StringUtils
 using ..Cumulants: ReducedCumulantList
 using ..QDistributions
+using ..EnsembleSamples: AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 using Base: WeakRef, GC
 using SparseArrays
 
@@ -17,10 +18,29 @@ export QSpace
 
 Is = Vector{Int}
 """
-    OperatorSet(name::String, particle_type::String, len::Int, neutral_element::Vector{Int}, base_ops::Vector{Vector{Int}}, ops::Vector{String}, op_product::Function, op_dag::Function, op2str::Function, op2latex::Function; commutes::Union{Nothing,Function}=nothing, operator_magnitude::Union{Nothing,Function}=nothing, min_ints::Union{Nothing,Vector{Int}}=nothing, max_ints::Union{Nothing,Vector{Int}}=nothing, max_magnitude::Int=-1)
+    OperatorSet(name, particle_type, len, neutral_element, base_ops, ops, op_product, op_dag, op2str, op2latex; kwargs...)
 
-OperatorSets define the algebraic structure of a quantum system, defining ways to multiply and conjugate operators within the space, how to print them (both for plain and latex formatting), how to extract operators from strings.
-We provide a few standard operator sets, such as QubitPauli, QubitPM and Ladder.
+Describe the algebra associated with a family of operators. An `OperatorSet`
+encodes multiplication, adjoint, and formatting behaviour used by subspaces and
+ensembles.
+
+Arguments:
+- `name::String`: Human-readable identifier.
+- `particle_type::String`: `fermion`, `boson`, `anyon`, … used for metadata.
+- `len::Int`: Number of indices describing each operator.
+- `neutral_element::Vector{Int}`: Index tuple representing the identity element.
+- `base_ops::Vector{Vector{Int}}`: Basis operators (one per generator).
+- `ops::Vector{String}`: Printable symbols corresponding to `base_ops`.
+- `op_product::Function`: Binary product rule returning coefficient/index tuples.
+- `op_dag::Function`: Adjoint involution on index tuples.
+- `op2str` / `op2latex`: Formatting callbacks for console and LaTeX output.
+
+Keyword arguments:
+- `commutes::Union{Nothing,Function} = nothing`: Custom commutativity test.
+- `operator_magnitude::Union{Nothing,Function} = nothing`: Ranking function for operator ordering.
+- `min_ints::Union{Nothing,Vector{Int}} = nothing`: Component-wise minima for valid indices.
+- `max_ints::Union{Nothing,Vector{Int}} = nothing`: Component-wise maxima (`-1` denotes unbounded).
+- `max_magnitude::Int = -1`: Cached upper bound from `operator_magnitude` (`-1` lets it be inferred).
 """
 struct OperatorSet
     name::String
@@ -126,15 +146,19 @@ include("OperatorSets/Ladder.jl")
 include("QSpaceOps/QSpace_subspaces.jl")
 include("QSpaceOps/QSpace_abstract.jl")
 include("QSpaceOps/QSpace_parameters.jl")
-include("QSpaceOps/Sampler.jl")
-using .Sampler
+using ..Sampler: build_discrete_samples, build_continuous_samples
 
 """
-    QSpace(subspace_def::SubSpaceDefinitions, op_def::OperatorDefinitions, param_def::ParameterDefinitions; max_t_ind::Int=0) -> QSpace
+    QSpace(subspace_def, op_def, param_def; max_t_ind=0)
 
-Constructs a combined Hilbert and Parameter space. The Hilbert space consists of different subspaces, themselves composed of different operator sets.
-The Parameter space also defines the variables, that are needed to describe equations on the Hilbert space and abstract operators, that are not yet specified. 
-Optionally you can also allow for multiple time dimensions, which can be useful for solving nested integrals over different time parameters.
+Create the full working space that ties together subspaces, operator definitions, and
+parameter families. A `QSpace` keeps:
+- subspace topology (`SubSpaceDefinitions`) plus the induced ensembles,
+- operator information (`OperatorDefinitions`) for constructing concrete atoms, and
+- parameter collections (`ParameterDefinitions`) together with their current values.
+
+Keyword arguments:
+- `max_t_ind::Int = 0`: Highest time index admitted when constructing time-dependent expressions.
 """
 mutable struct QSpace
     # Subspace definitions:
@@ -197,7 +221,7 @@ mutable struct QSpace
                 build_discrete_samples(ens, group_indices, group_symbols, group_names, dists;
                     method=ens.discrete_method)
             end
-            ens.sample = sample
+            ens.sample = sample::AbstractEnsembleSample
             attach_samples!(param_values, sample)
         end
     

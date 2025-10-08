@@ -1,6 +1,6 @@
-module QInterpolations
+module QInterpolators
 
-export Interpolator, build_interpolation_nodes, eval_interpolation, nodes, basis_values, basis_values!
+export QInterpolator, build_interpolation_nodes, eval_interpolation, nodes, basis_values, basis_values!
 
 using LoopVectorization
 using LinearAlgebra
@@ -216,7 +216,7 @@ end
 
 # ---------- Unified constructor ----------
 """
-    Interpolator(method::Symbol,
+    QInterpolator(method::Symbol,
                  params::AbstractVector{<:Tuple{<:Integer,<:Real,<:Real}};
                  pdfs=nothing,
                  endpoints::Bool=true,
@@ -232,7 +232,7 @@ Build a tensor grid across modes:
 
 Precomputes Lagrange denominators and allocates scratch buffers.
 """
-struct Interpolator
+struct QInterpolator
     dims::Int
     bounds::Vector{Tuple{Float64,Float64}}
     nodes::Vector{Vector{Float64}}
@@ -240,6 +240,7 @@ struct Interpolator
     work::Vector{Scratch}
     method::Symbol
     endpoints::Bool
+    default_values::Union{Nothing,AbstractArray{Float64}}
 end
 
 function build_interpolation_nodes(method::Symbol,
@@ -248,7 +249,8 @@ function build_interpolation_nodes(method::Symbol,
                                    endpoints::Bool=true,
                                    M::Int=0)
     m = Symbol(lowercase(String(method)))
-    m ∈ (:uniform, :chebychev, :leja, :fekete) || error("method must be one of :uniform, :chebychev, :leja, :fekete")
+    m === :chebyshev && (m = :chebychev)
+    m ∈ (:uniform, :chebychev, :leja, :fekete) || error("method must be one of :uniform, :chebychev, :leja, :fekete (also accepts :chebyshev as alias).")
 
     pnorm = [(Int(n), Float64(a), Float64(b)) for (n,a,b) in params]
     dims  = length(pnorm)
@@ -282,10 +284,11 @@ function build_interpolation_nodes(method::Symbol,
     return bounds, nodesv
 end
 
-function Interpolator(nodes::AbstractVector{<:AbstractVector{<:Real}},
+function QInterpolator(nodes::AbstractVector{<:AbstractVector{<:Real}},
                       bounds::AbstractVector{<:Tuple{<:Real,<:Real}};
                       method::Symbol=:custom,
-                      endpoints::Bool=true)
+                      endpoints::Bool=true,
+                      values=nothing)
     dims = length(nodes)
     nodesv = Vector{Vector{Float64}}(undef, dims)
     denom  = Vector{Vector{Float64}}(undef, dims)
@@ -296,24 +299,36 @@ function Interpolator(nodes::AbstractVector{<:AbstractVector{<:Real}},
         denom[i]  = basis_denoms(xi)
         work[i]   = Scratch(zeros(length(xi)), ones(length(xi)), ones(length(xi)))
     end
-    return Interpolator(dims, Vector{Tuple{Float64,Float64}}(bounds), nodesv, denom, work, method, endpoints)
+    default_values = nothing
+    if values !== nothing
+        arr = Array{Float64}(values)
+        expected = ntuple(i -> length(nodesv[i]), dims)
+        if size(arr) != expected
+            length(arr) == prod(expected) ||
+                error("values size does not match interpolation grid (expected $expected, got $(size(arr))).")
+            arr = reshape(arr, expected)
+        end
+        default_values = arr
+    end
+    return QInterpolator(dims, Vector{Tuple{Float64,Float64}}(bounds), nodesv, denom, work, method, endpoints, default_values)
 end
 
-function Interpolator(method::Symbol,
+function QInterpolator(method::Symbol,
                       params::AbstractVector{<:Tuple{<:Integer,<:Real,<:Real}};
                       pdfs=nothing,
                       endpoints::Bool=true,
-                      M::Int=0)
+                      M::Int=0,
+                      values=nothing)
     bounds, nodesv = build_interpolation_nodes(method, params; pdfs=pdfs, endpoints=endpoints, M=M)
 
-    return Interpolator(nodesv, bounds; method=method, endpoints=endpoints)
+    return QInterpolator(nodesv, bounds; method=method, endpoints=endpoints, values=values)
 end
 
 # ---------------------------
 # nodes (with separate grids option)
 # ---------------------------
 """
-    nodes(inter::Interpolator; separate::Bool=false)
+    nodes(inter::QInterpolator; separate::Bool=false)
 
 Return the grid nodes.
 
@@ -323,7 +338,7 @@ Return the grid nodes.
 - If `separate=true`: returns a `NTuple{d,Array{Float64,d}}` giving per-dimension coordinate
   grids suitable for plotting (`X, Y, ...`). Each array has the same size as the grid.
 """
-function nodes(inter::Interpolator; separate::Bool=false)
+function nodes(inter::QInterpolator; separate::Bool=false)
     d   = inter.dims
     axs = inter.nodes
     sz  = ntuple(i -> length(axs[i]), d)
@@ -356,7 +371,7 @@ end
 # evaluator
 # ---------------------------
 """
-    eval_interpolation(inter::Interpolator,
+    eval_interpolation(inter::QInterpolator,
                        pos::AbstractVector{<:Real},
                        values::AbstractArray{<:Real,N}) where {N}
 
@@ -365,7 +380,7 @@ Evaluate the interpolant at `pos` using node values `values`.
 - `values` must be an `N`-D array with `N == inter.dims`, and `size(values,i) == length(inter.nodes[i])`.
 - Allocation-free w.r.t. problem size (uses internal scratch buffers).
 """
-function eval_interpolation(inter::Interpolator,
+function eval_interpolation(inter::QInterpolator,
                             pos::AbstractVector{<:Real},
                             values::AbstractArray{<:Real,N}) where {N}
     d = inter.dims
@@ -400,9 +415,21 @@ function eval_interpolation(inter::Interpolator,
     s
 end
 
-function (inter::Interpolator)(pos::AbstractVector{<:Real},
+function (inter::QInterpolator)(pos::AbstractVector{<:Real},
                                values::AbstractArray{<:Real})
     return eval_interpolation(inter, pos, values)
+end
+
+function (inter::QInterpolator)(pos::AbstractVector{<:Real})
+    values = inter.default_values
+    values === nothing &&
+        error("QInterpolator was constructed without stored values; supply values explicitly.")
+    return eval_interpolation(inter, pos, values)
+end
+
+function (inter::QInterpolator)(x::Real)
+    inter.dims == 1 || error("Scalar evaluation requires a 1D interpolator.")
+    return inter([Float64(x)])
 end
 
 # ---------------------------
@@ -410,7 +437,7 @@ end
 # ---------------------------
 """
     basis_values!(out::AbstractArray{Float64,N},
-                  inter::Interpolator,
+                  inter::QInterpolator,
                   pos::AbstractVector{<:Real}) where {N}
 
 Compute **all tensor-product Lagrange basis functions** at location `pos` and
@@ -421,7 +448,7 @@ store them into `out` (same shape as the node grid).
 Allocation-free aside from small temporaries.
 """
 function basis_values!(out::AbstractArray{Float64,N},
-                       inter::Interpolator,
+                       inter::QInterpolator,
                        pos::AbstractVector{<:Real}) where {N}
     d = inter.dims
     N == d || error("out must be $d-D (got $N-D)")
@@ -454,17 +481,17 @@ function basis_values!(out::AbstractArray{Float64,N},
 end
 
 """
-    basis_values(inter::Interpolator, pos::AbstractVector{<:Real})
+    basis_values(inter::QInterpolator, pos::AbstractVector{<:Real})
 
 Allocate and return an array containing **all basis function values** at `pos`.
 This is a convenience wrapper around [`basis_values!`](@ref).
 """
-function basis_values(inter::Interpolator, pos::AbstractVector{<:Real})
+function basis_values(inter::QInterpolator, pos::AbstractVector{<:Real})
     sz = ntuple(i -> length(inter.nodes[i]), inter.dims)
     out = Array{Float64}(undef, sz)
     return basis_values!(out, inter, pos)
 end
 
-include("InterpolationOps/Interpolation_Integration.jl")
 
-end # module
+
+end # module QInterpolators

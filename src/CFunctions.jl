@@ -538,22 +538,23 @@ function modify_expr(f::CFunction, new_expr::Vector{CFunction})
     error("modify_expr not implemented for type $(typeof(f)).")
 end
 
-"""
-    CAtom(param_info::ParameterInfo, var_exponents::AbstractVector{<:Int})
-    CAtom(param_info::ParameterInfo, coeff::Int, var_exponents::AbstractVector{<:Int})
-    CAtom(param_info::ParameterInfo, coeff::Rational, var_exponents::AbstractVector{<:Int})
-
-A single term with a complex‐rational coefficient and integer exponents for each variable.
-- The `Int` and `Rational` constructors wrap the coefficient into a `ComplexRational`.
-- Exponents are stored as a sparse vector to avoid keeping zero entries.
-- `var_exponents[j]` is the exponent of variable _j_.
-"""
 @inline function _sparse_exponents(param_info::ParameterInfo, exps)::SparseVector{Int}
     exps isa AbstractVector || return _sparse_exponents(param_info, collect(exps))
     length(exps) == param_info.dims || throw(DimensionMismatch("expected $(param_info.dims) exponents, got $(length(exps))"))
     return SparseVector{Int}(exps)
 end
+"""
+    CAtom(param_info::ParameterInfo, var_exponents)
+    CAtom(param_info::ParameterInfo, coeff::Number, var_exponents)
 
+Single polynomial atom with a complex-rational coefficient and integer exponents per
+variable. Sparse storage keeps zero exponents implicit.
+
+Notes:
+- Pure exponent constructor assumes coefficient 1.
+- Numeric coefficients are promoted to `ComplexRational`.
+- `var_exponents[j]` stores the power of variable _j_ defined in `param_info`.
+"""
 struct CAtom <: CAtomic
     param_info::ParameterInfo
     coeff::ComplexRational

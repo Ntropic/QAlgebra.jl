@@ -41,9 +41,10 @@ function which_ensemble_acting!(q::AbstractQSum, accum::Vector{BitVector}; do_ab
     end
     return accum
 end
-function which_ensemble_acting(q::QComposite, accum::Vector{BitVector}; do_abstract::Bool=false)::Vector{BitVector}
+function which_ensemble_acting!(q::QComposite, accum::Vector{BitVector}; do_abstract::Bool=false)::Vector{BitVector}
     accum = which_ensemble_acting!(q.expr, accum, do_abstract=do_abstract)
     accum = which_ensemble_acting!(q.coeff_fun, accum)
+    return accum
 end
 function which_ensemble_acting!(q::QMultiComposite, accum::Vector{BitVector}; do_abstract::Bool=false)::Vector{BitVector}
     for expr in q.expr
