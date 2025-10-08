@@ -1,44 +1,9 @@
 using Combinatorics
 using SparseArrays
-using ..CFunctions: ParameterInfo, ParameterIndexes, ParameterDicts, ParameterValues
+using ..CFunctions: ParameterInfo, ParameterIndexes, ParameterDicts, ParameterValues, build_parameter_dicts
 using ..StringUtils: symbol2formatted, str2sub
 using ..SparsePermutationTools: SparsePermutation, denseperm
-using ..QDistributions: QDistribution, QEnsembleFunction
-
-@inline function _register_param_key!(dict::Dict{Symbol,Vector{Int}}, key::Symbol, idx::Int)
-    key_str = String(key)
-    isempty(key_str) && return nothing
-    entry = get!(dict, key, Int[])
-    in(idx, entry) || push!(entry, idx)
-    return nothing
-end
-
-@inline function _normalize_param_placeholder(name::String)
-    stripped = strip(name)
-    isempty(stripped) && return nothing
-    cleaned = replace(stripped, '(' => '_', ')' => "", '{' => '_', '}' => "", ',' => "_", ' ' => "")
-    while occursin("__", cleaned)
-        cleaned = replace(cleaned, "__" => "_")
-    end
-    cleaned = strip(cleaned, '_')
-    isempty(cleaned) && return nothing
-    return Symbol(cleaned)
-end
-
-@inline function _numeric_param_key(base::String, coords::Vector{Int}, of_time::Bool)
-    core = strip(base)
-    isempty(core) && return nothing
-    parts = String[core]
-    time_idx = coords[1] - 1
-    if of_time || time_idx != 0
-        push!(parts, "t$(time_idx)")
-    end
-    for idx in coords[2:end]
-        push!(parts, string(idx))
-    end
-    length(parts) == 1 && return nothing
-    return Symbol(join(parts, "_"))
-end
+using ..Sampler: QDistribution, QEnsembleFunction
 
 """ 
     Parameter(param_name::String, param_of_t::Bool, var_of_ensemble::Bool, var_ensemble_index::Int=0;
@@ -423,37 +388,13 @@ function ParameterInfo(parameters::Vector{Parameter}, outer_labels_symbols::Vect
         end
     end
 
-    group_name_to_index = Dict{Symbol,Int}(Symbol(outer_labels_symbols[g]) => g for g in 1:group_count)
-    param_name_to_indices = Dict{Symbol,Vector{Int}}()
-    for idx in 1:length(parameters)
-        coords = param_coords[idx]
-        group_idx = param_group_by_index[idx]
-        base_symbol = String(outer_labels_symbols[group_idx])
-        sym_str = Symbol(param_strs[idx])
-        sym_name = Symbol(param_names[idx])
-        _register_param_key!(param_name_to_indices, sym_str, idx)
-        _register_param_key!(param_name_to_indices, sym_name, idx)
-        placeholder = _normalize_param_placeholder(param_names[idx])
-        placeholder !== nothing && _register_param_key!(param_name_to_indices, placeholder, idx)
-        numeric_key = _numeric_param_key(base_symbol, coords, param_of_t[idx])
-        numeric_key !== nothing && _register_param_key!(param_name_to_indices, numeric_key, idx)
-        if param_is_t[idx]
-            t_idx = coords[1] - 1
-            _register_param_key!(param_name_to_indices, Symbol("t$(t_idx)"), idx)
-        end
-    end
-
-    time_slot_to_param = Dict(time_param_lookup)
-
-    param_dicts = ParameterDicts(group_name_to_index, param_name_to_indices, time_slot_to_param)
-
     return CFunctions.ParameterInfo(outer_labels_symbols, inner_labels_symbols_flat, outer_labels, outer_labels_str, outer_labels_latex, param_names,
         param_strs, param_latex, param_of_indexes, param_group_by_index,
         t_index_by_index, ss_ensemble_indexes_by_group, ss_ensemble_present_by_group, indexed_parameter_indexes,
         where_acting_by_parameter, params_acting_by_index, param_index_tuples, subspace_index_maps, t_index_transform, indexes_by_t_index,
         indexes_of_t, ensemble_sizes, param_of_t, param_is_t, function_param_refs,
         group_time_counts, group_index_sizes, param_coords, params_by_group, group_of_t, group_is_t,
-        subspace_info, param_indexes, param_dicts)
+        subspace_info, param_indexes)
 end
 
 
@@ -557,7 +498,7 @@ end
 
 function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info::SubSpaceInfo,
                                          subspaces::Vector{SubSpace}, used_symbols::Set{Symbol},
-                                         max_t_ind::Int)::Tuple{Vector{Parameter}, ParameterInfo, ParameterValues, Vector{Union{Nothing,QDistribution}}}
+                                         max_t_ind::Int)::Tuple{Vector{Parameter}, ParameterInfo, ParameterValues, ParameterDicts, Vector{Union{Nothing,QDistribution}}}
     # --- start from a local copy and auto-add t if not present ---
     var_param = copy(vd.var_param)
     if all(group.name != "t" for group in var_param) && !(:t in used_symbols)
@@ -783,11 +724,14 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
         ens.parameter_function_group_indices = func_idxs
     end
 
+    param_dicts = build_parameter_dicts(var_info)
+
     param_values = ParameterValues(var_info;
+        param_dicts=param_dicts,
         ensemble_group_functions=ensemble_group_functions,
         group_functions=scalar_group_functions)
 
-    return parameters, var_info, param_values, ensemble_group_distributions
+    return parameters, var_info, param_values, param_dicts, ensemble_group_distributions
 end
 
 #Return parameter mapping vector for switching ensemble inner index within a subspace.

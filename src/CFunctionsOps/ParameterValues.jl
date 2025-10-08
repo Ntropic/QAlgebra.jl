@@ -2,7 +2,7 @@ const _GroupStorage = Union{Nothing, Number, AbstractArray}
 
 export attach_samples!
 
-using ..QDistributions: QEnsembleFunction
+using ..Sampler: QEnsembleFunction
 using ..EnsembleSamples: AbstractEnsembleSample
 
 """
@@ -27,6 +27,7 @@ by [`recompute_functions!`](@ref) when dependencies change.
 """
 struct ParameterValues
     param_info::ParameterInfo
+    param_dicts::ParameterDicts
     group_values::Vector{_GroupStorage}
     # Info about which group has which properties -> necessary to process time updates in the correct order. 
     group_initialized::BitVector
@@ -65,10 +66,12 @@ end
 end
 
 function ParameterValues(param_info::ParameterInfo;
+                         param_dicts::Union{Nothing,ParameterDicts}=nothing,
                          ensemble_group_samples::Vector{Union{Nothing,AbstractEnsembleSample}}=fill!(Vector{Union{Nothing,AbstractEnsembleSample}}(undef, length(param_info.outer_labels_symbols)), nothing),
                          ensemble_group_functions::Vector{Union{Nothing,QEnsembleFunction}}=fill!(Vector{Union{Nothing,QEnsembleFunction}}(undef, length(param_info.outer_labels_symbols)), nothing),
                          group_functions::Vector{Union{Nothing,Function}}=fill!(Vector{Union{Nothing,Function}}(undef, length(param_info.outer_labels_symbols)), nothing))
     group_count = length(param_info.outer_labels_symbols)
+    dicts = param_dicts === nothing ? build_parameter_dicts(param_info) : param_dicts
 
     group_values = Vector{_GroupStorage}(undef, group_count)
     for g in 1:group_count
@@ -97,7 +100,7 @@ function ParameterValues(param_info::ParameterInfo;
 
     time_group_index = time_group === nothing ? 0 : time_group
 
-    return ParameterValues(param_info, group_values, group_initialized,
+    return ParameterValues(param_info, dicts, group_values, group_initialized,
                            ensemble_group_samples, ensemble_group_functions, group_functions,
                            no_index_function_of_t, indexed_function_of_t,
                            time_group_index)
@@ -123,16 +126,24 @@ function _store_value!(pv::ParameterValues, param_idx::Int, value; allow_functio
     return value
 end
 
-function get_parameter_index(info::ParameterInfo, name::Symbol)
-    matches = get(info.param_dicts.param_name_to_indices, name, nothing)
+function get_parameter_index(info::ParameterInfo, dicts::ParameterDicts, name::Symbol)
+    matches = get(dicts.param_name_to_indices, name, nothing)
     matches === nothing && error("No parameter named $(name) registered in ParameterInfo.")
     length(matches) == 1 && return matches[1]
     labels = info.params_str[matches]
     error("Parameter name $(name) is ambiguous. Matches: $(join(labels, ", ")).")
 end
 
+function get_parameter_index(info::ParameterInfo, name::Symbol)
+    dicts = build_parameter_dicts(info)
+    return get_parameter_index(info, dicts, name)
+end
+
+get_parameter_index(info::ParameterInfo, dicts::ParameterDicts, name::String) =
+    get_parameter_index(info, dicts, Symbol(name))
+
 get_parameter_index(info::ParameterInfo, name::String) = get_parameter_index(info, Symbol(name))
-get_parameter_index(pv::ParameterValues, name) = get_parameter_index(pv.param_info, name)
+get_parameter_index(pv::ParameterValues, name) = get_parameter_index(pv.param_info, pv.param_dicts, name)
 
 function _fill_group!(pv::ParameterValues, group_idx::Int, value)
     storage = pv.group_values[group_idx]
@@ -187,7 +198,7 @@ function _set_group!(pv::ParameterValues, group_idx::Int, value)
 end
 
 function set_param!(pv::ParameterValues, name::Symbol, value)
-    dicts = pv.param_info.param_dicts
+    dicts = pv.param_dicts
     if haskey(dicts.group_name_to_index, name)
         return _set_group!(pv, dicts.group_name_to_index[name], value)
     end
@@ -200,7 +211,7 @@ end
 set_param!(pv::ParameterValues, name::String, value) = set_param!(pv, Symbol(name), value)
 
 function update_t!(pv::ParameterValues, value, slot::Int=0)
-    dicts = pv.param_info.param_dicts
+    dicts = pv.param_dicts
     idx = get(dicts.time_slot_to_param, slot, nothing)
     idx === nothing && error("No time parameter t$(slot) registered in ParameterValues.")
     set_param!(pv, idx, value)

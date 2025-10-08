@@ -1,6 +1,6 @@
 import ..ConcreteIndexes
 import ..StringUtils: indexes2str
-import ..QDistributions: QDistribution, QEnsembleFunction
+import ..Sampler: QDistribution, QEnsembleFunction
 
 const _IndexLookupValue = Union{Number, AbstractVector, AbstractArray, Dict, Function}
 
@@ -284,4 +284,3 @@ function _indexed_parameter_value(param_info::ParameterInfo, param_index::Int, i
         error("No numeric value supplied for parameter index $(param_index).")
     return _resolve_indexed_value(raw_value, idxs)
 end
-

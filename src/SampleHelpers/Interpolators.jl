@@ -1,5 +1,3 @@
-module QInterpolators
-
 export QInterpolator, build_interpolation_nodes, eval_interpolation, nodes, basis_values, basis_values!
 
 using LoopVectorization
@@ -491,7 +489,3 @@ function basis_values(inter::QInterpolator, pos::AbstractVector{<:Real})
     out = Array{Float64}(undef, sz)
     return basis_values!(out, inter, pos)
 end
-
-
-
-end # module QInterpolators

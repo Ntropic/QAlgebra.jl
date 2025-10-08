@@ -1,39 +1,18 @@
-module SampleHelpers
-
-include("Interpolators.jl")
-include("Integrators.jl")
-include("Distributions.jl")
-
 using QuadGK
-using .QInterpolators
-using .QIntegrators
-using .QDistributions
 
 export QInterpolator, build_interpolation_nodes, eval_interpolation, nodes, basis_values, basis_values!
 export QIntegrator, integrate_node_funs, normalization_constant, eval_integration
 export QDistribution, pdf, QNormal, QUniform, QEnsembleFunction
 export pdf2cdf, cdf2inverse
 
-# Internal helpers --------------------------------------------------
-@inline function _method_alias(method::Symbol)
-    m = Symbol(lowercase(String(method)))
-    m === :chebyshev && return :chebychev
-    return m
-end
-
 function _pdf2cdf_core(pdf_fn::Function, a::Float64, b::Float64;
                        num_nodes::Int=25,
-                       method::Symbol=:chebyshev,
                        atol::Float64=1e-9,
-                       rtol::Float64=1e-7,
-                       endpoints::Bool=true,
-                       candidate_points::Int=10_000)
-    m = _method_alias(method)
+                       rtol::Float64=1e-7)
     n = max(num_nodes, 2)
     params = [(n, a, b)]
-    bounds, nodes_per_dim = build_interpolation_nodes(m, params;
-                                                      endpoints=endpoints,
-                                                      M=candidate_points)
+    bounds, nodes_per_dim = build_interpolation_nodes(:chebychev, params;
+                                                      endpoints=true)
     nodes = copy(nodes_per_dim[1])
     sort!(nodes)
 
@@ -59,7 +38,7 @@ function _pdf2cdf_core(pdf_fn::Function, a::Float64, b::Float64;
     cdf_vals[1] = 0.0
     cdf_vals[end] = 1.0
 
-    return QInterpolator([nodes], bounds; method=m, endpoints=endpoints, values=cdf_vals)
+    return QInterpolator([nodes], bounds; method=:chebychev, endpoints=true, values=cdf_vals)
 end
 
 """
@@ -70,26 +49,17 @@ one-dimensional interpolation grid. Returns a `QInterpolator` whose stored value
 the normalised CDF.
 
 Keyword arguments:
-- `num_nodes::Int = 25`: number of interpolation nodes spanning the support.
-- `method::Symbol = :chebyshev`: node-placement strategy delegated to `build_interpolation_nodes`.
+- `num_nodes::Int = 25`: number of Chebyshev interpolation nodes spanning the support.
 - `atol::Float64 = 1e-9` / `rtol::Float64 = 1e-7`: absolute/relative tolerances for `QuadGK`.
-- `endpoints::Bool = true`: include the pdf support endpoints if the node generator allows it.
-- `candidate_points::Int = 10_000`: dense candidate grid for node search; large grids enable `:leja` and `:fekete`.
 """
 function pdf2cdf(dist::QDistribution;
                  num_nodes::Int=25,
-                 method::Symbol=:chebyshev,
                  atol::Float64=1e-9,
-                 rtol::Float64=1e-7,
-                 endpoints::Bool=true,
-                 candidate_points::Int=10_000)
+                 rtol::Float64=1e-7)
     return _pdf2cdf_core(x -> pdf(dist, x), dist.minimum, dist.maximum;
                          num_nodes=num_nodes,
-                         method=method,
                          atol=atol,
-                         rtol=rtol,
-                         endpoints=endpoints,
-                         candidate_points=candidate_points)
+                         rtol=rtol)
 end
 
 """
@@ -97,27 +67,20 @@ end
 
 Build a CDF interpolator directly from a stored pdf interpolator (`dims == 1`). The
 input interpolator must carry stored values; they are integrated and normalised before
-returning the new `QInterpolator`. The `candidate_points` keyword shares the same
-large default so `:leja` / `:fekete` grids work without extra configuration.
+returning the new `QInterpolator`.
 """
 function pdf2cdf(pdf_inter::QInterpolator;
                  num_nodes::Int=25,
-                 method::Symbol=:chebyshev,
                  atol::Float64=1e-9,
-                 rtol::Float64=1e-7,
-                 endpoints::Bool=true,
-                 candidate_points::Int=10_000)
+                 rtol::Float64=1e-7)
     pdf_inter.dims == 1 || error("pdf2cdf currently supports only 1D pdf interpolators.")
     values = pdf_inter.default_values
     values === nothing && error("pdf2cdf(pdf_inter) requires the interpolator to store pdf samples.")
     a, b = pdf_inter.bounds[1]
     return _pdf2cdf_core(x -> pdf_inter(x), a, b;
                          num_nodes=num_nodes,
-                         method=method,
                          atol=atol,
-                         rtol=rtol,
-                         endpoints=endpoints,
-                         candidate_points=candidate_points)
+                         rtol=rtol)
 end
 
 """
@@ -128,20 +91,14 @@ Sampling against the returned object enables inverse-transform draws and determi
 density nodes.
 
 Keyword arguments:
-- `num_nodes::Int = 25`: number of probability nodes spanning `[0, 1]`.
-- `method::Symbol = :chebyshev`: node-placement strategy for the probability axis.
+- `num_nodes::Int = 25`: number of Chebyshev probability nodes spanning `[0, 1]`.
 - `atol::Float64 = 1e-9` / `rtol::Float64 = 1e-7`: tolerances for refinement of the inverse search.
-- `endpoints::Bool = true`: include `0`/`1` in the probability grid where the method supports it.
-- `candidate_points::Int = 10_000`: auxiliary grid density for probability nodes; large grids enable `:leja` / `:fekete`.
 - `max_iter::Int = 128`: maximum bisection iterations used per probability value.
 """
 function cdf2inverse(cdf_inter::QInterpolator;
                      num_nodes::Int=25,
-                     method::Symbol=:chebyshev,
                      atol::Float64=1e-9,
                      rtol::Float64=1e-7,
-                     endpoints::Bool=true,
-                     candidate_points::Int=10_000,
                      max_iter::Int=128)
     cdf_inter.dims == 1 || error("cdf2inverse currently supports only 1D CDFs.")
     values = cdf_inter.default_values
@@ -153,10 +110,8 @@ function cdf2inverse(cdf_inter::QInterpolator;
     cdf_vals = cdf_vals[ord]
 
     n = max(num_nodes, 2)
-    m = _method_alias(method)
-    bounds_prob, prob_nodes_dim = build_interpolation_nodes(m, [(n, 0.0, 1.0)];
-                                                            endpoints=endpoints,
-                                                            M=candidate_points)
+    bounds_prob, prob_nodes_dim = build_interpolation_nodes(:chebychev, [(n, 0.0, 1.0)];
+                                                            endpoints=true)
     prob_nodes = copy(prob_nodes_dim[1])
     sort!(prob_nodes)
 
@@ -197,7 +152,7 @@ function cdf2inverse(cdf_inter::QInterpolator;
         inv_values[i] = 0.5 * (lo + hi)
     end
 
-    return QInterpolator([prob_nodes], bounds_prob; method=m, endpoints=endpoints, values=inv_values)
+    return QInterpolator([prob_nodes], bounds_prob; method=:chebychev, endpoints=true, values=inv_values)
 end
 
 """
@@ -222,5 +177,3 @@ end
 
 cdf2inverse(cdf_data::NamedTuple; kwargs...) =
     cdf2inverse(cdf_data.nodes, cdf_data.values; kwargs...)
-
-end # module SampleHelpers

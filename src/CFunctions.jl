@@ -7,7 +7,7 @@ using ComplexRationals
 using SparseArrays
 using ..SparsePermutationTools: SparsePermutation
 using ..QAlgebra: get_default, FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
-using ..QDistributions: QDistribution, QEnsembleFunction
+using ..Sampler: QDistribution, QEnsembleFunction
 
 export CFunction, CAbstractDefinition, CTypeDefinition, CIntegralDefinition, ParameterInfo
 export define_cabstract, define_ctype, define_cintegral
@@ -121,6 +121,41 @@ struct ParameterDicts
     time_slot_to_param::Dict{Int,Int}
 end
 
+@inline function _register_param_key!(dict::Dict{Symbol,Vector{Int}}, key::Symbol, idx::Int)
+    key_str = String(key)
+    isempty(key_str) && return nothing
+    entry = get!(dict, key, Int[])
+    in(idx, entry) || push!(entry, idx)
+    return nothing
+end
+
+@inline function _normalize_param_placeholder(name::String)
+    stripped = strip(name)
+    isempty(stripped) && return nothing
+    cleaned = replace(stripped, '(' => '_', ')' => "", '{' => '_', '}' => "", ',' => "_", ' ' => "")
+    while occursin("__", cleaned)
+        cleaned = replace(cleaned, "__" => "_")
+    end
+    cleaned = strip(cleaned, '_')
+    isempty(cleaned) && return nothing
+    return Symbol(cleaned)
+end
+
+@inline function _numeric_param_key(base::String, coords::Vector{Int}, of_time::Bool)
+    core = strip(base)
+    isempty(core) && return nothing
+    parts = String[core]
+    time_idx = coords[1] - 1
+    if of_time || time_idx != 0
+        push!(parts, "t$(time_idx)")
+    end
+    for idx in coords[2:end]
+        push!(parts, string(idx))
+    end
+    length(parts) == 1 && return nothing
+    return Symbol(join(parts, "_"))
+end
+
 """
     ParameterInfo
 
@@ -168,7 +203,6 @@ struct ParameterInfo <: AbstractParameterInfo
 
     subspace_info::Any
     param_indexes::ParameterIndexes
-    param_dicts::ParameterDicts
     abstract_definitions::Vector{CAbstractDefinition}
     custom_ctype::Vector{CTypeDefinition}
     integral_definitions::Vector{CIntegralDefinition}
@@ -184,7 +218,7 @@ struct ParameterInfo <: AbstractParameterInfo
         function_param_refs::Vector{Union{Nothing,Vector{Int}}},
         group_time_counts::Vector{Int}, group_index_sizes::Vector{Vector{Int}}, param_coords::Vector{Vector{Int}}, params_by_group::Vector{Vector{Int}},
         group_of_t::BitVector, group_is_t::BitVector,
-        subspace_info::Any, param_indexes::ParameterIndexes, param_dicts::ParameterDicts)
+        subspace_info::Any, param_indexes::ParameterIndexes)
         dims = length(inner_labels_symbols_flat)
         new(dims, outer_labels_symbols, inner_labels_symbols_flat, outer_labels,
             outer_labels_str, outer_labels_latex,
@@ -195,8 +229,39 @@ struct ParameterInfo <: AbstractParameterInfo
             indexes_by_t_index, indexes_of_t, how_many_by_ensemble, param_of_t, param_is_t,
             function_param_refs,
             group_time_counts, group_index_sizes, param_coords, params_by_group, group_of_t, group_is_t,
-            subspace_info, param_indexes, param_dicts, CAbstractDefinition[], CTypeDefinition[], CIntegralDefinition[])
+            subspace_info, param_indexes, CAbstractDefinition[], CTypeDefinition[], CIntegralDefinition[])
     end
+end
+
+function build_parameter_dicts(info::ParameterInfo)::ParameterDicts
+    group_name_to_index = Dict{Symbol,Int}()
+    for (idx, sym) in enumerate(info.outer_labels_symbols)
+        group_name_to_index[sym] = idx
+    end
+
+    param_name_to_indices = Dict{Symbol,Vector{Int}}()
+    time_slot_to_param = Dict{Int,Int}()
+
+    for idx in eachindex(info.params_name)
+        coords = info.param_coords[idx]
+        group_idx = info.param_group_by_index[idx]
+        base_symbol = String(info.outer_labels_symbols[group_idx])
+        sym_str = Symbol(info.params_str[idx])
+        sym_name = Symbol(info.params_name[idx])
+        _register_param_key!(param_name_to_indices, sym_str, idx)
+        _register_param_key!(param_name_to_indices, sym_name, idx)
+        placeholder = _normalize_param_placeholder(info.params_name[idx])
+        placeholder !== nothing && _register_param_key!(param_name_to_indices, placeholder, idx)
+        numeric_key = _numeric_param_key(base_symbol, coords, info.param_of_t[idx])
+        numeric_key !== nothing && _register_param_key!(param_name_to_indices, numeric_key, idx)
+        if info.param_is_t[idx]
+            t_idx = coords[1] - 1
+            _register_param_key!(param_name_to_indices, Symbol("t$(t_idx)"), idx)
+            time_slot_to_param[t_idx] = idx
+        end
+    end
+
+    return ParameterDicts(group_name_to_index, param_name_to_indices, time_slot_to_param)
 end
 
 """

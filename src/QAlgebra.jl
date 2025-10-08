@@ -82,22 +82,19 @@ using .StringUtils
 export symbol2formatted, str2sub, str2sup, brace, braket, indexes2str
 export int_exponent2str, exponentdag2str
 
-include("SampleHelpers/SampleHelpers.jl")
-using .SampleHelpers
-const QInterpolators = SampleHelpers.QInterpolators
-const QIntegrators = SampleHelpers.QIntegrators
-const QDistributions = SampleHelpers.QDistributions
+include("QSpaceOps/Sampler.jl")
+using .Sampler
+using .Sampler: QDistribution, QNormal, QUniform, QEnsembleFunction, pdf
+using .Sampler: QInterpolator, build_interpolation_nodes, eval_interpolation, nodes, basis_values, basis_values!
+using .Sampler: QIntegrator, integrate_node_funs, normalization_constant, eval_integration
+using .Sampler: build_discrete_samples, build_continuous_samples
+using .Sampler: EnsembleSamples, AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 
-using .QInterpolators: QInterpolator, build_interpolation_nodes, eval_interpolation, nodes, basis_values, basis_values!
-using .QIntegrators: QIntegrator, integrate_node_funs, normalization_constant, eval_integration
-using .QDistributions
 export QDistribution, QNormal, QUniform, QEnsembleFunction, pdf
 export QInterpolator, build_interpolation_nodes, eval_interpolation, nodes, basis_values, basis_values!
 export QIntegrator, integrate_node_funs, normalization_constant, eval_integration
-
-include("QSpaceOps/Sampler.jl")
-using .EnsembleSamples
-export AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
+export build_discrete_samples, build_continuous_samples
+export EnsembleSamples, AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 
 include("CFunctions.jl")
 using .CFunctions
@@ -121,9 +118,12 @@ export OperatorSet, max_operator_magnitude
 export Ensemble, SubSpace, SubSpaceDefinitions, ConcreteIndexes 
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
 export Parameter, ParameterInfo, ParameterDefinitions
-export QSpace
+export QSpace, SubSpaceDicts, AbstractOperatorDicts
+export get_parameter_group, get_parameter, get_subspace, get_subspace_index, get_ensemble, get_operator_type
 export QubitPauli, QubitPM, Ladder
 export DiscreteSamples, ContinuousSamples
+
+include("Plotting.jl")
 
 include("QExpressions.jl")
 using .QExpressions
@@ -143,14 +143,14 @@ export reorder, reorder_full, reorder_time, neq, flatsums, complexsums , Sum2Int
 # Preindexing
 export QAtomOrdered, QAtomIndexed, QNeutral, OrderbyOperator, OrderedQAtomProduct, OrderedQExpr, OrderedDiffQEq
 
-include("IndexingCombinationsSamples/Indexing.jl")
+include("ConcreteIndexingHelper/Indexing.jl")
 using .Indexing
 export BinomialCache, _UsedBuf, EnsembleRankWorkspace, MultiEnsembleWorkspace
 export index_rank_for_ensemble!, index_rank_for_ensemble_continuum!
 export index_number_for_ensemble, index_number_for_ensemble_continuum
 export combined_index_for_ensembles!, combined_index_for_ensembles_continuum!
 
-include("IndexingCombinationsSamples/Combinatorics.jl")
+include("ConcreteIndexingHelper/Combinatorics.jl")
 using .QCombinatorics
 export ensemble_iterator, ensemble_iterator_continuum, multi_ensemble_iterator, multi_ensemble_iterator_continuum
 

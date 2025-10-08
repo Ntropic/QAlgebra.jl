@@ -12,23 +12,21 @@ Create an `Ensemble`: a container for ensemble–subspace metadata.
 
 # Positional arguments
 - `num_operator_indexes::Int`: Number of operator indices reserved for the ensemble.
-- `num_sum_indexes::Int`: Number of summation indices reserved for the ensemble.  
-  (Omitted or defaulted to `0` in the 2-arg / keyword-only constructors.)
+- `num_sum_indexes::Int`: Number of summation indices reserved for the ensemble.   (Omitted and defaulted to `0` in the 2-arg / keyword-only constructors.)
 - `operator_set::OperatorSet`: The operator set associated with this ensemble.
 
 # Keyword arguments
-- `num_modes::Int = -1`: Physical number of instantiated modes. `-1` means the
-  ensemble only reserves indices (no fixed system size).
-- `max_operator_order::Int = -1`: Maximum operator order allowed (convention: `-1` = unbounded).
+- `num_modes::Int = -1`: Physical number of instantiated modes. `-1` means the ensemble only reserves indices (no fixed system size).
 - `as_continuum::Bool = false`: Whether a continuum approximation is planned.
-- `parameter_groups::Vector{Symbol} = Symbol[]`: Symbols for parameter groups (e.g. `:gamma`).
-- `parameter_group_indices::Vector{Int} = Int[]`: Indices of groups on this ensemble backed by `QDistribution`.
-- `parameter_function_group_indices::Vector{Int} = Int[]`: Indices of groups acting via functions (no distribution).
-- `sample_method::Symbol = :default`: Preferred sampling method. `:default` resolves to
-  `:random` for discrete ensembles and `:chebychev` for continuum ensembles.
-- `sampler::Union{Nothing,AbstractEnsembleSample} = nothing`: Optional precomputed sample descriptor.
-- `qspace_ref::Union{Nothing,WeakRef} = nothing`: Optional weak reference back to a `QSpace`.
+- `max_operator_order::Int = -1`: Maximum operator order allowed (convention: `-1` = unbounded).
+- `sample_method::Symbol = :default`: Preferred sampling method. `:default` resolves to `:random` for discrete ensembles and `:chebychev` for continuum ensembles. 
+    Discrete sampling accepts `:random` or `:density`;
+    Continuum sampling accepts `:chebychev`, `:uniform`, `:leja`, or `:fekete` (also `:chebyshev` alias).
 
+- `sample_num_nodes::Int = 25`: Number of interpolation nodes used for CDF approximations.
+- `sample_atol::Float64 = 1e-9` Absolute tolerance reused by sampling helpers.
+- `sample_rtol::Float64 = 1e-7`: Relative tolerance reused by sampling helpers.
+- `sample_max_iter::Int = 128`: Maximum refinement iterations for inverse-CDF halving-steps.
 """
 mutable struct Ensemble
     num_operator_indexes::Int
@@ -41,6 +39,10 @@ mutable struct Ensemble
     parameter_group_indices::Vector{Int}
     parameter_function_group_indices::Vector{Int}
     sample_method::Symbol
+    sample_num_nodes::Int
+    sample_atol::Float64
+    sample_rtol::Float64
+    sample_max_iter::Int
     sampler::Union{Nothing,AbstractEnsembleSample}
     qspace_ref::Union{Nothing,WeakRef}
     function Ensemble(num_operator_indexes::Int, num_sum_indexes::Int, operator_set::OperatorSet;
@@ -51,11 +53,16 @@ mutable struct Ensemble
                       parameter_group_indices::Vector{Int}=Int[],
                       parameter_function_group_indices::Vector{Int}=Int[],
                       sample_method::Symbol=:default,
+                      sample_num_nodes::Int=25,
+                      sample_atol::Float64=1e-9,
+                      sample_rtol::Float64=1e-7,
+                      sample_max_iter::Int=128,
                       sampler::Union{Nothing,AbstractEnsembleSample}=nothing,
                       qspace_ref::Union{Nothing,WeakRef}=nothing)
         return new(num_operator_indexes, num_sum_indexes, operator_set, num_modes,
                    max_operator_order, as_continuum, copy(parameter_groups), copy(parameter_group_indices),
-                   copy(parameter_function_group_indices), sample_method, sampler, qspace_ref)
+                   copy(parameter_function_group_indices), sample_method, sample_num_nodes,
+                   sample_atol, sample_rtol, sample_max_iter, sampler, qspace_ref)
     end
     function Ensemble(num_operator_indexes::Int, operator_set::OperatorSet; kwargs...)
         return Ensemble(num_operator_indexes, 0, operator_set; kwargs...)

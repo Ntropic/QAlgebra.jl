@@ -1,7 +1,3 @@
-module QIntegrators
-
-using ..QInterpolators: QInterpolator, basis_values!
-
 import QuadGK
 
 export normalization_constant, integrate_node_funs, QIntegrator, eval_integration
@@ -194,6 +190,8 @@ function QIntegrator(inter::QInterpolator,
                       rtol=rtol)
 end
 
+nodes(inter::QIntegrator; separate::Bool=false) = nodes(inter.interpolator, separate=separate)
+
 """
     eval_integration(inter::QInterpolator,
                      values::Array{<:Number},
@@ -230,5 +228,3 @@ function (int::QIntegrator)(f::Function)
     values = _evaluate_on_nodes(int.interpolator, f)
     return eval_integration(int.interpolator, values, int.node_weights)
 end
-
-end # module QIntegrators

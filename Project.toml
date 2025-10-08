@@ -9,23 +9,28 @@ ComplexRationals = "fec49eec-9feb-41dd-a20b-fe4c3aae4e50"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
-Polynomials = "f27b6e38-b328-58d1-80ce-0feddd5e7a45"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 QuadGK = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
+[weakdeps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+
 [compat]
+CairoMakie = "0.15.6"
 Combinatorics = "1.0.3"
 ComplexRationals = "0.2"
 LaTeXStrings = "1.4"
 LoopVectorization = "0.12.172"
-Polynomials = "4.1.0"
 Preferences = "1.4"
 Printf = "1.10"
 QuadGK = "2.11.2"
 julia = "1.10"
+
+[extensions]
+QAlgebraPlottingExt = "CairoMakie"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

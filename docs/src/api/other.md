@@ -26,8 +26,8 @@ QNormal
 QUniform
 QEnsembleFunction
 pdf
-QAlgebra.SampleHelpers.pdf2cdf
-QAlgebra.SampleHelpers.cdf2inverse
+QAlgebra.Sampler.pdf2cdf
+QAlgebra.Sampler.cdf2inverse
 QInterpolator
 nodes
 basis_values

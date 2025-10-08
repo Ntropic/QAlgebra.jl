@@ -1,0 +1,156 @@
+module QAlgebraPlottingExt
+
+using CairoMakie
+using LaTeXStrings: LaTeXString
+import QAlgebra
+using QAlgebra: QSpace, get_parameter_group, get_ensemble
+import QAlgebra.Plotting
+using QAlgebra.Sampler: pdf
+
+const _DEFAULT_MARKER = :circle
+const _DEFAULT_MARKERSIZE = 10
+const _DEFAULT_MARKERCOLOR = :dodgerblue
+const _DEFAULT_JOINT_RESOLUTION = 256
+
+@inline _to_symbol(name::Symbol) = name
+@inline _to_symbol(name::AbstractString) = Symbol(name)
+
+_as_namedtuple(kwargs::NamedTuple) = kwargs
+_as_namedtuple(kwargs::Base.Pairs) = (; kwargs...)
+_as_namedtuple(::Nothing) = NamedTuple()
+function _as_namedtuple(kwargs)
+    error("Expected NamedTuple or keyword pairs, got $(typeof(kwargs)).")
+end
+
+function _resolve_aspect(aspect)
+    aspect === nothing && return nothing
+    if aspect isa Real
+        return AxisAspect(aspect)
+    elseif aspect isa Symbol
+        if aspect in (:equal, :data)
+            return DataAspect()
+        else
+            error("Unsupported symbolic aspect $(aspect). Use :equal, :data, or a numeric ratio.")
+        end
+    elseif aspect isa AxisAspect || aspect isa DataAspect
+        return aspect
+    else
+        error("Unsupported aspect type $(typeof(aspect)).")
+    end
+end
+
+@inline function _latex_label(qspace::QSpace, sym::Symbol)
+    group_idx = get_parameter_group(qspace, sym)
+    label = qspace.param_info.outer_labels_latex[group_idx]
+    return LaTeXString(label)
+end
+
+@inline function _joint_line_defaults()
+    return (; color=:black, linewidth=2)
+end
+
+@inline function _joint_contour_defaults()
+    return (; colormap=:viridis, alpha=0.35, levels=12)
+end
+
+"""
+    plot_ensemble_samples(qspace, ensemble_key; params=nothing, marker=:circle,
+                           markersize=10, color=:dodgerblue, plot_joint=false,
+                           joint_resolution=256, joint_kwargs=NamedTuple(), aspect=nothing,
+                           axis_kwargs=NamedTuple(), kwargs...)
+
+Visualise the sample positions registered on an ensemble inside `qspace`. The
+`ensemble_key` can be either the ensemble's outer subspace symbol or one of its
+inner keys. By default all sampled parameter groups (those backed by
+`QDistribution`s) are plotted; supply `params` with a subset of parameter
+symbols to restrict the axes. One- and two-dimensional plots are supported. If
+`plot_joint` is true, the marginal/product distribution is overlayed as a line
+(`ndims == 1`) or filled contour plot (`ndims == 2`). Additional keyword
+arguments are forwarded to `Makie.scatter!` so you can customise markers.
+
+The returned `Figure` contains a single `Axis` with LaTeX-formatted labels that
+match the requested parameters.
+"""
+function Plotting.plot_ensemble_samples(qspace::QSpace,
+                                        ensemble_key::Union{Symbol,AbstractString};
+                                        params::Union{Nothing,AbstractVector{<:Union{Symbol,AbstractString}}}=nothing,
+                                        marker=_DEFAULT_MARKER,
+                                        markersize::Real=_DEFAULT_MARKERSIZE,
+                                        color=_DEFAULT_MARKERCOLOR,
+                                        plot_joint::Bool=false,
+                                        joint_resolution::Int=_DEFAULT_JOINT_RESOLUTION,
+                                        joint_kwargs::NamedTuple=NamedTuple(),
+                                        aspect=nothing,
+                                        axis_kwargs::Union{NamedTuple,Base.Pairs,Nothing}=NamedTuple(),
+                                        kwargs...)
+    sym = _to_symbol(ensemble_key)
+    ensemble = get_ensemble(qspace, sym)
+    sample = ensemble.sampler
+    sample === nothing && error("Ensemble $(sym) does not have samples attached. Build samples before plotting.")
+
+    group_lookup = Dict(sample.group_symbols[i] => i for i in eachindex(sample.group_symbols))
+    selected_syms = params === nothing ? copy(sample.group_symbols) : _to_symbol.(params)
+    isempty(selected_syms) && error("At least one parameter symbol is required for plotting.")
+
+    selected_cols = Int[]
+    for s in selected_syms
+        idx = get(group_lookup, s, nothing)
+        idx === nothing && error("Parameter symbol $(s) is not part of the sampling groups for ensemble $(sym).")
+        push!(selected_cols, idx)
+    end
+
+    ndims = length(selected_cols)
+    ndims > 2 && error("plot_ensemble_samples supports up to 2 parameters; got $(ndims).")
+
+    coords = sample.samples[:, selected_cols]
+    fig = Figure()
+    aspect_setting = _resolve_aspect(aspect)
+    axis_kw = _as_namedtuple(axis_kwargs)
+    axis_kw = aspect_setting === nothing ? axis_kw : merge(axis_kw, (; aspect=aspect_setting))
+    ax = Axis(fig[1, 1]; axis_kw...)
+
+    latex_labels = [_latex_label(qspace, s) for s in selected_syms]
+
+    if ndims == 1
+        xs = coords[:]
+        dist = sample.distributions[selected_cols[1]]
+        ax.xlabel = latex_labels[1]
+        if plot_joint
+            grid = range(dist.minimum, dist.maximum; length=joint_resolution)
+            values = pdf.(Ref(dist), grid)
+            line_kwargs = merge(_joint_line_defaults(), joint_kwargs)
+            lines!(ax, grid, values; line_kwargs...)
+            ax.ylabel = LaTeXString("p(" * string(latex_labels[1]) * ")")
+        else
+            ylims!(ax, -0.5, 0.5)
+            ax.ylabel = LaTeXString(" ")
+            ax.yticksvisible = false
+            ax.yticklabelsvisible = false
+            ax.ygridvisible = false
+            ax.yminorgridvisible = false
+            ax.yspinesvisible = false
+            hlines!(ax, [0.0]; color=:gray70, linestyle=:dash, linewidth=1)
+        end
+        ys = plot_joint ? pdf.(Ref(dist), xs) : zeros(length(xs))
+        scatter!(ax, xs, ys; marker=marker, markersize=markersize, color=color, kwargs...)
+    else
+        xs = coords[:, 1]
+        ys = coords[:, 2]
+        ax.xlabel = latex_labels[1]
+        ax.ylabel = latex_labels[2]
+        if plot_joint
+            dist_x = sample.distributions[selected_cols[1]]
+            dist_y = sample.distributions[selected_cols[2]]
+            gx = range(dist_x.minimum, dist_x.maximum; length=joint_resolution)
+            gy = range(dist_y.minimum, dist_y.maximum; length=joint_resolution)
+            Z = [pdf(dist_x, x) * pdf(dist_y, y) for x in gx, y in gy]
+            contour_kwargs = merge(_joint_contour_defaults(), joint_kwargs)
+            contourf!(ax, gx, gy, Z; contour_kwargs...)
+        end
+        scatter!(ax, xs, ys; marker=marker, markersize=markersize, color=color, kwargs...)
+    end
+
+    return fig
+end
+
+end # module

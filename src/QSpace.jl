@@ -4,19 +4,29 @@ using ComplexRationals
 using ..CFunctions
 using ..StringUtils
 using ..Cumulants: ReducedCumulantList
-using ..QDistributions
-using ..EnsembleSamples: AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
+using ..Sampler
+using ..Sampler: AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 using Base: WeakRef, GC
 using SparseArrays
 
-export OperatorSet, operator_magnitude, max_operator_magnitude
+export OperatorSet, operator_magnitude, max_operator_magnitude, SubSpaceDicts, AbstractOperatorDicts
 export Ensemble, SubSpace, SubSpaceDefinitions, SubSpaceInfo, SubSpaceIndex, outer, inner, expanded, Index2Symbol, Index2String, Index2Ensemble, Index2Ensemble_and_Summation, SummationIndex2SubSpaceIndex
 export AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
 export Parameter, ParameterDefinitions, map_by_subspace, map_by_tindex
 export QSpace
+export get_parameter_group, get_parameter, get_parameter_index, get_subspace, get_subspace_index, get_ensemble, get_operator_type
 
 Is = Vector{Int}
+
+struct SubSpaceDicts
+    by_outer::Dict{Symbol,Int}
+    by_inner::Dict{Symbol,Tuple{Int,Int}}
+end
+
+struct AbstractOperatorDicts
+    by_name::Dict{Symbol,Int}
+end
 """
     OperatorSet(name, particle_type, len, neutral_element, base_ops, ops, op_product, op_dag, op2str, op2latex; kwargs...)
 
@@ -174,6 +184,9 @@ mutable struct QSpace
     params::Vector{Parameter}
     param_info::ParameterInfo
     param_values::ParameterValues
+    parameter_dicts::ParameterDicts
+    subspace_dicts::SubSpaceDicts
+    operator_dicts::AbstractOperatorDicts
 
     I_op::Vector{Is}               # Neutral Vector of all expanded subspaces
     I_ensemble_op::Vector{Vector{Is}}      # Neutral Vector of all expanded ensemble subspaces
@@ -194,7 +207,7 @@ mutable struct QSpace
         operatortype_info = OperatorTypeInfo(operatortypes, commute_fun=op_def.commute_fun, check_n=op_def.check_n) 
 
         # ==========> 3rd Parameters <==========
-        params, param_info, param_values, ensemble_group_distributions =
+        params, param_info, param_values, parameter_dicts, ensemble_group_distributions =
             ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
         final_group_count = length(param_info.outer_labels_symbols)
         for ss in subspaces
@@ -221,12 +234,42 @@ mutable struct QSpace
                     method=method)
             else
                 build_discrete_samples(ens, group_indices, group_symbols, group_names, dists;
-                    method=method)
+                    method=method,
+                    num_nodes=ens.sample_num_nodes,
+                    atol=ens.sample_atol,
+                    rtol=ens.sample_rtol,
+                    max_iter=ens.sample_max_iter)
             end
             ens.sampler = sample::AbstractEnsembleSample
             attach_samples!(param_values, sample)
         end
-    
+
+        subspace_dicts = let outer_map = Dict{Symbol,Int}(), inner_map = Dict{Symbol,Tuple{Int,Int}}()
+            for (idx, ss) in enumerate(subspaces)
+                if haskey(outer_map, ss.key_symbol)
+                    error("Duplicate outer subspace key $(ss.key_symbol) detected while building QSpace.")
+                end
+                outer_map[ss.key_symbol] = idx
+                for (inner_idx, sym) in enumerate(ss.keys_symbols)
+                    if haskey(inner_map, sym)
+                        error("Duplicate inner subspace key $(sym) detected while building QSpace.")
+                    end
+                    inner_map[sym] = (idx, inner_idx)
+                end
+            end
+            SubSpaceDicts(outer_map, inner_map)
+        end
+
+        operator_dicts = let map = Dict{Symbol,Int}()
+            for (idx, optype) in enumerate(operatortypes)
+                if haskey(map, optype.name_sym)
+                    error("Duplicate operator type symbol $(optype.name_sym) detected while building QSpace.")
+                end
+                map[optype.name_sym] = idx
+            end
+            AbstractOperatorDicts(map)
+        end
+
         # Generate the string representations
         c_one = CAtom(param_info, spzeros(Int, length(params)))
         c_zero = CAtom(param_info, ComplexRational(0,0,1), spzeros(Int, length(params)))
@@ -235,7 +278,7 @@ mutable struct QSpace
 
         qss = new( subspaces, subspace_info, ensembles,                           # Subspaces
                 operatortypes, operatortype_info,                                 # Abstract Operators 
-                params, param_info, param_values,                                 # Variables / Parameters
+                params, param_info, param_values, parameter_dicts, subspace_dicts, operator_dicts,
                 I_op, I_ensemble_op, c_one, c_zero, cumulant_cache, max_t_ind)    # Precomputed operator blueprints 
 
         GC.@preserve qss begin
@@ -293,6 +336,78 @@ function Base.show(io::IO, qspace::QSpace)
         println(io, "   - ", string(op))
     end
 end
+
+@inline function _require_symbol(name)
+    name isa Symbol && return name
+    return Symbol(name)
+end
+
+function _resolve_parameter_index(qspace::QSpace, name::Symbol)
+    matches = get(qspace.parameter_dicts.param_name_to_indices, name, nothing)
+    matches === nothing && error("No parameter named $(name) registered in QSpace.")
+    length(matches) == 1 && return matches[1]
+    labels = qspace.params[matches]
+    label_str = join(getfield.(labels, :param_str), ", ")
+    error("Parameter name $(name) is ambiguous. Matches: $(label_str).")
+end
+
+function get_parameter_group(qspace::QSpace, name::Symbol)
+    idx = get(qspace.parameter_dicts.group_name_to_index, name, nothing)
+    idx === nothing && error("No parameter group named $(name) registered in QSpace.")
+    return idx
+end
+get_parameter_group(qspace::QSpace, name::String) = get_parameter_group(qspace, _require_symbol(name))
+
+function get_parameter_index(qspace::QSpace, name::Symbol)
+    return _resolve_parameter_index(qspace, name)
+end
+get_parameter_index(qspace::QSpace, name::String) = get_parameter_index(qspace, _require_symbol(name))
+
+function get_parameter(qspace::QSpace, name::Symbol)
+    idx = _resolve_parameter_index(qspace, name)
+    return qspace.params[idx]
+end
+get_parameter(qspace::QSpace, name::String) = get_parameter(qspace, _require_symbol(name))
+
+function _resolve_subspace_location(qspace::QSpace, name::Symbol)
+    dicts = qspace.subspace_dicts
+    if haskey(dicts.by_outer, name)
+        return qspace.subspaces[dicts.by_outer[name]], nothing
+    elseif haskey(dicts.by_inner, name)
+        idx, inner_idx = dicts.by_inner[name]
+        return qspace.subspaces[idx], inner_idx
+    else
+        error("No subspace associated with key $(name).")
+    end
+end
+
+function get_subspace(qspace::QSpace, name::Symbol)
+    subspace, _ = _resolve_subspace_location(qspace, name)
+    return subspace
+end
+get_subspace(qspace::QSpace, name::String) = get_subspace(qspace, _require_symbol(name))
+
+function get_subspace_index(qspace::QSpace, name::Symbol)
+    _, inner_idx = _resolve_subspace_location(qspace, name)
+    inner_idx === nothing && error("Key $(name) refers to an outer subspace; no inner index to return.")
+    return inner_idx
+end
+get_subspace_index(qspace::QSpace, name::String) = get_subspace_index(qspace, _require_symbol(name))
+
+function get_ensemble(qspace::QSpace, name::Symbol)
+    subspace = get_subspace(qspace, name)
+    ens = subspace.ensemble
+    ens === nothing && error("Subspace $(subspace.key) is not an ensemble.")
+    return ens
+end
+get_ensemble(qspace::QSpace, name::String) = get_ensemble(qspace, _require_symbol(name))
+
+function get_operator_type(qspace::QSpace, name::Symbol)
+    idx = get(qspace.operator_dicts.by_name, name, nothing)
+    idx === nothing && error("No operator type named $(name) registered in QSpace.")
+    return qspace.operatortypes[idx]
+end
+get_operator_type(qspace::QSpace, name::String) = get_operator_type(qspace, _require_symbol(name))
 
 
 ## Test 

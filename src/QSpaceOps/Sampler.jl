@@ -1,7 +1,16 @@
+module Sampler
+
+using Random
+using Base: CartesianIndices
+
+include("../SampleHelpers/Interpolators.jl")
+include("../SampleHelpers/Integrators.jl")
+include("../SampleHelpers/Distributions.jl")
+include("../SampleHelpers/SampleHelpers.jl")
+
 module EnsembleSamples
 
-using QAlgebra.QDistributions: QDistribution
-using QAlgebra.QInterpolators: QInterpolator
+export AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 
 abstract type AbstractEnsembleSample end
 
@@ -17,7 +26,7 @@ struct DiscreteSamples <: AbstractEnsembleSample
     group_indices::Vector{Int}
     group_symbols::Vector{Symbol}
     group_names::Vector{String}
-    distributions::Vector{QDistribution}
+    distributions::Vector{parentmodule(@__MODULE__).QDistribution}
     samples::Matrix{Float64}
 end
 
@@ -33,23 +42,25 @@ struct ContinuousSamples <: AbstractEnsembleSample
     group_indices::Vector{Int}
     group_symbols::Vector{Symbol}
     group_names::Vector{String}
-    distributions::Vector{QDistribution}
+    distributions::Vector{parentmodule(@__MODULE__).QDistribution}
     samples::Matrix{Float64}
-    interpolator::QInterpolator
+    interpolator::parentmodule(@__MODULE__).QInterpolator
 end
 
 end # module EnsembleSamples
 
-module Sampler
+using .EnsembleSamples: AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
+
+function nodes(sample::Union{EnsembleSamples.DiscreteSamples, EnsembleSamples.ContinuousSamples}, separate::Bool=false)
+    if !separate
+        return sample.samples
+    else
+        return [sample.samples[:, i] for i in 1:size(sample.samples, 2)]
+    end
+end
 
 export build_discrete_samples, build_continuous_samples
-
-using Random
-using Base: CartesianIndices
-using QAlgebra.QDistributions: QDistribution, pdf
-using ..EnsembleSamples: AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
-using QAlgebra.QInterpolators: QInterpolator, build_interpolation_nodes
-using QAlgebra.SampleHelpers: pdf2cdf, cdf2inverse
+export EnsembleSamples, AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 
 # ------------------------------------------------------------
 # Utilities
@@ -84,11 +95,8 @@ function _build_discrete_matrix(method::Symbol,
                                 dists::AbstractVector{<:QDistribution};
                                 rng::AbstractRNG=Random.default_rng(),
                                 num_nodes::Int=25,
-                                interp_method::Symbol=:chebyshev,
                                 atol::Float64=1e-9,
                                 rtol::Float64=1e-7,
-                                endpoints::Bool=true,
-                                candidate_points::Int=10_000,
                                 max_iter::Int=128)
     isempty(dists) && return zeros(Float64, 0, 0)
     n = _ensure_consistent_sample_count(dists)
@@ -98,18 +106,12 @@ function _build_discrete_matrix(method::Symbol,
     for (j, dist) in enumerate(dists)
         cdf_inter = pdf2cdf(dist;
                             num_nodes=num_nodes,
-                            method=interp_method,
                             atol=atol,
-                            rtol=rtol,
-                            endpoints=endpoints,
-                            candidate_points=candidate_points)
+                            rtol=rtol)
         inv_inter = cdf2inverse(cdf_inter;
                                 num_nodes=num_nodes,
-                                method=interp_method,
                                 atol=atol,
                                 rtol=rtol,
-                                endpoints=endpoints,
-                                candidate_points=candidate_points,
                                 max_iter=max_iter)
 
         values = if method == :random
@@ -130,11 +132,11 @@ end
 
 function _build_continuous_matrix(method::Symbol,
                                   dists::AbstractVector{<:QDistribution};
-                                  endpoints::Bool=true, M::Int=0)
+                                  endpoints::Bool=true)
     isempty(dists) && return (zeros(Float64, 0, 0), nothing)
     params = [(max(dist.num_samples, 2), dist.minimum, dist.maximum) for dist in dists]
     pdfs = [x -> pdf(dist, x) for dist in dists]
-    bounds, nodes = build_interpolation_nodes(method, params; pdfs=pdfs, endpoints=endpoints, M=M)
+    bounds, nodes = build_interpolation_nodes(method, params; pdfs=pdfs, endpoints=endpoints)
     dims = length(nodes)
     total = prod(length.(nodes))
     samples = Matrix{Float64}(undef, total, dims)
@@ -164,16 +166,12 @@ Arguments:
 - `ensemble`: object describing the parent ensemble; its `sample_method` supplies the default sampling mode.
 - `group_indices`, `group_symbols`, `group_names`: metadata aligning ensemble groups with matrix columns.
 - `dists::Vector{<:QDistribution}`: per-column marginal distributions supplying `num_samples`, `minimum`, and `maximum`.
-
 Keyword arguments:
 - `method::Symbol = ensemble.sample_method`: `:random` sorts uniform draws; `:density` uses equispaced quantiles (resolves to `:random` when `:default`).
 - `rng::AbstractRNG = Random.default_rng()`: source of randomness when `method == :random`.
-- `num_nodes::Int = 25`: number of nodes used when approximating the CDF and its inverse.
-- `interp_method::Symbol = :chebyshev`: interpolation node strategy (`:chebyshev`, `:leja`, ...).
-- `atol::Float64 = 1e-9` / `rtol::Float64 = 1e-7`: tolerances for `quadgk` integrations and inverse refinement.
-- `endpoints::Bool = true`: include distribution endpoints when constructing interpolation grids.
-- `candidate_points::Int = 10_000`: dense node-search grid; high values are only needed for `:leja` or `:fekete`.
-- `max_iter::Int = 128`: caps the inverse-CDF refinement iterations (forwarded to `cdf2inverse`).
+- `num_nodes::Int = ensemble.sample_num_nodes`: number of Chebyshev nodes used when approximating the CDF and its inverse.
+- `atol::Float64 = ensemble.sample_atol` / `rtol::Float64 = ensemble.sample_rtol`: tolerances for `quadgk` integrations and inverse refinement.
+- `max_iter::Int = ensemble.sample_max_iter`: caps the inverse-CDF refinement iterations (forwarded to `cdf2inverse`).
 """
 function build_discrete_samples(ensemble,
                                 group_indices::Vector{Int},
@@ -182,23 +180,17 @@ function build_discrete_samples(ensemble,
                                 dists::AbstractVector{<:QDistribution};
                                 method::Symbol=ensemble.sample_method,
                                 rng::AbstractRNG=Random.default_rng(),
-                                num_nodes::Int=25,
-                                interp_method::Symbol=:chebyshev,
-                                atol::Float64=1e-9,
-                                rtol::Float64=1e-7,
-                                endpoints::Bool=true,
-                                candidate_points::Int=10_000,
-                                max_iter::Int=128)
+                                num_nodes::Int=ensemble.sample_num_nodes,
+                                atol::Float64=ensemble.sample_atol,
+                                rtol::Float64=ensemble.sample_rtol,
+                                max_iter::Int=ensemble.sample_max_iter)
     requested_method = method === :default ? :random : method
     m = Symbol(lowercase(String(requested_method)))
     samples = _build_discrete_matrix(m, dists;
                                      rng=rng,
                                      num_nodes=num_nodes,
-                                     interp_method=interp_method,
                                      atol=atol,
                                      rtol=rtol,
-                                     endpoints=endpoints,
-                                     candidate_points=candidate_points,
                                      max_iter=max_iter)
     return DiscreteSamples(m,
                            copy(group_indices),
@@ -222,7 +214,6 @@ Arguments:
 Keyword arguments:
 - `method::Symbol = ensemble.sample_method`: interpolation node selector (`:chebyshev`, `:uniform`, `:leja`, ...) resolving to `:chebychev` when `:default`.
 - `endpoints::Bool = true`: ensure interval endpoints participate in the grid where the method allows it.
-- `M::Int = 0`: candidate grid density supplied to the node generator (0 = auto).
 """
 function build_continuous_samples(ensemble,
                                   group_indices::Vector{Int},
@@ -230,10 +221,10 @@ function build_continuous_samples(ensemble,
                                   group_names::Vector{String},
                                   dists::AbstractVector{<:QDistribution};
                                   method::Symbol=ensemble.sample_method,
-                                  endpoints::Bool=true, M::Int=0)
+                                  endpoints::Bool=true)
     requested_method = method === :default ? :chebychev : method
     m = Symbol(lowercase(String(requested_method)))
-    samples, interpolator = _build_continuous_matrix(m, dists; endpoints=endpoints, M=M)
+    samples, interpolator = _build_continuous_matrix(m, dists; endpoints=endpoints)
     return ContinuousSamples(m,
                              copy(group_indices),
                              copy(group_symbols),

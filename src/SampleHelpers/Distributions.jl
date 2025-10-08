@@ -1,9 +1,4 @@
-module QDistributions
-
 export QDistribution, pdf, QNormal, QUniform, QEnsembleFunction
-
-using ..QInterpolators: QInterpolator, build_interpolation_nodes
-import ..QIntegrators: integrate_node_funs, QIntegrator, normalization_constant
 
 const PDF_BOUND_ATOL = 1e-10
 const PDF_BOUND_RTOL = 1e-8
@@ -170,5 +165,3 @@ function Integrator(inter::QInterpolator,
                       atol=atol,
                       rtol=rtol)
 end
-
-end # module QDistributions
