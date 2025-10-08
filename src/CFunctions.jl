@@ -7,7 +7,8 @@ using ComplexRationals
 using SparseArrays
 using ..SparsePermutationTools: SparsePermutation
 using ..QAlgebra: get_default, FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
-using ..Sampler: QDistribution, QEnsembleFunction
+using ..Sampler: QDistribution, QEnsembleFunction, QInterpolator, ContinuousSamples
+using Base: WeakRef
 
 export CFunction, CAbstractDefinition, CTypeDefinition, CIntegralDefinition, ParameterInfo
 export define_cabstract, define_ctype, define_cintegral
@@ -18,7 +19,7 @@ export contains_non_simple_CFunction, Indexed, has_indexed_parameters
 export list_cabstracts, list_ctypes, list_cintegrals
 export where_acting, where_acting!, which_params_acting, which_params_acting!, param_index_tuples
 export which_ensemble_acting, which_ensemble_acting!, substitute, separate_by_cond
-export ParameterValues, set_param!, set_time!, update_t!, get_parameter_index, value, param_value, recompute_functions!, ensure_functions!
+export ParameterValues, set_param!, set_time!, update_t!, get_parameter_index, value, param_value, recompute_functions!, ensure_functions!, register_parameter_values!
 
 import Base: copy, exp, log, length, getindex, iterate, size
 import ComplexRationals: isonelike
@@ -114,6 +115,18 @@ struct CIntegralDefinition <: CDef
     expr::CFunction
     indexes::Vector{Vector{SubSpaceIndex}}
     param_info::AbstractParameterInfo
+    interpolator::Union{Nothing,QInterpolator}
+    function CIntegralDefinition(index::Int,
+                                 sortkey::Int,
+                                 expr::CFunction,
+                                 indexes::Vector{Vector{SubSpaceIndex}},
+                                 param_info::AbstractParameterInfo)
+        interp = nothing
+        if param_info isa ParameterInfo
+            interp = _build_integral_interpolator(param_info, indexes)
+        end
+        return new(index, sortkey, expr, indexes, param_info, interp)
+    end
 end
 struct ParameterDicts
     group_name_to_index::Dict{Symbol,Int}
@@ -276,269 +289,6 @@ function param_index_tuples(param_info::ParameterInfo, param_index::Int)
     return param_info.param_index_tuples[param_index]
 end
 
-######################################################################################################################################################
-"""
-    list_cintegrals(param_info::ParameterInfo) -> Vector{CIntegralDefinition}
-
-Return all integral definitions registered in the provided [`ParameterInfo`](@ref).
-"""
-function list_cintegrals(param_info::ParameterInfo)
-    return param_info.integral_definitions
-end
-
-"""
-    define_cintegral(param_info::ParameterInfo, expr, indexes)
-
-Register a coefficient integral with integrand `expr` and integration indexes
-`indexes` (outer vector per ensemble, inner vector per integrated subsystem).
-
-`QExpressions` offers the following forwarding helpers built on top of this
-method:
-
-```
-define_cintegral(qspace::QSpace, expr::QExpr, indexes::Vector{Vector{SubSpaceIndex}})
-define_cintegral(qspace::QSpace, expr::QExpr)
-define_cintegral(expr::QExpr, indexes::Vector{Vector{SubSpaceIndex}})
-define_cintegral(expr::QExpr)
-```
-
-The overloads accepting `QExpr` perform the necessary neutrality checks and, in
-the variant without explicit indexes, derive the integration blocks from the
-ensembles touched by `expr` before delegating back here.
-"""
-function define_cintegral(param_info::ParameterInfo, expr::CFunction, indexes::Vector)::CIntegralDefinition
-    expr.param_info === param_info ||
-        error("Integral integrand belongs to a different ParameterInfo.")
-
-    subspace_info = param_info.subspace_info
-    subspace_info === nothing &&
-        error("ParameterInfo is missing subspace information required for integrals.")
-
-    acting = which_ensemble_acting(expr)
-    n_ensembles = length(acting)
-    n_expected = length(subspace_info.where_ensembles)
-    n_ensembles == n_expected ||
-        error("Mismatch between acting ensembles and stored subspace information.")
-    length(indexes) == n_expected ||
-        error("Expected $(n_expected) index groups, got $(length(indexes)).")
-
-    coerced = Vector{Vector{SubSpaceIndex}}(undef, n_expected)
-    for ensemble_idx in 1:n_expected
-        group = indexes[ensemble_idx]
-        coerced_group = Vector{SubSpaceIndex}(undef, length(group))
-        expected_outer = subspace_info.where_ensembles[ensemble_idx]
-        bits = acting[ensemble_idx]
-        bitlen = length(bits)
-
-        for (j, idx) in enumerate(group)
-            idx isa SubSpaceIndex ||
-                error("Index #$(j) in ensemble #$(ensemble_idx) is not a SubSpaceIndex.")
-            idx.outer == expected_outer ||
-                error("Index ensemble mismatch: expected outer $(expected_outer), got $(idx.outer).")
-            1 ≤ idx.inner ≤ bitlen ||
-                error("Index inner position $(idx.inner) out of range for ensemble #$(ensemble_idx).")
-            bits[idx.inner] ||
-                error("Integral index $(idx) does not appear in the integrand.")
-            coerced_group[j] = idx
-        end
-
-        for inner in findall(bits)
-            any(idx.inner == inner for idx in coerced_group) ||
-                error("Missing integration index for ensemble #$(ensemble_idx), position $(inner).")
-        end
-
-        coerced[ensemble_idx] = coerced_group
-    end
-
-    index = length(param_info.integral_definitions) + 1
-    sortkey = index + 2_000_000
-
-    c_def = CIntegralDefinition(index, sortkey, expr, coerced, param_info)
-    push!(param_info.integral_definitions, c_def)
-    return c_def
-end
-
-function define_cintegral(param_info::ParameterInfo, expr::CFunction)::CIntegralDefinition
-    acting = which_ensemble_acting(expr)
-    subspace_info = param_info.subspace_info
-    subspace_info === nothing &&
-        error("ParameterInfo is missing subspace information required for integrals.")
-
-    indexes = Vector{Vector{SubSpaceIndex}}(undef, length(acting))
-    for (ensemble_idx, bits) in enumerate(acting)
-        outer = subspace_info.where_ensembles[ensemble_idx]
-        idxs = SubSpaceIndex[]
-        for inner in findall(bits)
-            push!(idxs, SubSpaceIndex(outer, inner, subspace_info))
-        end
-        indexes[ensemble_idx] = idxs
-    end
-    return define_cintegral(param_info, expr, indexes)
-end
-
-
-"""
-    list_cabstracts(param_info::ParameterInfo) -> Vector{CAbstractDefinition}
-
-Return all abstract symbols registered in the provided [`ParameterInfo`](@ref).
-Useful for inspection and documentation purposes.
-"""
-function list_cabstracts(param_info::ParameterInfo)
-    return param_info.abstract_definitions
-end
-"""
-    define_cabstract(param_info::ParameterInfo, name) -> CAbstractDefinition
-
-Register a new abstract coefficient symbol identified by `name`. The symbol is
-stored inside `param_info` and can later be referenced when constructing
-`CAbstract` terms.
-
-Convenience wrappers exposed via `QExpressions` forward to this implementation
-and accept a `QSpace` directly:
-
-```
-define_cabstract(qspace::QSpace, name)
-```
-"""
-function define_cabstract(param_info::ParameterInfo,  name::Union{Symbol, String})::CAbstractDefinition
-    name_str, name_latex = symbol2formatted(String(name))
-    for (i, abstract_def) in enumerate(param_info.abstract_definitions)
-        if abstract_def.name == String(name)
-            error("Abstract with name $(String(name)) already defined.")
-        end
-    end
-    index = length(param_info.abstract_definitions) + 1
-    sortkey = index + 15
-    c_abstract = CAbstractDefinition(Symbol(name), name_str, name_latex, index, sortkey, param_info)
-    push!(param_info.abstract_definitions, c_abstract)
-    return c_abstract
-end
-
-function c_abstract_exists(param_info::ParameterInfo, name::Union{Symbol, String})::Bool 
-    sym_name = Symbol(name)
-    for (i, abstract_def) in enumerate(param_info.abstract_definitions)
-        if abstract_def.symbol == sym_name 
-            return true 
-        end
-    end
-    return false 
-end
-
-"""
-    list_ctypes(param_info::ParameterInfo) -> Vector{CTypeDefinition}
-
-Return every custom coefficient type defined for the given parameter info.
-Each entry describes the presentation and implementation of a registered
-function such as `cos` or user-defined variants.
-"""
-function list_ctypes(param_info::ParameterInfo)
-    return param_info.custom_ctype
-end
-"""
-    define_ctype(param_info::ParameterInfo, name, fun) -> CTypeDefinition
-
-Register a custom coefficient function `name` whose body is given by `fun`
-(a `CFunction`). The new type is available for constructing `CCustomType`
-instances and is tracked inside `param_info`.
-
-In `QExpressions` the following helper methods are provided for convenience:
-
-```
-define_ctype(qspace::QSpace, name, expr::QExpr)
-define_ctype(name, expr::QExpr)
-```
-
-The QExpr overloads require `expr` to be a single-term, operator-neutral
-expression; the wrapper validates these constraints and converts to the
-primitive `CFunction` before delegating here.
-"""
-function define_ctype(param_info::ParameterInfo, name::Union{Symbol,String}, fun::CFunction)::CTypeDefinition
-    CName, Name, base = variants_C(name)
-    name_sym = Symbol(base)
-    # check if name_sym is already present in custom_ctype 
-    if any(x -> x.name == name_sym, param_info.custom_ctype) 
-        error("Cannot define $name_sym, because it already exists in ParameterInfo.")
-    end
-    plain, latex = symbol2formatted(String(base))
-
-    index   = length(param_info.custom_ctype) + 1
-    sortkey = index + 10^6
-
-    abstract_parameters = abstract_from_abstractdef.(contains_which_abstracts(fun))                # defined below
-    abstract_indexes    = [c.index for c in abstract_parameters]
-    index_map = isempty(abstract_indexes) ? Int[] : begin
-        m = maximum(abstract_indexes)
-        im = zeros(Int, m)
-        for (j, ind) in enumerate(abstract_indexes)
-            im[ind] = j
-        end
-        im
-    end
-    has_abstract  = !isempty(abstract_parameters)
-    if has_abstract && has_indexes(fun)
-        error("CCustomType functions either require no arguments (i.e. are deifned free of CAbstracts) or have no indexes or time dependences in their definition.")
-    end
-    type_symbols  = (Symbol(CName), Symbol(Name), Symbol(base), :Any, :any)
-    c_type_def = CTypeDefinition(name_sym, type_symbols, plain, latex, index, sortkey, fun, has_abstract, abstract_parameters, index_map, param_info)
-    push!(param_info.custom_ctype, c_type_def)
-    return c_type_def
-end
-
-
-# =====================================================> CFunction Types <=====================================================================================================
-"""
-    CAbstract
-
-Abstract symbol instance (optionally daggered and/or with an integer/rational power)
-with a complex-rational coefficient:
-
-    coeff * A_index^(exponent)  (daggered if dag=true)
-
-Fields
-- `param_info` : ParameterInfo
-- `coeff`      : ComplexRational
-- `index`      : Int (1-based index into `param_info.abstract_definitions`)
-- `exponent`   : Rational{Int} (use `n//1` for integer n)
-- `dag`        : Bool
-- `abstract_def` : CAbstractDefinition (back-reference convenience)
-"""
-struct CAbstract <: AbstractCAbstract
-    param_info::ParameterInfo
-    coeff::ComplexRational
-    index::Int
-    exponent::Rational{Int}
-    dag::Bool
-    abstract_def::CAbstractDefinition
-
-    # Core inner constructors
-    function CAbstract(param_info::ParameterInfo, coeff::ComplexRational, index::Int, exponent::Rational{Int}=1//1, dag::Bool=false)
-        return new(param_info, coeff, index, exponent, dag, param_info.abstract_definitions[index])
-    end
-end
-"""
-    CIntegral
-
-Coefficient atom referencing a registered integral definition stored inside the
-owning [`ParameterInfo`](@ref).
-"""
-struct CIntegral <: CAtomic
-    param_info::ParameterInfo
-    coeff::ComplexRational
-    index::Int
-    definition::CIntegralDefinition
-
-    function CIntegral(param_info::ParameterInfo, coeff::ComplexRational, index::Int)
-        1 ≤ index ≤ length(param_info.integral_definitions) ||
-            error("Integral index $index out of bounds for supplied ParameterInfo.")
-        return new(param_info, coeff, index, param_info.integral_definitions[index])
-    end
-end
-CIntegral(param_info::ParameterInfo, index::Int) = CIntegral(param_info, ComplexRational(1,0,1), index)
-CIntegral(def::CIntegralDefinition) = CIntegral(def.param_info, ComplexRational(1,0,1), def.index)
-
-@inline integral_definition(int::CIntegral) = int.definition
-@inline integral_indexes(int::CIntegral) = int.definition.indexes
-@inline integral_expr(int::CIntegral) = int.definition.expr
 """
     coeff(f::CFunction) -> Vector{ComplexRational}
 
@@ -547,9 +297,7 @@ single leading coefficient; for structured expressions the result collects the
 scalars contributed by each branch.
 """
 function coeff end
-coeff(a::CAbstract) = [a.coeff]
-coeff(i::CIntegral) = [i.coeff]
-exponent(a::CAbstract) = a.exponent
+
 """
     var_exponents(f::CFunction) -> Vector{Int}
 
@@ -558,45 +306,10 @@ objects delegate to their children, while purely numeric constructs return a
 zero vector.
 """
 function var_exponents end
-var_exponents(a::CAbstract) = spzeros(Int, a.param_info.dims)
-var_exponents(i::CIntegral) = spzeros(Int, i.param_info.dims)
-isdag(a::CAbstract) = a.dag
-modify_coeff(a::CAbstract, c::ComplexRational) = CAbstract(a.param_info, c, a.index, a.exponent, a.dag)
-modify_exponent(a::CAbstract, q::Rational{Int}) = CAbstract(a.param_info, a.coeff, a.index, q, a.dag)
-modify_exponent(a::CAbstract, n::Int) = modify_exponent(a, n//1)
-modify_dag(a::CAbstract, d::Bool=true) = CAbstract(a.param_info, a.coeff, a.index, a.exponent, d)
-toggle_dag(a::CAbstract) = modify_dag(a, !a.dag)
-repartition(::CAbstract, ::Vector{Tuple{Int,Int}}) = error("You should not repartition abstract parameters! Remove them before repartitioning.")
-length(::CIntegral) = 1
-modify_coeff(i::CIntegral, c::ComplexRational) = CIntegral(i.param_info, c, i.index)
-repartition(::CIntegral, ::Vector{Tuple{Int,Int}}) = error("Cannot repartition integral definitions. Register a new integral if needed.")
 
-"""
-    CCustomType(param_info, def_id, coeff, x)
-
-Instance of a parametric custom function: `coeff * name(x)`.
-"""
-struct CCustomType <: CFunction
-    param_info::ParameterInfo
-    coeff::ComplexRational
-    expr::Vector{CFunction}
-    ctype_def::CTypeDefinition
-end
-
-function repartition(f::CCustomType, var_tuples::Vector{Tuple{Int, Int}})::CCustomType
-    new_parameters = repartition.(f.expr, Ref(var_tuples))
-    return CCustomType(f.param_info, f.coeff, new_parameters, f.ctype_def)
-end
-function modify_expr(f::CCustomType, new_expr::Vector{CFunction})
-    return CCustomType(f.param_info, f.coeff, new_expr, f.ctype_def)
-end
-function modify_coeff(f::CCustomType, coeff::ComplexRational)::CFunction
-    iszero(coeff) && return zero_catom(f.param_info)
-    return CCustomType(f.param_info, coeff, f.expr, f.ctype_def)
-end
-var_exponents(a::CCustomType) = spzeros(Int, a.param_info.dims)
-coeff(f::CCustomType) = [f.coeff]
-length(f:: CCustomType) = 1
+include("CFunctions/CIntegral.jl")
+include("CFunctions/CAbstract.jl")
+include("CFunctions/CCustom.jl")
 
 # ===================> MAIN TYPES <==========================================================================================
 function modify_expr(f::CFunction, new_expr::Vector{CFunction})
@@ -1007,6 +720,67 @@ include("CFunctionsOps/CFunctions_sort.jl")
 include("CFunctionsOps/CFunctions_substitute.jl")
 include("CFunctionsOps/CFunctions_simplify.jl")
 include("CFunctionsOps/ParameterValues.jl")
+
+const _PARAM_INFO_TO_PV = IdDict{ParameterInfo,WeakRef}()
+function register_parameter_values!(pv::ParameterValues)
+    _PARAM_INFO_TO_PV[pv.param_info] = WeakRef(pv)
+    return pv
+end
+
+function _lookup_param_values(param_info::ParameterInfo)
+    wr = get(_PARAM_INFO_TO_PV, param_info, nothing)
+    wr === nothing && return nothing
+    return wr.value
+end
+
+function _continuous_sample_for_ensemble(param_info::ParameterInfo, pv::ParameterValues, ensemble_slot::Int)
+    presence_per_group = param_info.ss_ensemble_present_by_group
+    samples = pv.ensemble_group_samples
+    n_groups = length(samples)
+    @inbounds for g in 1:n_groups
+        ensemble_slot <= length(presence_per_group[g]) || continue
+        presence_per_group[g][ensemble_slot] || continue
+        sample = samples[g]
+        sample isa ContinuousSamples || continue
+        return sample
+    end
+    return nothing
+end
+
+function _build_integral_interpolator(param_info::ParameterInfo,
+                                      indexes::Vector{Vector{SubSpaceIndex}})
+    pv = _lookup_param_values(param_info)
+    pv === nothing && return nothing
+
+    subspace_info = param_info.subspace_info
+    node_vectors = Vector{Vector{Float64}}()
+    bounds = Vector{Tuple{Float64,Float64}}()
+    samples_by_ensemble = Dict{Int,ContinuousSamples}()
+    endpoints_flag = true
+
+    @inbounds for ensemble_indexes in indexes
+        for sub_idx in ensemble_indexes
+            ensemble_slot = subspace_info.ensemble_index_by_outer_index[sub_idx.outer]
+            ensemble_slot != 0 || error("Integral index does not belong to an ensemble subspace.")
+            sample = get(samples_by_ensemble, ensemble_slot, nothing)
+            if sample === nothing
+                sample = _continuous_sample_for_ensemble(param_info, pv, ensemble_slot)
+                sample === nothing && return nothing
+                samples_by_ensemble[ensemble_slot] = sample
+            end
+            inter = sample.interpolator
+            endpoints_flag &= inter.endpoints
+            @inbounds for dim_idx in 1:inter.dims
+                push!(node_vectors, copy(inter.nodes[dim_idx]))
+                push!(bounds, inter.bounds[dim_idx])
+            end
+        end
+    end
+
+    isempty(node_vectors) && return nothing
+    return QInterpolator(node_vectors, bounds; method=:custom, endpoints=endpoints_flag)
+end
+
 include("CFunctionsOps/CFunctions_orders_eval.jl")
 include("CFunctionsOps/CFunctions_expand.jl")
 include("CFunctionsOps/CFunctions_helper.jl")

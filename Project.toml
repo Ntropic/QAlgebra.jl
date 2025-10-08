@@ -4,6 +4,7 @@ authors = ["Michael Schilling"]
 version = "0.2.0"
 
 [deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 Combinatorics = "861a8166-3701-5b0c-9a16-15d98fcdc6aa"
 ComplexRationals = "fec49eec-9feb-41dd-a20b-fe4c3aae4e50"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
@@ -15,8 +16,8 @@ QuadGK = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
-[weakdeps]
-CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+[extensions]
+QAlgebraPlottingExt = "CairoMakie"
 
 [compat]
 CairoMakie = "0.15.6"
@@ -28,9 +29,6 @@ Preferences = "1.4"
 Printf = "1.10"
 QuadGK = "2.11.2"
 julia = "1.10"
-
-[extensions]
-QAlgebraPlottingExt = "CairoMakie"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

@@ -158,6 +158,66 @@ include("QSpaceOps/QSpace_abstract.jl")
 include("QSpaceOps/QSpace_parameters.jl")
 using ..Sampler: build_discrete_samples, build_continuous_samples
 
+function assign_ensemble_samples!(subspaces, param_values, ensemble_group_distributions,
+        outer_symbols, outer_names)
+    for ss in subspaces
+        ens = ss.ensemble
+        ens === nothing && continue
+        raw_pairs = [(idx, ensemble_group_distributions[idx]) for idx in ens.parameter_group_indices
+                     if ensemble_group_distributions[idx] !== nothing]
+        isempty(raw_pairs) && continue
+        group_indices = [p[1] for p in raw_pairs]
+        dists = [p[2] for p in raw_pairs]
+        group_symbols = [outer_symbols[idx] for idx in group_indices]
+        group_names = [outer_names[idx] for idx in group_indices]
+        method = ens.sample_method === :default ?
+            (ens.as_continuum ? :chebychev : :random) : ens.sample_method
+        sample = if ens.as_continuum
+            build_continuous_samples(ens, group_indices, group_symbols, group_names, dists;
+                method=method)
+        else
+            build_discrete_samples(ens, group_indices, group_symbols, group_names, dists;
+                method=method,
+                num_nodes=ens.sample_num_nodes,
+                atol=ens.sample_atol,
+                rtol=ens.sample_rtol,
+                max_iter=ens.sample_max_iter)
+        end
+        ens.sampler = sample::AbstractEnsembleSample
+        attach_samples!(param_values, sample)
+    end
+    return nothing
+end
+
+function build_subspace_dicts(subspaces)::SubSpaceDicts
+    outer_map = Dict{Symbol,Int}()
+    inner_map = Dict{Symbol,Tuple{Int,Int}}()
+    for (idx, ss) in enumerate(subspaces)
+        if haskey(outer_map, ss.key_symbol)
+            error("Duplicate outer subspace key $(ss.key_symbol) detected while building QSpace.")
+        end
+        outer_map[ss.key_symbol] = idx
+        for (inner_idx, sym) in enumerate(ss.keys_symbols)
+            if haskey(inner_map, sym)
+                error("Duplicate inner subspace key $(sym) detected while building QSpace.")
+            end
+            inner_map[sym] = (idx, inner_idx)
+        end
+    end
+    return SubSpaceDicts(outer_map, inner_map)
+end
+
+function build_operator_dicts(operatortypes)::AbstractOperatorDicts
+    map = Dict{Symbol,Int}()
+    for (idx, optype) in enumerate(operatortypes)
+        if haskey(map, optype.name_sym)
+            error("Duplicate operator type symbol $(optype.name_sym) detected while building QSpace.")
+        end
+        map[optype.name_sym] = idx
+    end
+    return AbstractOperatorDicts(map)
+end
+
 """
     QSpace(subspace_def, op_def, param_def; max_t_ind=0)
 
@@ -207,8 +267,8 @@ mutable struct QSpace
         operatortype_info = OperatorTypeInfo(operatortypes, commute_fun=op_def.commute_fun, check_n=op_def.check_n) 
 
         # ==========> 3rd Parameters <==========
-        params, param_info, param_values, parameter_dicts, ensemble_group_distributions =
-            ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
+        params, param_info, param_values, parameter_dicts, ensemble_group_distributions = ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
+        register_parameter_values!(param_values)
         final_group_count = length(param_info.outer_labels_symbols)
         for ss in subspaces
             resize!(ss.parameter_group_acting, final_group_count)
@@ -217,58 +277,10 @@ mutable struct QSpace
         outer_symbols = param_info.outer_labels_symbols
         outer_names = param_info.outer_labels
 
-        for ss in subspaces
-            ens = ss.ensemble
-            ens === nothing && continue
-            raw_pairs = [(idx, ensemble_group_distributions[idx]) for idx in ens.parameter_group_indices
-                         if ensemble_group_distributions[idx] !== nothing]
-            isempty(raw_pairs) && continue
-            group_indices = [p[1] for p in raw_pairs]
-            dists = [p[2] for p in raw_pairs]
-            group_symbols = [outer_symbols[idx] for idx in group_indices]
-            group_names = [outer_names[idx] for idx in group_indices]
-            method = ens.sample_method === :default ?
-                (ens.as_continuum ? :chebychev : :random) : ens.sample_method
-            sample = if ens.as_continuum
-                build_continuous_samples(ens, group_indices, group_symbols, group_names, dists;
-                    method=method)
-            else
-                build_discrete_samples(ens, group_indices, group_symbols, group_names, dists;
-                    method=method,
-                    num_nodes=ens.sample_num_nodes,
-                    atol=ens.sample_atol,
-                    rtol=ens.sample_rtol,
-                    max_iter=ens.sample_max_iter)
-            end
-            ens.sampler = sample::AbstractEnsembleSample
-            attach_samples!(param_values, sample)
-        end
+        assign_ensemble_samples!(subspaces, param_values, ensemble_group_distributions, outer_symbols, outer_names)
 
-        subspace_dicts = let outer_map = Dict{Symbol,Int}(), inner_map = Dict{Symbol,Tuple{Int,Int}}()
-            for (idx, ss) in enumerate(subspaces)
-                if haskey(outer_map, ss.key_symbol)
-                    error("Duplicate outer subspace key $(ss.key_symbol) detected while building QSpace.")
-                end
-                outer_map[ss.key_symbol] = idx
-                for (inner_idx, sym) in enumerate(ss.keys_symbols)
-                    if haskey(inner_map, sym)
-                        error("Duplicate inner subspace key $(sym) detected while building QSpace.")
-                    end
-                    inner_map[sym] = (idx, inner_idx)
-                end
-            end
-            SubSpaceDicts(outer_map, inner_map)
-        end
-
-        operator_dicts = let map = Dict{Symbol,Int}()
-            for (idx, optype) in enumerate(operatortypes)
-                if haskey(map, optype.name_sym)
-                    error("Duplicate operator type symbol $(optype.name_sym) detected while building QSpace.")
-                end
-                map[optype.name_sym] = idx
-            end
-            AbstractOperatorDicts(map)
-        end
+        subspace_dicts = build_subspace_dicts(subspaces)
+        operator_dicts = build_operator_dicts(operatortypes)
 
         # Generate the string representations
         c_one = CAtom(param_info, spzeros(Int, length(params)))
