@@ -26,7 +26,6 @@ Manifest.toml
 # prototyping/
 **/citation_comments.md
 **/statprof*/
-*.md
 Markdown/
 .julia_depot/
 
@@ -34,3 +33,4 @@ To_Do.md
 BCH_Reference/
 Markdown/
 Julia_Old/
+prototyping/**/*.md
