@@ -214,14 +214,16 @@ mutable struct QSpace
             dists = [p[2] for p in raw_pairs]
             group_symbols = [outer_symbols[idx] for idx in group_indices]
             group_names = [outer_names[idx] for idx in group_indices]
+            method = ens.sample_method === :default ?
+                (ens.as_continuum ? :chebychev : :random) : ens.sample_method
             sample = if ens.as_continuum
                 build_continuous_samples(ens, group_indices, group_symbols, group_names, dists;
-                    method=ens.continuous_method)
+                    method=method)
             else
                 build_discrete_samples(ens, group_indices, group_symbols, group_names, dists;
-                    method=ens.discrete_method)
+                    method=method)
             end
-            ens.sample = sample::AbstractEnsembleSample
+            ens.sampler = sample::AbstractEnsembleSample
             attach_samples!(param_values, sample)
         end
     

@@ -81,7 +81,7 @@ time-dependent groups. Ensemble parameters must be provided together with either
 `QDistribution` or a `QEnsembleFunction`, supplied as `(definition, payload)` tuples
 or `definition => payload`. Constructing a parameter that references ensemble indexes
 without one of these payloads throws an error. Distributions/functions are stored
-once per parameter group and exposed via `qspace.ensembles[i].sample`
+once per parameter group and exposed via `qspace.ensembles[i].sampler`
 and `qspace.param_values.ensemble_group_functions` after construction.
 
 For example, providing a multi-ensemble function can be written as:

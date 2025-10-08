@@ -27,7 +27,7 @@ function _pdf2cdf_core(pdf_fn::Function, a::Float64, b::Float64;
                        atol::Float64=1e-9,
                        rtol::Float64=1e-7,
                        endpoints::Bool=true,
-                       candidate_points::Int=0)
+                       candidate_points::Int=10_000)
     m = _method_alias(method)
     n = max(num_nodes, 2)
     params = [(n, a, b)]
@@ -74,7 +74,7 @@ Keyword arguments:
 - `method::Symbol = :chebyshev`: node-placement strategy delegated to `build_interpolation_nodes`.
 - `atol::Float64 = 1e-9` / `rtol::Float64 = 1e-7`: absolute/relative tolerances for `QuadGK`.
 - `endpoints::Bool = true`: include the pdf support endpoints if the node generator allows it.
-- `candidate_points::Int = 0`: optional dense grid size for adaptive node search (`0` lets the helper decide).
+- `candidate_points::Int = 10_000`: dense candidate grid for node search; large grids enable `:leja` and `:fekete`.
 """
 function pdf2cdf(dist::QDistribution;
                  num_nodes::Int=25,
@@ -82,7 +82,7 @@ function pdf2cdf(dist::QDistribution;
                  atol::Float64=1e-9,
                  rtol::Float64=1e-7,
                  endpoints::Bool=true,
-                 candidate_points::Int=0)
+                 candidate_points::Int=10_000)
     return _pdf2cdf_core(x -> pdf(dist, x), dist.minimum, dist.maximum;
                          num_nodes=num_nodes,
                          method=method,
@@ -97,7 +97,8 @@ end
 
 Build a CDF interpolator directly from a stored pdf interpolator (`dims == 1`). The
 input interpolator must carry stored values; they are integrated and normalised before
-returning the new `QInterpolator`.
+returning the new `QInterpolator`. The `candidate_points` keyword shares the same
+large default so `:leja` / `:fekete` grids work without extra configuration.
 """
 function pdf2cdf(pdf_inter::QInterpolator;
                  num_nodes::Int=25,
@@ -105,7 +106,7 @@ function pdf2cdf(pdf_inter::QInterpolator;
                  atol::Float64=1e-9,
                  rtol::Float64=1e-7,
                  endpoints::Bool=true,
-                 candidate_points::Int=0)
+                 candidate_points::Int=10_000)
     pdf_inter.dims == 1 || error("pdf2cdf currently supports only 1D pdf interpolators.")
     values = pdf_inter.default_values
     values === nothing && error("pdf2cdf(pdf_inter) requires the interpolator to store pdf samples.")
@@ -131,7 +132,7 @@ Keyword arguments:
 - `method::Symbol = :chebyshev`: node-placement strategy for the probability axis.
 - `atol::Float64 = 1e-9` / `rtol::Float64 = 1e-7`: tolerances for refinement of the inverse search.
 - `endpoints::Bool = true`: include `0`/`1` in the probability grid where the method supports it.
-- `candidate_points::Int = 0`: auxiliary grid density for probability nodes (`0` lets the helper choose).
+- `candidate_points::Int = 10_000`: auxiliary grid density for probability nodes; large grids enable `:leja` / `:fekete`.
 - `max_iter::Int = 128`: maximum bisection iterations used per probability value.
 """
 function cdf2inverse(cdf_inter::QInterpolator;
@@ -140,7 +141,7 @@ function cdf2inverse(cdf_inter::QInterpolator;
                      atol::Float64=1e-9,
                      rtol::Float64=1e-7,
                      endpoints::Bool=true,
-                     candidate_points::Int=0,
+                     candidate_points::Int=10_000,
                      max_iter::Int=128)
     cdf_inter.dims == 1 || error("cdf2inverse currently supports only 1D CDFs.")
     values = cdf_inter.default_values

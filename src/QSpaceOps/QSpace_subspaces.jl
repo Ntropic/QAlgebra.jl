@@ -24,9 +24,9 @@ Create an `Ensemble`: a container for ensemble–subspace metadata.
 - `parameter_groups::Vector{Symbol} = Symbol[]`: Symbols for parameter groups (e.g. `:gamma`).
 - `parameter_group_indices::Vector{Int} = Int[]`: Indices of groups on this ensemble backed by `QDistribution`.
 - `parameter_function_group_indices::Vector{Int} = Int[]`: Indices of groups acting via functions (no distribution).
-- `discrete_method::Symbol = :random`: Preferred discrete sampling method (`:random`, `:density`, ...).
-- `continuous_method::Symbol = :chebychev`: Preferred continuum grid method (delegated to interpolator).
-- `sample::Union{Nothing,AbstractEnsembleSample} = nothing`: Optional precomputed sample descriptor.
+- `sample_method::Symbol = :default`: Preferred sampling method. `:default` resolves to
+  `:random` for discrete ensembles and `:chebychev` for continuum ensembles.
+- `sampler::Union{Nothing,AbstractEnsembleSample} = nothing`: Optional precomputed sample descriptor.
 - `qspace_ref::Union{Nothing,WeakRef} = nothing`: Optional weak reference back to a `QSpace`.
 
 """
@@ -40,9 +40,8 @@ mutable struct Ensemble
     parameter_groups::Vector{Symbol}
     parameter_group_indices::Vector{Int}
     parameter_function_group_indices::Vector{Int}
-    discrete_method::Symbol
-    continuous_method::Symbol
-    sample::Union{Nothing,AbstractEnsembleSample}
+    sample_method::Symbol
+    sampler::Union{Nothing,AbstractEnsembleSample}
     qspace_ref::Union{Nothing,WeakRef}
     function Ensemble(num_operator_indexes::Int, num_sum_indexes::Int, operator_set::OperatorSet;
                       num_modes::Int=-1,
@@ -51,13 +50,12 @@ mutable struct Ensemble
                       parameter_groups::Vector{Symbol}=Symbol[],
                       parameter_group_indices::Vector{Int}=Int[],
                       parameter_function_group_indices::Vector{Int}=Int[],
-                      discrete_method::Symbol=:random,
-                      continuous_method::Symbol=:chebychev,
-                      sample::Union{Nothing,AbstractEnsembleSample}=nothing,
+                      sample_method::Symbol=:default,
+                      sampler::Union{Nothing,AbstractEnsembleSample}=nothing,
                       qspace_ref::Union{Nothing,WeakRef}=nothing)
         return new(num_operator_indexes, num_sum_indexes, operator_set, num_modes,
                    max_operator_order, as_continuum, copy(parameter_groups), copy(parameter_group_indices),
-                   copy(parameter_function_group_indices), discrete_method, continuous_method, sample, qspace_ref)
+                   copy(parameter_function_group_indices), sample_method, sampler, qspace_ref)
     end
     function Ensemble(num_operator_indexes::Int, operator_set::OperatorSet; kwargs...)
         return Ensemble(num_operator_indexes, 0, operator_set; kwargs...)
@@ -84,10 +82,14 @@ function Base.show(io::IO, ensemble::Ensemble)
     if !isempty(ensemble.parameter_function_group_indices)
         print(io, ", parameter_function_group_indices=" , ensemble.parameter_function_group_indices)
     end
-    if ensemble.sample !== nothing
-        sample = ensemble.sample
+    if ensemble.sampler !== nothing
+        sample = ensemble.sampler
         kind = sample isa ContinuousSamples ? ":continuous" : ":discrete"
         print(io, ", sample_method=" , kind, "/", sample.method)
+    else
+        resolved = ensemble.sample_method === :default ?
+            (ensemble.as_continuum ? :chebychev : :random) : ensemble.sample_method
+        print(io, ", sample_method=" , resolved)
     end
 end
 

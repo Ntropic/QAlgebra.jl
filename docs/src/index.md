@@ -4,20 +4,15 @@
 CurrentModule = QAlgebra
 ```
 
-**QAlgebra.jl** organises symbolic quantum modelling around three layers:
+**QAlgebra.jl** provides symbolic tools for constructing and manipulating quantum operator expressions on structured composite systems of qubits, spins, and bosonic modes.
 
-- **Operator spaces (`QSpaces`)** describe how quantum modes are arranged. A `QSpace`
-  stitches together `OperatorSet`s as single subspaces or replicated ensembles and
-  records whether an ensemble is treated as a discrete collection or a continuum.
-- **Classical functions (`CFunctions`)** manage scalar parameters, time dependence,
-  and ensemble-driven coefficient functions. They remain independent of the operator
-  algebra so you can reuse them across different state-space layouts.
-- **Quantum expressions (`QExpressions`)** build operator-valued formulas inside a
-  given `QSpace`, combine them algebraically, and expose utilities for reordering,
-  summing, and integrating with respect to ensemble indexes.
+The core abstraction is the `QSpace`, which defines:
+- The symbolic variables (e.g. coupling constants),
+- The operator bases (e.g. Pauli, ladder, raising/lowering),
+- And the indexed structure of composite systems.
 
-The examples below walk through defining a tensor-product space, instantiating the
-associated parameters, and manipulating quantum expressions that depend on them.
+The examples below walk through defining a tensor-product space, the
+associated parameters and abstract operators and some basic manipulations of quantum expressions built from them.
 
 ---
 
@@ -31,36 +26,36 @@ continuum approximations when their parameter ranges are sampled densely.
 
 ```@example qalgebra
 using QAlgebra
-subspace_def = SubSpaceDefinitions(
-    h = QubitPM("beta"),
-    i = Ensemble(3, 3, QubitPauli("sigma")),
-    b = Ladder()
-)
-op_def = OperatorDefinitions("A(!i)", "B(U,H,i)")
-param_def = ParameterDefinitions(
-    "alpha",
-    "beta(t)",
-    "gamma(t)"
-)
-qspace = QSpace(subspace_def, op_def, param_def, max_t_ind=2)
-qspace
+subspace_def = SubSpaceDefinitions( h=QubitPM("beta"), 
+                                    i=Ensemble(3, 3, QubitPauli("sigma"), as_continuum=true), 
+                                    b=Ladder(max_magnitude=4))
+op_def = OperatorDefinitions("A(i,t)", "B(U,H,i)")
+var_def = ParameterDefinitions( "alpha", 
+                                "beta(t)" => t->t^2, 
+                                "delta_i" => QUniform(0,1,10), 
+                                "gamma_{i,j}(t,delta_i,delta_j)" => (t,gi,gj)->t*(gi-gj)) 
+qspace = QSpace(subspace_def, op_def, var_def, max_t_ind=2)
 ```
 
 ```@setup qalgebra
+alpha, beta, gamma, delta = base_operators(qspace, ["alpha", "beta", "gamma", "delta"], do_fun=true)
+t0, t1 = base_operators(qspace, :t)
 ph, mh, zh = base_operators(qspace, "h")
-xi, yi, zi = base_operators(qspace, "i")
+sigma = base_operators(qspace, "i", by_ensemble=true, do_fun=true)  # general constructor for all ensemble indexes
+xi,yi,zi = base_operators(qspace, "i")
 xj, yj, zj = base_operators(qspace, "j")
 xk, yk, zk = base_operators(qspace, "k")
 xl, yl, zl = base_operators(qspace, "l")
+xm, ym, zm = base_operators(qspace, "m")
+xn, yn, zn = base_operators(qspace, "n")
 b = base_operators(qspace, "b")
+I = base_operators(qspace, "I")
 A = base_operators(qspace, "A", do_fun=true)
-alpha, beta, gamma_time = base_operators(qspace, ["alpha", "beta", "gamma"], do_fun=true)
-delta = QExprLookup([[:l], [:m]], [alpha, alpha])
-t0, t1 = base_operators(qspace, :t)
+B = base_operators(qspace, "B", do_fun=true)
 ```
 
 ```@example qalgebra
-alpha, beta, gamma_time
+alpha, beta[:t0], delta[:j], gamma[:i,:j,:t]
 ```
 ```@example qalgebra
 A(), A(1)
