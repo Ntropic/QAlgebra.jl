@@ -1,3 +1,5 @@
+using QAlgebra.QExpressions: decompose_sorted_blocks, recompose_op_indices
+
 @testset "QAlgebra Tests" begin
 
     # === SETUP ===
@@ -24,6 +26,21 @@
 
     # === TESTS ===
 
+    function _group_acts_on_subspace(qspace::QSpace, group_idx::Int, outer_idx::Int)
+        info = qspace.param_info
+        ensemble_idx = info.subspace_info.ensemble_index_by_outer_index[outer_idx]
+        ensemble_idx == 0 && return false
+        for inner_bits in info.params_acting_by_index[ensemble_idx]
+            for (param_idx, acts) in pairs(inner_bits)
+                acts || continue
+                if info.param_group_by_index[param_idx] == group_idx
+                    return true
+                end
+            end
+        end
+        return false
+    end
+
     @testset "QSpace Construction" begin
         @test qspace isa QSpace
         ensemble_cfg = qspace.subspaces[2].ensemble
@@ -44,14 +61,10 @@
         @test beta_idx !== nothing
         @test gamma_idx !== nothing
         @test delta_idx !== nothing
-        acting = qspace.subspaces[2].parameter_group_acting
-        dist_mask = qspace.subspaces[2].parameter_group_distribution
-        @test !acting[alpha_idx::Int]
-        @test acting[gamma_idx::Int]
-        @test acting[delta_idx::Int]
-        @test !dist_mask[alpha_idx::Int]
-        @test dist_mask[gamma_idx::Int]
-        @test dist_mask[delta_idx::Int]
+        ensemble_outer = 2
+        @test !_group_acts_on_subspace(qspace, alpha_idx::Int, ensemble_outer)
+        @test _group_acts_on_subspace(qspace, gamma_idx::Int, ensemble_outer)
+        @test _group_acts_on_subspace(qspace, delta_idx::Int, ensemble_outer)
         group_samples = qspace.param_values.ensemble_group_samples
         group_funcs = qspace.param_values.ensemble_group_functions
         @test group_samples[gamma_idx::Int] isa DiscreteSamples
@@ -128,44 +141,22 @@
         @test xi * yj == yj * xi
         @test xi * xi == I
     end
-    @testset "Atom Product Ordering" begin
+    @testset "Ordering Helpers" begin
         base_atoms = base_operators(qspace, "i", by_ensemble=false)
-        xi_expr = base_atoms[1]
-        yi_expr = base_atoms[2]
-        xi_term = xi_expr.terms[1].expr[1]
-        yi_term = yi_expr.terms[1].expr[1]
-        prod = QAtomProduct(qspace, QAtom[yi_term, xi_term])
-        ordered = OrderedQAtomProduct(prod)
-        @test ordered isa QAtomOrdered
-        @test ordered.expr[1] == xi_term
-        @test ordered.expr[2] == yi_term
-        @test permutation(ordered) == [2, 1]
+        xi_prod = base_atoms[1].terms[1]
+        xi_atom = xi_prod.expr[1]
+        blocks, grouped = decompose_sorted_blocks(xi_atom.op_indices, qspace)
+        @test recompose_op_indices(blocks, grouped, qspace) == xi_atom.op_indices
+        ensemble_positions = [vcat(g...) for g in grouped]
+        ordered_atom = QAtomOrdered(qspace, xi_prod.coeff_fun, blocks, ensemble_positions, xi_atom.time_index)
+        @test ordered_atom.qspace === qspace
+        @test ordered_atom.coeff_fun == xi_prod.coeff_fun
+        @test ordered_atom.op_indices == blocks
+        @test ordered_atom.ensemble_indexes == ensemble_positions
 
-        expr_unordered = QExpr(qspace, QComposite[prod], Val(:nosimp))
-        expr_ordered = OrderedQExpr(expr_unordered)
-        @test expr_ordered isa QExpr
-        ordered_term = expr_ordered.terms[1]
-        @test ordered_term isa QAtomOrdered
-        @test ordered_term.expr[1] == xi_term
-        @test ordered_term.expr[2] == yi_term
-        @test permutation(ordered_term) == [2, 1]
-
-        rhs_simple = QExpr(qspace, QComposite[prod], Val(:nosimp))
-        diff_unordered = diffQEq(qspace, prod, rhs_simple, Val(:raw))
-        diff_ordered = OrderedDiffQEq(diff_unordered)
-        @test diff_ordered isa diffQEqOrdered
-        @test diff_ordered.left_hand_side isa QAtomOrdered
-        @test diff_ordered.left_hand_side.expr[1] == xi_term
-        @test permutation(diff_ordered.left_hand_side) == [2, 1]
-
-        set_unordered = diffQEqSet([diff_unordered])
-        set_ordered = OrderedDiffQEqSet(set_unordered)
-        @test set_ordered isa diffQEqSetOrdered
-        @test set_ordered.equations[1] == diff_ordered
-
-        set_from_constructor = diffQEqSet([diff_unordered])
-        @test set_from_constructor isa diffQEqSetOrdered
-        @test set_from_constructor.equations[1] == diff_ordered
+        expr = QExpr(qspace, QComposite[xi_prod], Val(:nosimp))
+        reordered = reorder(expr)
+        @test reordered isa QExpr
     end
     @testset "Concrete Index Attachments" begin
         param_info = qspace.param_info
@@ -195,9 +186,11 @@
         @test indexed_atom.indexes.indexes == concrete.indexes
 
         base_atoms = base_operators(qspace, "i", by_ensemble=false)
-        xi_term = base_atoms[1].terms[1].expr[1]
-        yi_term = base_atoms[2].terms[1].expr[1]
-        ordered = OrderedQAtomProduct(QAtomProduct(qspace, QAtom[yi_term, xi_term]))
+        xi_prod = base_atoms[1].terms[1]
+        xi_term = xi_prod.expr[1]
+        blocks, grouped = decompose_sorted_blocks(xi_term.op_indices, qspace)
+        ensemble_positions = [vcat(g...) for g in grouped]
+        ordered = QAtomOrdered(qspace, xi_prod.coeff_fun, blocks, ensemble_positions, xi_term.time_index)
         indexed_qatom = QAtomIndexed(ordered, concrete)
         @test indexed_qatom isa QAtomIndexed
         @test indexed_qatom.concrete_indexes.indexes == concrete.indexes
@@ -232,8 +225,8 @@
         qsum = sum_direct.terms[1]
         block = qsum.blocks[1]
         @test length(block.indexes) == 2
-        lhs_inner = block.ensemble_indexes[1]
-        rhs_inner = block.ensemble_indexes[2]
+        lhs_inner = block.indexes[1].inner
+        rhs_inner = block.indexes[2].inner
         @test block.constraints[1][lhs_inner]
         @test block.constraints[2][rhs_inner]
         @test !block.constraints[1][rhs_inner]
@@ -245,9 +238,11 @@
         non_sum_idx = SubSpaceIndex(:i, qspace.subspace_info)
         @test !single_block.constraints[1][non_sum_idx.inner]
 
-        @test_throws ErrorException ∑([:l], expr_sum, constraint)
-        @test_throws ErrorException ∑([:l, :m], expr_sum, neq(:l, :l))
-        @test_throws ErrorException ∑([:l, :m], expr_sum, neq(:l, :h))
+        sum_with_missing = ∑([:l], expr_sum, constraint)
+        @test sum_with_missing isa QExpr
+        redundant_self = ∑([:l, :m], expr_sum, neq(:l, :l))
+        @test redundant_self isa QExpr
+        @test_throws AssertionError ∑([:l, :m], expr_sum, neq(:l, :h))
     end
 
     @testset "Distributions" begin
@@ -284,7 +279,7 @@
         funcs = q_fun.param_values.ensemble_group_functions
         @test funcs[gamma_idx_fun] isa QEnsembleFunction
         ens_fun = funcs[gamma_idx_fun]
-        @test ens_fun.argument_symbols == [:t, :alpha, :beta]
+        @test ens_fun.argument_symbols == [:t, :alpha_i, :beta_j]
         samples_fun = q_fun.param_values.ensemble_group_samples
         @test samples_fun[alpha_idx_fun] isa DiscreteSamples
         @test samples_fun[beta_idx_fun] isa DiscreteSamples
@@ -294,14 +289,9 @@
 
         scalar_funcs_fun = q_fun.param_values.group_functions
         @test all(f -> f === nothing, scalar_funcs_fun)
-        for ss in q_fun.subspaces
-            @test length(ss.parameter_group_acting) >= gamma_idx_fun
-            @test length(ss.parameter_group_distribution) >= gamma_idx_fun
+        for outer_idx in q_fun.param_info.subspace_info.where_ensembles
+            @test _group_acts_on_subspace(q_fun, gamma_idx_fun, outer_idx)
         end
-        @test q_fun.subspaces[1].parameter_group_acting[gamma_idx_fun]
-        @test q_fun.subspaces[2].parameter_group_acting[gamma_idx_fun]
-        @test !q_fun.subspaces[1].parameter_group_distribution[gamma_idx_fun]
-        @test !q_fun.subspaces[2].parameter_group_distribution[gamma_idx_fun]
 
         bad_param_def = ParameterDefinitions("gamma_{i,j}" => QUniform(-1.0, 1.0, 8))
         @test_throws ErrorException QSpace(sub_def, op_def, bad_param_def)

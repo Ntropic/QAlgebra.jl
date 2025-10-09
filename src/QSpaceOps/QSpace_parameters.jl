@@ -124,25 +124,6 @@ function _build_qensemble_function(name::String, brace_elements::Vector{String},
     return QEnsembleFunction(name, arg_symbols, f)
 end
 
-function _ensure_group_capacity!(vec::BitVector, idx::Int)
-    if length(vec) < idx
-        new_len = max(idx, max(length(vec) * 2, INITIAL_PARAMETER_GROUP_MASK_SIZE))
-        resize!(vec, new_len)
-    end
-end
-
-function _mark_parameter_group_acting!(subspace::SubSpace, group_index::Int)
-    mask = subspace.parameter_group_acting
-    _ensure_group_capacity!(mask, group_index)
-    mask[group_index] = true
-end
-
-function _set_parameter_group_distribution!(subspace::SubSpace, group_index::Int, is_distribution::Bool)
-    mask = subspace.parameter_group_distribution
-    _ensure_group_capacity!(mask, group_index)
-    mask[group_index] = is_distribution
-end
-
 function _coerce_payload(name::String, brace_elements::Vector{String}, payload, has_indexes::Bool)
     dist = nothing
     qfun = nothing
@@ -584,8 +565,6 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
                 if ensemble_cfg !== nothing && !(param_sym in ensemble_cfg.parameter_groups)
                     push!(ensemble_cfg.parameter_groups, param_sym)
                 end
-                _mark_parameter_group_acting!(subspaces[outer_ind], group_index)
-                _set_parameter_group_distribution!(subspaces[outer_ind], group_index, dist !== nothing)
             end
         end
 
@@ -727,7 +706,6 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
     param_dicts = build_parameter_dicts(var_info)
 
     param_values = ParameterValues(var_info;
-        param_dicts=param_dicts,
         ensemble_group_functions=ensemble_group_functions,
         group_functions=scalar_group_functions)
 

@@ -18,7 +18,7 @@ export contains_non_simple_CFunction, Indexed, has_indexed_parameters
 export list_cabstracts, list_ctypes, list_cintegrals
 export where_acting, where_acting!, which_params_acting, which_params_acting!, param_index_tuples
 export which_ensemble_acting, which_ensemble_acting!, substitute, separate_by_cond
-export ParameterValues, set_param!, set_time!, update_t!, get_parameter_index, value, param_value, recompute_functions!, ensure_functions!
+export ParameterValues, set_param!, set_time!, update_t!, get_parameter_index, value, param_value, recompute_functions!, ensure_functions!, compute_integral_weights!
 
 import Base: copy, exp, log, length, getindex, iterate, size
 import ComplexRationals: isonelike
@@ -116,6 +116,8 @@ struct CIntegralDefinition{N} <: CDef
     param_info::AbstractParameterInfo
     interpolator::QInterpolator
     axis_lengths::Vector{Int}
+    pdfs::Vector{Function}
+    assignments::Vector{Vector{Int}}
     values::Array{ComplexF64,N}
     function CIntegralDefinition(index::Int,
                                  sortkey::Int,
@@ -126,14 +128,10 @@ struct CIntegralDefinition{N} <: CDef
         param_info = qspace.param_info
         interp, axis_lengths, pdfs, dim_info = helpers._build_integral_interpolator(qspace, indexes)
         assignments = helpers._build_integral_assignments(param_info, dim_info)
-        pv = deepcopy(qspace.param_values)
-        integrand = helpers._make_integrand(expr, pv, assignments)
-        weights = integrate_node_funs(interp, pdfs; f=integrand)
         N = length(axis_lengths)
         N > 0 || error("CIntegralDefinition requires at least one integration dimension.")
         vals = Array{ComplexF64}(undef, axis_lengths...)
-        vals .= ComplexF64.(weights)
-        return new{N}(index, sortkey, expr, indexes, param_info, interp, axis_lengths, vals)
+        return new{N}(index, sortkey, expr, indexes, param_info, interp, axis_lengths, pdfs, assignments, vals)
     end
 end
 const AnyCIntegralDefinition = CIntegralDefinition{N} where N
@@ -254,6 +252,13 @@ struct ParameterInfo <: AbstractParameterInfo
             subspace_info, param_indexes, CAbstractDefinition[], CTypeDefinition[], AnyCIntegralDefinition[])
     end
 end
+function Base.show(io::IO, info::ParameterInfo)
+    max_val = maximum(info.param_group_by_index)
+    idxs = [findfirst(==(i), info.param_group_by_index) for i in 1:max_val]
+    param_str = join((info.params_str[i] for i in idxs), ",")
+    print(io, "ParameterInfo([", param_str, "])")
+end
+
 
 function build_parameter_dicts(info::ParameterInfo)::ParameterDicts
     group_name_to_index = Dict{Symbol,Int}()

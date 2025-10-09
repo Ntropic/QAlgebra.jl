@@ -268,11 +268,6 @@ mutable struct QSpace
 
         # ==========> 3rd Parameters <==========
         params, param_info, param_values, parameter_dicts, ensemble_group_distributions = ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
-        final_group_count = length(param_info.outer_labels_symbols)
-        for ss in subspaces
-            resize!(ss.parameter_group_acting, final_group_count)
-            resize!(ss.parameter_group_distribution, final_group_count)
-        end
         outer_symbols = param_info.outer_labels_symbols
         outer_names = param_info.outer_labels
 
@@ -303,6 +298,19 @@ mutable struct QSpace
 end
 # Define the custom show for QSpace.
 function Base.show(io::IO, qspace::QSpace)
+    if get(io, :compact, false)
+        param_str = join(
+            length(qspace.params) < 12 ?
+                (p.param_str for p in qspace.params) :
+                (qspace.params[findfirst(==(i), qspace.param_info.param_group_by_index)].param_str
+                 for i in 1:maximum(qspace.param_info.param_group_by_index)),
+            ","
+        )
+        subs = [join(ss.keys[1:ss.num_operator_indexes], ",") for ss in qspace.subspaces]
+        ops  = string.(qspace.operatortypes)
+        print(io, "QSpace([", param_str, "], sub=", subs, ", ops=", ops, ")")
+        return
+    end
     # Header line
     if length(qspace.params) < 12
         param_str = join([p.param_str for p in qspace.params], ",")

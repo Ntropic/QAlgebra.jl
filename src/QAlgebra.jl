@@ -115,7 +115,7 @@ using .Cumulants
 include("QSpace.jl")
 using .QSpaces
 export OperatorSet, max_operator_magnitude
-export Ensemble, SubSpace, SubSpaceDefinitions, ConcreteIndexes 
+export Ensemble, SubSpace, SubSpaceDefinitions, ConcreteIndexes, SubSpaceIndex 
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
 export Parameter, ParameterInfo, ParameterDefinitions
 export QSpace, SubSpaceDicts, AbstractOperatorDicts
@@ -127,6 +127,7 @@ include("Plotting.jl")
 
 include("QExpressions.jl")
 using .QExpressions
+using .QExpressions: diffQEqOrdered, diffQEqSet
 export QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QCumulant, QAtomProduct, permutation, AbstractQSum, QSum, QIntegral, QInt, ∑, ∫, integral, QCompositeProduct, diffQEq, d_dt
 export QCommutator, QExp, QLog, QPower, power, QRoot, root, Expectation
 export Dag, Commutator, same_qspace
@@ -141,7 +142,7 @@ export contains_abstract, are_indexes_defined, which_summations_acting, which_su
 export Substitution, --> 
 export reorder, reorder_full, reorder_time, neq, flatsums, complexsums , Sum2Int
 # Preindexing
-export QAtomOrdered, QAtomIndexed, QNeutral, OrderbyOperator, OrderedQAtomProduct, OrderedQExpr, OrderedDiffQEq
+export QAtomOrdered, QAtomIndexed, QNeutral, OrderbyOperator, OrderedQAtomProduct, OrderedQExpr, OrderedDiffQEq, diffQEqOrdered
 
 include("ConcreteIndexingHelper/Indexing.jl")
 using .Indexing
@@ -156,5 +157,5 @@ export ensemble_iterator, ensemble_iterator_continuum, multi_ensemble_iterator, 
 
 #include("QEqSets.jl")
 #using .QEqSets
-export diffQEqSet, diffQEqSetOrdered, diffQEqSet, OrderedDiffQEqSet
+export diffQEqSet, diffQEqSetOrdered, diffQEqSet, OrderedDiffQEqSet, diffQEqOrdered
 end # module QAlgebra

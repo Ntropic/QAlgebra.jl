@@ -1,8 +1,6 @@
 import ..SubSpaceIndex
 using ..EnsembleSamples: AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 
-const INITIAL_PARAMETER_GROUP_MASK_SIZE = 64
-
 """
     Ensemble(num_operator_indexes, num_sum_indexes, operator_set; kwargs...)
     Ensemble(num_operator_indexes, operator_set; kwargs...)
@@ -73,6 +71,17 @@ mutable struct Ensemble
 end
 
 function Base.show(io::IO, ensemble::Ensemble)
+    if get(io, :compact, false)
+        # --- compact version ---
+        kind = ensemble.sampler === nothing ?
+            (ensemble.sample_method === :default ?
+                (ensemble.as_continuum ? ":chebychev" : ":random") :
+                string(ensemble.sample_method)) :
+            (ensemble.sampler isa ContinuousSamples ? ":cont/" : ":disc/") * string(ensemble.sampler.method)
+        print(io, "Ensemble(", ensemble.num_operator_indexes, "op,", ensemble.num_sum_indexes, "∑,",
+              ensemble.num_modes, "modes, method=", kind, ")")
+        return
+    end
     print(io, "Ensemble: ")
     print(io, "operators=" , ensemble.num_operator_indexes)
     print(io, ", summations=" , ensemble.num_sum_indexes)
@@ -127,8 +136,6 @@ struct SubSpace
     min_ints::Vector{Int}
     max_ints::Vector{Int}           # -1 entries signal unbounded axes
     max_operator_magnitude::Int
-    parameter_group_acting::BitVector
-    parameter_group_distribution::BitVector
 end
 # Define the custom show for SubSpace.
 function Base.show(io::IO, qspace::SubSpace)
@@ -239,12 +246,9 @@ struct SubSpaceDefinitions
                 error("Symbol $key already used")
             end 
             curr_inds = key_counter .+ collect(1:ensemble_size)
-            mask_act = BitVector(fill(false, INITIAL_PARAMETER_GROUP_MASK_SIZE))
-            mask_dist = BitVector(fill(false, INITIAL_PARAMETER_GROUP_MASK_SIZE))
             curr_subspace = SubSpace(key_symbol, keys_symbols, key, keys, keys_latex, outer_ind, curr_inds, is_ensemble_ss, 
                         ensemble_size, as_continuum, num_operator_indexes, num_sum_indexes, op_set.particle_type, op_set, ensemble_cfg,
-                        copy(op_set.min_ints), copy(op_set.max_ints), max_op_mag,
-                        mask_act, mask_dist) 
+                        copy(op_set.min_ints), copy(op_set.max_ints), max_op_mag) 
             key_counter += ensemble_size
             push!(subspaces, curr_subspace)
             union!(used_symbols, keys_symbols)
