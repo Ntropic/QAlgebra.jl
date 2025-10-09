@@ -1,6 +1,9 @@
+# NOTE: `CIntegralDefinition` lives in `src/CFunctions.jl`. This file hosts the
+# helper utilities and API built around that core type.
+
 ###################################################################################################
 """
-    list_cintegrals(param_info::ParameterInfo) -> Vector{CIntegralDefinition}
+    list_cintegrals(param_info::ParameterInfo) -> Vector{AnyCIntegralDefinition}
 
 Return all integral definitions registered in the provided [`ParameterInfo`](@ref).
 """
@@ -9,7 +12,7 @@ function list_cintegrals(param_info::ParameterInfo)
 end
 
 """
-    define_cintegral(param_info::ParameterInfo, expr, indexes)
+    define_cintegral(qspace::QSpace, expr, indexes)
 
 Register a coefficient integral with integrand `expr` and integration indexes
 `indexes` (outer vector per ensemble, inner vector per integrated subsystem).
@@ -28,7 +31,8 @@ The overloads accepting `QExpr` perform the necessary neutrality checks and, in
 the variant without explicit indexes, derive the integration blocks from the
 ensembles touched by `expr` before delegating back here.
 """
-function define_cintegral(param_info::ParameterInfo, expr::CFunction, indexes::Vector)::CIntegralDefinition
+function define_cintegral(qspace, expr::CFunction, indexes::Vector)
+    param_info = qspace.param_info
     expr.param_info === param_info ||
         error("Integral integrand belongs to a different ParameterInfo.")
 
@@ -75,12 +79,13 @@ function define_cintegral(param_info::ParameterInfo, expr::CFunction, indexes::V
     index = length(param_info.integral_definitions) + 1
     sortkey = index + 2_000_000
 
-    c_def = CIntegralDefinition(index, sortkey, expr, coerced, param_info)
+    c_def = CIntegralDefinition(index, sortkey, expr, coerced, qspace)
     push!(param_info.integral_definitions, c_def)
     return c_def
 end
 
-function define_cintegral(param_info::ParameterInfo, expr::CFunction)::CIntegralDefinition
+function define_cintegral(qspace, expr::CFunction)
+    param_info = qspace.param_info
     acting = which_ensemble_acting(expr)
     subspace_info = param_info.subspace_info
     subspace_info === nothing &&
@@ -95,7 +100,7 @@ function define_cintegral(param_info::ParameterInfo, expr::CFunction)::CIntegral
         end
         indexes[ensemble_idx] = idxs
     end
-    return define_cintegral(param_info, expr, indexes)
+    return define_cintegral(qspace, expr, indexes)
 end
 
 """
@@ -104,20 +109,21 @@ end
 Coefficient atom referencing a registered integral definition stored inside the
 owning [`ParameterInfo`](@ref).
 """
-struct CIntegral <: CAtomic
+struct CIntegral{N} <: CAtomic
     param_info::ParameterInfo
     coeff::ComplexRational
     index::Int
-    definition::CIntegralDefinition
+    definition::CIntegralDefinition{N}
 
     function CIntegral(param_info::ParameterInfo, coeff::ComplexRational, index::Int)
         1 ≤ index ≤ length(param_info.integral_definitions) ||
             error("Integral index $index out of bounds for supplied ParameterInfo.")
-        return new(param_info, coeff, index, param_info.integral_definitions[index])
+        def = param_info.integral_definitions[index]
+        return new{length(def.axis_lengths)}(param_info, coeff, index, def)
     end
 end
 CIntegral(param_info::ParameterInfo, index::Int) = CIntegral(param_info, ComplexRational(1,0,1), index)
-CIntegral(def::CIntegralDefinition) = CIntegral(def.param_info, ComplexRational(1,0,1), def.index)
+CIntegral(def::CIntegralDefinition{N}) where {N} = CIntegral(def.param_info, ComplexRational(1,0,1), def.index)
 
 @inline integral_definition(int::CIntegral) = int.definition
 @inline integral_indexes(int::CIntegral) = int.definition.indexes
@@ -128,4 +134,3 @@ var_exponents(i::CIntegral) = spzeros(Int, i.param_info.dims)
 length(::CIntegral) = 1
 modify_coeff(i::CIntegral, c::ComplexRational) = CIntegral(i.param_info, c, i.index)
 repartition(::CIntegral, ::Vector{Tuple{Int,Int}}) = error("Cannot repartition integral definitions. Register a new integral if needed.")
-

@@ -7,8 +7,7 @@ using ComplexRationals
 using SparseArrays
 using ..SparsePermutationTools: SparsePermutation
 using ..QAlgebra: get_default, FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
-using ..Sampler: QDistribution, QEnsembleFunction, QInterpolator, ContinuousSamples
-using Base: WeakRef
+using ..Sampler: QDistribution, QEnsembleFunction, QInterpolator, ContinuousSamples, integrate_node_funs
 
 export CFunction, CAbstractDefinition, CTypeDefinition, CIntegralDefinition, ParameterInfo
 export define_cabstract, define_ctype, define_cintegral
@@ -19,7 +18,7 @@ export contains_non_simple_CFunction, Indexed, has_indexed_parameters
 export list_cabstracts, list_ctypes, list_cintegrals
 export where_acting, where_acting!, which_params_acting, which_params_acting!, param_index_tuples
 export which_ensemble_acting, which_ensemble_acting!, substitute, separate_by_cond
-export ParameterValues, set_param!, set_time!, update_t!, get_parameter_index, value, param_value, recompute_functions!, ensure_functions!, register_parameter_values!
+export ParameterValues, set_param!, set_time!, update_t!, get_parameter_index, value, param_value, recompute_functions!, ensure_functions!
 
 import Base: copy, exp, log, length, getindex, iterate, size
 import ComplexRationals: isonelike
@@ -109,25 +108,35 @@ Container describing a coefficient integral definition stored within a
 [`ParameterInfo`](@ref). It records the defining integrand `expr` and the
 subsystem indexes integrated over.
 """
-struct CIntegralDefinition <: CDef
+struct CIntegralDefinition{N} <: CDef
     index::Int
     sortkey::Int
     expr::CFunction
     indexes::Vector{Vector{SubSpaceIndex}}
     param_info::AbstractParameterInfo
-    interpolator::Union{Nothing,QInterpolator}
+    interpolator::QInterpolator
+    axis_lengths::Vector{Int}
+    values::Array{ComplexF64,N}
     function CIntegralDefinition(index::Int,
                                  sortkey::Int,
                                  expr::CFunction,
                                  indexes::Vector{Vector{SubSpaceIndex}},
-                                 param_info::AbstractParameterInfo)
-        interp = nothing
-        if param_info isa ParameterInfo
-            interp = _build_integral_interpolator(param_info, indexes)
-        end
-        return new(index, sortkey, expr, indexes, param_info, interp)
+                                 qspace)
+        helpers = getfield(parentmodule(@__MODULE__), :QExpressions)
+        param_info = qspace.param_info
+        interp, axis_lengths, pdfs, dim_info = helpers._build_integral_interpolator(qspace, indexes)
+        assignments = helpers._build_integral_assignments(param_info, dim_info)
+        pv = deepcopy(qspace.param_values)
+        integrand = helpers._make_integrand(expr, pv, assignments)
+        weights = integrate_node_funs(interp, pdfs; f=integrand)
+        N = length(axis_lengths)
+        N > 0 || error("CIntegralDefinition requires at least one integration dimension.")
+        vals = Array{ComplexF64}(undef, axis_lengths...)
+        vals .= ComplexF64.(weights)
+        return new{N}(index, sortkey, expr, indexes, param_info, interp, axis_lengths, vals)
     end
 end
+const AnyCIntegralDefinition = CIntegralDefinition{N} where N
 struct ParameterDicts
     group_name_to_index::Dict{Symbol,Int}
     param_name_to_indices::Dict{Symbol,Vector{Int}}
@@ -218,7 +227,7 @@ struct ParameterInfo <: AbstractParameterInfo
     param_indexes::ParameterIndexes
     abstract_definitions::Vector{CAbstractDefinition}
     custom_ctype::Vector{CTypeDefinition}
-    integral_definitions::Vector{CIntegralDefinition}
+    integral_definitions::Vector{AnyCIntegralDefinition}
 
     function ParameterInfo(
         outer_labels_symbols::Vector{Symbol}, inner_labels_symbols_flat::Vector{Symbol}, outer_labels::Vector{String},
@@ -242,7 +251,7 @@ struct ParameterInfo <: AbstractParameterInfo
             indexes_by_t_index, indexes_of_t, how_many_by_ensemble, param_of_t, param_is_t,
             function_param_refs,
             group_time_counts, group_index_sizes, param_coords, params_by_group, group_of_t, group_is_t,
-            subspace_info, param_indexes, CAbstractDefinition[], CTypeDefinition[], CIntegralDefinition[])
+            subspace_info, param_indexes, CAbstractDefinition[], CTypeDefinition[], AnyCIntegralDefinition[])
     end
 end
 
@@ -720,67 +729,6 @@ include("CFunctionsOps/CFunctions_sort.jl")
 include("CFunctionsOps/CFunctions_substitute.jl")
 include("CFunctionsOps/CFunctions_simplify.jl")
 include("CFunctionsOps/ParameterValues.jl")
-
-const _PARAM_INFO_TO_PV = IdDict{ParameterInfo,WeakRef}()
-function register_parameter_values!(pv::ParameterValues)
-    _PARAM_INFO_TO_PV[pv.param_info] = WeakRef(pv)
-    return pv
-end
-
-function _lookup_param_values(param_info::ParameterInfo)
-    wr = get(_PARAM_INFO_TO_PV, param_info, nothing)
-    wr === nothing && return nothing
-    return wr.value
-end
-
-function _continuous_sample_for_ensemble(param_info::ParameterInfo, pv::ParameterValues, ensemble_slot::Int)
-    presence_per_group = param_info.ss_ensemble_present_by_group
-    samples = pv.ensemble_group_samples
-    n_groups = length(samples)
-    @inbounds for g in 1:n_groups
-        ensemble_slot <= length(presence_per_group[g]) || continue
-        presence_per_group[g][ensemble_slot] || continue
-        sample = samples[g]
-        sample isa ContinuousSamples || continue
-        return sample
-    end
-    return nothing
-end
-
-function _build_integral_interpolator(param_info::ParameterInfo,
-                                      indexes::Vector{Vector{SubSpaceIndex}})
-    pv = _lookup_param_values(param_info)
-    pv === nothing && return nothing
-
-    subspace_info = param_info.subspace_info
-    node_vectors = Vector{Vector{Float64}}()
-    bounds = Vector{Tuple{Float64,Float64}}()
-    samples_by_ensemble = Dict{Int,ContinuousSamples}()
-    endpoints_flag = true
-
-    @inbounds for ensemble_indexes in indexes
-        for sub_idx in ensemble_indexes
-            ensemble_slot = subspace_info.ensemble_index_by_outer_index[sub_idx.outer]
-            ensemble_slot != 0 || error("Integral index does not belong to an ensemble subspace.")
-            sample = get(samples_by_ensemble, ensemble_slot, nothing)
-            if sample === nothing
-                sample = _continuous_sample_for_ensemble(param_info, pv, ensemble_slot)
-                sample === nothing && return nothing
-                samples_by_ensemble[ensemble_slot] = sample
-            end
-            inter = sample.interpolator
-            endpoints_flag &= inter.endpoints
-            @inbounds for dim_idx in 1:inter.dims
-                push!(node_vectors, copy(inter.nodes[dim_idx]))
-                push!(bounds, inter.bounds[dim_idx])
-            end
-        end
-    end
-
-    isempty(node_vectors) && return nothing
-    return QInterpolator(node_vectors, bounds; method=:custom, endpoints=endpoints_flag)
-end
-
 include("CFunctionsOps/CFunctions_orders_eval.jl")
 include("CFunctionsOps/CFunctions_expand.jl")
 include("CFunctionsOps/CFunctions_helper.jl")

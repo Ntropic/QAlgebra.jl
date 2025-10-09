@@ -161,6 +161,7 @@ include("QExpressionsOps/QExpressions_composites.jl")
 include("QExpressionsOps/QExpressions_helper.jl") 
 include("QExpressionsOps/QExpressions_expand.jl")
 include("QExpressionsOps/QExpressions_cumulants.jl")
+include("QExpressionsOps/QExpressions_integrals.jl")
 
 """
     diffQEq
@@ -347,24 +348,24 @@ end
 
 function define_cintegral(qspace::QSpace, expr::QExpr, indexes::Vector{Vector{SubSpaceIndex}})
     cfun = _extract_cfunction(qspace, expr, "define_cintegral")
-    define_cintegral(qspace.param_info, cfun, indexes)
+    define_cintegral(qspace, cfun, indexes)
 end
 
 function define_cintegral(qspace::QSpace, expr::QExpr)
     cfun = _extract_cfunction(qspace, expr, "define_cintegral")
-    define_cintegral(qspace.param_info, cfun)
+    define_cintegral(qspace, cfun)
 end
 
 function define_cintegral(expr::QExpr, indexes::Vector{Vector{SubSpaceIndex}})
     qspace = expr.qspace
     cfun = _extract_cfunction(qspace, expr, "define_cintegral")
-    define_cintegral(qspace.param_info, cfun, indexes)
+    define_cintegral(qspace, cfun, indexes)
 end
 
 function define_cintegral(expr::QExpr)
     qspace = expr.qspace
     cfun = _extract_cfunction(qspace, expr, "define_cintegral")
-    define_cintegral(qspace.param_info, cfun)
+    define_cintegral(qspace, cfun)
 end
 
 """

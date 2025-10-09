@@ -268,7 +268,6 @@ mutable struct QSpace
 
         # ==========> 3rd Parameters <==========
         params, param_info, param_values, parameter_dicts, ensemble_group_distributions = ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
-        register_parameter_values!(param_values)
         final_group_count = length(param_info.outer_labels_symbols)
         for ss in subspaces
             resize!(ss.parameter_group_acting, final_group_count)
