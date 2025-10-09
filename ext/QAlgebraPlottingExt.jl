@@ -54,11 +54,11 @@ end
 end
 
 @inline function _joint_heatmap_defaults()
-    return (; colormap=:grays, transparency=0.35, interpolate=true)
+    return (; colormap=:viridis, transparency=0.35, interpolate=true)
 end
 
 @inline function _joint_contour_line_defaults()
-    return (; colormap=:grays, linewidth=2)
+    return (; colormap=:viridis, linewidth=2)
 end
 
 """

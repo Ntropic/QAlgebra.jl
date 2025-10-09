@@ -63,3 +63,11 @@ set_expand_cumulants
 ```
 
 ---
+
+---
+
+## Plotting
+
+```@docs
+QAlgebra.Plotting.plot_ensemble_samples
+```

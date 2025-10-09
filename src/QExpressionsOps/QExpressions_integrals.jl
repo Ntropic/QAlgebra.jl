@@ -1,11 +1,15 @@
+using ..QSpaces: QSpace, SubSpaceIndex
+using ..Sampler: QInterpolator, ContinuousSamples
+using ..CFunctions: ParameterInfo, ParameterValues, CFunction, evaluate, set_param!
+
 struct IntegralDimensionDescriptor
     ensemble_outer::Int
     inner_index::Int
     group_index::Int
 end
 
-function _build_integral_interpolator(qspace,
-                                      indexes::Vector{Vector{SubSpaceIndex}})
+function _build_integral_interpolator(qspace::QSpace,
+                                      indexes::Vector{Vector{SubSpaceIndex}})::Tuple{QInterpolator,Vector{Int},Vector{Function},Vector{IntegralDimensionDescriptor}}
     param_info = qspace.param_info
     subspace_info = param_info.subspace_info
     subspace_info === nothing &&
@@ -48,7 +52,7 @@ function _build_integral_interpolator(qspace,
 end
 
 function _build_integral_assignments(param_info::ParameterInfo,
-                                     dim_info::Vector{IntegralDimensionDescriptor})
+                                     dim_info::Vector{IntegralDimensionDescriptor})::Vector{Vector{Int}}
     assignments = Vector{Vector{Int}}(undef, length(dim_info))
     for (dim_idx, info) in enumerate(dim_info)
         group_params = param_info.params_by_group[info.group_index]
@@ -64,8 +68,8 @@ function _build_integral_assignments(param_info::ParameterInfo,
 end
 
 function _make_integrand(expr::CFunction,
-                         pv,
-                         assignments::Vector{Vector{Int}})
+                         pv::ParameterValues,
+                         assignments::Vector{Vector{Int}})::Function
     function integrand(xpt::AbstractVector{<:Real})
         @inbounds for (dim_idx, val) in enumerate(xpt)
             for param_idx in assignments[dim_idx]
