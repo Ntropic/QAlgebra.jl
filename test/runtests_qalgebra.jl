@@ -1,4 +1,5 @@
 using QAlgebra.QExpressions: decompose_sorted_blocks, recompose_op_indices
+using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
 
 @testset "QAlgebra Tests" begin
 
@@ -46,7 +47,7 @@ using QAlgebra.QExpressions: decompose_sorted_blocks, recompose_op_indices
         ensemble_cfg = qspace.subspaces[2].ensemble
         @test ensemble_cfg !== nothing
         @test ensemble_cfg.num_modes == -1
-        @test :gamma in ensemble_cfg.parameter_groups
+        @test :gamma in ensemble_cfg.param_groups
         @test length(qspace.ensembles) == 1
         @test qspace.ensembles[1] === ensemble_cfg
         @test ensemble_cfg.qspace_ref !== nothing
@@ -65,19 +66,14 @@ using QAlgebra.QExpressions: decompose_sorted_blocks, recompose_op_indices
         @test !_group_acts_on_subspace(qspace, alpha_idx::Int, ensemble_outer)
         @test _group_acts_on_subspace(qspace, gamma_idx::Int, ensemble_outer)
         @test _group_acts_on_subspace(qspace, delta_idx::Int, ensemble_outer)
-        group_samples = qspace.param_values.ensemble_group_samples
-        group_funcs = qspace.param_values.ensemble_group_functions
-        @test group_samples[gamma_idx::Int] isa DiscreteSamples
-        @test group_samples[delta_idx::Int] isa DiscreteSamples
-        @test group_samples[alpha_idx::Int] === nothing
-        @test all(f -> f === nothing, group_funcs)
-
+        sampler = qspace.ensembles[1].sampler
+        param_groups = qspace.param_info.param_groups
+        @test sampler isa DiscreteSamples
         for idx in (gamma_idx::Int, delta_idx::Int)
-            sample = group_samples[idx]
-            col = findfirst(==(idx), sample.group_indices)
+            col = findfirst(==(idx), sampler.group_indices)
             @test col !== nothing
             stored = qspace.param_values.group_values[idx]
-            expected = sample.samples[:, col]
+            expected = sampler.samples[:, col]
             if stored isa AbstractVector{<:Real}
                 @test stored == expected
             elseif stored isa AbstractArray
@@ -86,10 +82,18 @@ using QAlgebra.QExpressions: decompose_sorted_blocks, recompose_op_indices
                 @test stored == expected
             end
         end
+        @test findfirst(==(alpha_idx::Int), sampler.group_indices) === nothing
+        @test all(g -> g.kind != ParameterGroupEnsembleFunction || g.payload === nothing, param_groups)
 
-        scalar_funcs = qspace.param_values.group_functions
-        @test scalar_funcs[beta_idx::Int] === nothing
-        @test scalar_funcs[alpha_idx::Int] === nothing
+        @test param_groups[beta_idx::Int].payload === nothing
+        @test param_groups[alpha_idx::Int].payload === nothing
+
+        gamma_dist2 = QUniform(-2.0, 2.0, 32)
+        resolve_param!(qspace, :gamma, gamma_dist2)
+        @test qspace.param_info.param_groups[gamma_idx::Int].payload === gamma_dist2
+        @test qspace.ensembles[1].sampler !== nothing
+        resolve_param!(qspace, :alpha, 3.5)
+        @test value(qspace.param_values, :alpha) ≈ 3.5
     end
 
     @testset "Ensemble Naming" begin
@@ -276,19 +280,30 @@ using QAlgebra.QExpressions: decompose_sorted_blocks, recompose_op_indices
         gamma_idx_fun = findfirst(==(Symbol("gamma")), param_syms_fun)::Int
         alpha_idx_fun = findfirst(==(Symbol("alpha")), param_syms_fun)::Int
         beta_idx_fun = findfirst(==(Symbol("beta")), param_syms_fun)::Int
-        funcs = q_fun.param_values.ensemble_group_functions
-        @test funcs[gamma_idx_fun] isa QEnsembleFunction
-        ens_fun = funcs[gamma_idx_fun]
+        param_groups_fun = q_fun.param_info.param_groups
+        @test param_groups_fun[gamma_idx_fun].payload isa QEnsembleFunction
+        ens_fun = param_groups_fun[gamma_idx_fun].payload::QEnsembleFunction
         @test ens_fun.argument_symbols == [:t, :alpha_i, :beta_j]
-        samples_fun = q_fun.param_values.ensemble_group_samples
-        @test samples_fun[alpha_idx_fun] isa DiscreteSamples
-        @test samples_fun[beta_idx_fun] isa DiscreteSamples
-        @test samples_fun[gamma_idx_fun] === nothing
-        @test funcs[alpha_idx_fun] === nothing
-        @test funcs[beta_idx_fun] === nothing
-
-        scalar_funcs_fun = q_fun.param_values.group_functions
-        @test all(f -> f === nothing, scalar_funcs_fun)
+        alpha_sampler = nothing
+        beta_sampler = nothing
+        gamma_in_sampler = false
+        for ens in q_fun.ensembles
+            sampler = ens.sampler
+            sampler === nothing && continue
+            if alpha_idx_fun in ens.distribution_group_indices
+                alpha_sampler = sampler
+            end
+            if beta_idx_fun in ens.distribution_group_indices
+                beta_sampler = sampler
+            end
+            gamma_in_sampler |= any(==(gamma_idx_fun), sampler.group_indices)
+        end
+        @test alpha_sampler isa DiscreteSamples
+        @test beta_sampler isa DiscreteSamples
+        @test !gamma_in_sampler
+        @test param_groups_fun[alpha_idx_fun].payload isa QDistribution
+        @test param_groups_fun[beta_idx_fun].payload isa QDistribution
+        @test all(g -> g.kind != ParameterGroupTimeFunction || g.payload === nothing, param_groups_fun)
         for outer_idx in q_fun.param_info.subspace_info.where_ensembles
             @test _group_acts_on_subspace(q_fun, gamma_idx_fun, outer_idx)
         end

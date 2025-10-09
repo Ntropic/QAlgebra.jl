@@ -1,6 +1,7 @@
 using ..QSpaces: QSpace, SubSpaceIndex
 using ..Sampler: QInterpolator, ContinuousSamples
 using ..CFunctions: ParameterInfo, ParameterValues, CFunction, evaluate, set_param!
+using ..QAlgebra: ConcreteIndexes
 
 struct IntegralDimensionDescriptor
     ensemble_outer::Int
@@ -55,7 +56,7 @@ function _build_integral_assignments(param_info::ParameterInfo,
                                      dim_info::Vector{IntegralDimensionDescriptor})::Vector{Vector{Int}}
     assignments = Vector{Vector{Int}}(undef, length(dim_info))
     for (dim_idx, info) in enumerate(dim_info)
-        group_params = param_info.params_by_group[info.group_index]
+        group_params = param_info.param_groups[info.group_index].parameter_indices
         selected = Int[]
         for param_idx in group_params
             tuples = param_info.param_index_tuples[param_idx]
@@ -70,13 +71,14 @@ end
 function _make_integrand(expr::CFunction,
                          pv::ParameterValues,
                          assignments::Vector{Vector{Int}})::Function
+    default_indexes = ConcreteIndexes(expr.param_info)
     function integrand(xpt::AbstractVector{<:Real})
         @inbounds for (dim_idx, val) in enumerate(xpt)
             for param_idx in assignments[dim_idx]
                 set_param!(pv, param_idx, Float64(val))
             end
         end
-        return ComplexF64(Complex(evaluate(expr, pv)))
+        return ComplexF64(Complex(evaluate(expr, pv, default_indexes)))
     end
     return integrand
 end

@@ -33,9 +33,9 @@ mutable struct Ensemble
     num_modes::Int
     max_operator_order::Int
     as_continuum::Bool
-    parameter_groups::Vector{Symbol}
-    parameter_group_indices::Vector{Int}
-    parameter_function_group_indices::Vector{Int}
+    param_groups::Vector{Symbol}
+    distribution_group_indices::Vector{Int}
+    ensemble_function_group_indices::Vector{Int}
     sample_method::Symbol
     sample_num_nodes::Int
     sample_atol::Float64
@@ -47,9 +47,9 @@ mutable struct Ensemble
                       num_modes::Int=-1,
                       max_operator_order::Int=-1,
                       as_continuum::Bool=false,
-                      parameter_groups::Vector{Symbol}=Symbol[],
-                      parameter_group_indices::Vector{Int}=Int[],
-                      parameter_function_group_indices::Vector{Int}=Int[],
+                      param_groups::Vector{Symbol}=Symbol[],
+                      distribution_group_indices::Vector{Int}=Int[],
+                      ensemble_function_group_indices::Vector{Int}=Int[],
                       sample_method::Symbol=:default,
                       sample_num_nodes::Int=25,
                       sample_atol::Float64=1e-9,
@@ -58,8 +58,8 @@ mutable struct Ensemble
                       sampler::Union{Nothing,AbstractEnsembleSample}=nothing,
                       qspace_ref::Union{Nothing,WeakRef}=nothing)
         return new(num_operator_indexes, num_sum_indexes, operator_set, num_modes,
-                   max_operator_order, as_continuum, copy(parameter_groups), copy(parameter_group_indices),
-                   copy(parameter_function_group_indices), sample_method, sample_num_nodes,
+                   max_operator_order, as_continuum, copy(param_groups), copy(distribution_group_indices),
+                   copy(ensemble_function_group_indices), sample_method, sample_num_nodes,
                    sample_atol, sample_rtol, sample_max_iter, sampler, qspace_ref)
     end
     function Ensemble(num_operator_indexes::Int, operator_set::OperatorSet; kwargs...)
@@ -89,14 +89,14 @@ function Base.show(io::IO, ensemble::Ensemble)
     if ensemble.max_operator_order != -1
         print(io, ", max_order=" , ensemble.max_operator_order)
     end
-    if !isempty(ensemble.parameter_groups)
-        print(io, ", parameter_groups=" , ensemble.parameter_groups)
+    if !isempty(ensemble.param_groups)
+        print(io, ", param_groups=" , ensemble.param_groups)
     end
-    if !isempty(ensemble.parameter_group_indices)
-        print(io, ", parameter_group_indices=" , ensemble.parameter_group_indices)
+    if !isempty(ensemble.distribution_group_indices)
+        print(io, ", distribution_group_indices=" , ensemble.distribution_group_indices)
     end
-    if !isempty(ensemble.parameter_function_group_indices)
-        print(io, ", parameter_function_group_indices=" , ensemble.parameter_function_group_indices)
+    if !isempty(ensemble.ensemble_function_group_indices)
+        print(io, ", ensemble_function_group_indices=" , ensemble.ensemble_function_group_indices)
     end
     if ensemble.sampler !== nothing
         sample = ensemble.sampler

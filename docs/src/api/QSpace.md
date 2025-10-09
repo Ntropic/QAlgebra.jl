@@ -25,6 +25,14 @@ SubSpaceDefinitions
 ParameterDefinitions
 ```
 
+## Parameter Groups
+
+```@docs
+ParameterGroupKind
+ParameterGroup
+resolve_param!
+```
+
 ---
 
 ## Predefined Operator Sets

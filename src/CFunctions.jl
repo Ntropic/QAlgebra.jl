@@ -7,7 +7,8 @@ using ComplexRationals
 using SparseArrays
 using ..SparsePermutationTools: SparsePermutation
 using ..QAlgebra: get_default, FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
-using ..Sampler: QDistribution, QEnsembleFunction, QInterpolator, ContinuousSamples, integrate_node_funs
+using ..Sampler: QInterpolator, ContinuousSamples, integrate_node_funs
+using ..ParameterGroups: ParameterGroup
 
 export CFunction, CAbstractDefinition, CTypeDefinition, CIntegralDefinition, ParameterInfo
 export define_cabstract, define_ctype, define_cintegral
@@ -18,7 +19,7 @@ export contains_non_simple_CFunction, Indexed, has_indexed_parameters
 export list_cabstracts, list_ctypes, list_cintegrals
 export where_acting, where_acting!, which_params_acting, which_params_acting!, param_index_tuples
 export which_ensemble_acting, which_ensemble_acting!, substitute, separate_by_cond
-export ParameterValues, set_param!, set_time!, update_t!, get_parameter_index, value, param_value, recompute_functions!, ensure_functions!, compute_integral_weights!
+export ParameterValues, set_param!, set_time!, update_t!, get_parameter_index, value, param_value, recompute_functions!, ensure_functions!, compute_integral_weights!, resolve_param!
 
 import Base: copy, exp, log, length, getindex, iterate, size
 import ComplexRationals: isonelike
@@ -196,8 +197,6 @@ struct ParameterInfo <: AbstractParameterInfo
     param_of_indexes::BitVector
     param_group_by_index::Vector{Int}
     t_index_by_index::Vector{Int}
-    ss_ensemble_indexes_by_group::Vector{Vector{Int}}
-    ss_ensemble_present_by_group::Vector{BitVector}
 
     indexed_parameter_indexes::Vector{Int}
     where_acting_by_parameter::Vector{Vector{BitVector}}
@@ -214,22 +213,11 @@ struct ParameterInfo <: AbstractParameterInfo
     param_is_t::BitVector
 
     function_param_refs::Vector{Union{Nothing,Vector{Int}}}
-    ensemble_group_functions::Vector{Union{Nothing,QEnsembleFunction}}
-    group_distributions::Vector{Union{Nothing,QDistribution}}
-    group_functions::Vector{Union{Nothing,Function}}
-    group_display_signatures::Vector{String}
-    group_kind_codes::Vector{UInt8}
-    group_dependencies::Vector{Vector{Int}}
-    group_initial_values::Vector{Any}
-    group_time_counts::Vector{Int}
-    group_index_sizes::Vector{Vector{Int}}
     param_coords::Vector{Vector{Int}}
-    params_by_group::Vector{Vector{Int}}
-    group_of_t::BitVector
-    group_is_t::BitVector
 
     subspace_info::Any
     param_indexes::ParameterIndexes
+    param_groups::Vector{ParameterGroup}
     abstract_definitions::Vector{CAbstractDefinition}
     custom_ctype::Vector{CTypeDefinition}
     integral_definitions::Vector{AnyCIntegralDefinition}
@@ -238,32 +226,22 @@ struct ParameterInfo <: AbstractParameterInfo
         outer_labels_symbols::Vector{Symbol}, inner_labels_symbols_flat::Vector{Symbol}, outer_labels::Vector{String},
         outer_labels_str::Vector{String}, outer_labels_latex::Vector{String}, params_name::Vector{String},
         params_str::Vector{String}, params_latex::Vector{String}, param_of_indexes::BitVector, param_group_by_index::Vector{Int},
-        t_index_by_index::Vector{Int}, ss_ensemble_indexes_by_group::Vector{Vector{Int}}, ss_ensemble_present_by_group::Vector{BitVector}, indexed_parameter_indexes::Vector{Int},
+        t_index_by_index::Vector{Int}, indexed_parameter_indexes::Vector{Int},
         where_acting_by_parameter::Vector{Vector{BitVector}}, params_acting_by_index::Vector{Vector{BitVector}}, param_index_tuples::Vector{Vector{Tuple{Int,Int}}},
         subspace_index_maps::Vector{Array{SparsePermutation,2}}, t_index_transform::Array{SparsePermutation,2}, indexes_by_t_index::Vector{Vector{Int}},
         indexes_of_t::Vector{Int}, how_many_by_ensemble::Vector{Int}, param_of_t::BitVector, param_is_t::BitVector,
-        function_param_refs::Vector{Union{Nothing,Vector{Int}}},
-        ensemble_group_functions::Vector{Union{Nothing,QEnsembleFunction}},
-        group_distributions::Vector{Union{Nothing,QDistribution}},
-        group_functions::Vector{Union{Nothing,Function}},
-        group_display_signatures::Vector{String},
-        group_kind_codes::Vector{UInt8}, group_dependencies::Vector{Vector{Int}},
-        group_initial_values::Vector{Any},
-        group_time_counts::Vector{Int}, group_index_sizes::Vector{Vector{Int}}, param_coords::Vector{Vector{Int}}, params_by_group::Vector{Vector{Int}},
-        group_of_t::BitVector, group_is_t::BitVector,
-        subspace_info::Any, param_indexes::ParameterIndexes)
+        function_param_refs::Vector{Union{Nothing,Vector{Int}}}, param_coords::Vector{Vector{Int}},
+        subspace_info::Any, param_indexes::ParameterIndexes, param_groups::Vector{ParameterGroup})
         dims = length(inner_labels_symbols_flat)
         new(dims, outer_labels_symbols, inner_labels_symbols_flat, outer_labels,
             outer_labels_str, outer_labels_latex,
             params_name, params_str, params_latex, param_of_indexes,
-            param_group_by_index, t_index_by_index, ss_ensemble_indexes_by_group, ss_ensemble_present_by_group,
+            param_group_by_index, t_index_by_index,
             indexed_parameter_indexes, where_acting_by_parameter, params_acting_by_index, param_index_tuples,
             subspace_index_maps, t_index_transform,
             indexes_by_t_index, indexes_of_t, how_many_by_ensemble, param_of_t, param_is_t,
-            function_param_refs, ensemble_group_functions, group_distributions, group_functions, group_display_signatures,
-            group_kind_codes, group_dependencies, group_initial_values,
-            group_time_counts, group_index_sizes, param_coords, params_by_group, group_of_t, group_is_t,
-            subspace_info, param_indexes, CAbstractDefinition[], CTypeDefinition[], AnyCIntegralDefinition[])
+            function_param_refs, param_coords,
+            subspace_info, param_indexes, param_groups, CAbstractDefinition[], CTypeDefinition[], AnyCIntegralDefinition[])
     end
 end
 function Base.show(io::IO, info::ParameterInfo)

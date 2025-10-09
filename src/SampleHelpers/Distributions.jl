@@ -1,5 +1,7 @@
 export QDistribution, pdf, QNormal, QUniform, QEnsembleFunction
 
+using ..StringUtils: underscore_separate
+
 const PDF_BOUND_ATOL = 1e-10
 const PDF_BOUND_RTOL = 1e-8
 
@@ -92,23 +94,67 @@ function QNormal(mean::Real, std::Real, how_many_stds::Real, num_samples::Int)
 end
 
 """
-    QEnsembleFunction(name, argument_symbols, func)
+    QEnsembleFunction(name, group_indexes, argument_signatures, func)
 
 Metadata wrapper for ensemble parameter functions that depend on other parameters
-(or time) when sampling across ensembles.
+(or time) when sampling across ensembles.  Besides the callable `func`, the
+struct stores how each argument relates to the parent group's abstract indexes
+and which parameter group supplies the samples.
 
+# Arguments
 - `name`: base name of the parameter group.
-- `argument_symbols`: ordered symbols describing function arguments (e.g. `[:t, :alpha, :beta]`).
-- `func`: callable evaluated with arguments matching `argument_symbols`.
+- `group_indexes`: abstract index labels of the parent group (e.g. `["i","j"]`).
+- `argument_signatures`: ordered argument signatures (e.g. `["t", "delta_i"]`).
+- `func`: callable evaluated with arguments matching `argument_signatures`.
 """
 struct QEnsembleFunction
     name::String
     argument_symbols::Vector{Symbol}
     func::Function
-    function QEnsembleFunction(name::String, argument_symbols::Vector{Symbol}, func::Function)
+    argument_group_names::Vector{String}
+    argument_group_indices::Vector{Int}
+    argument_self_index_positions::Vector{Vector{Int}}
+    function QEnsembleFunction(name::String, argument_symbols::Vector{Symbol}, func::Function, argument_group_names::Vector{String}, argument_group_indices::Vector{Int}, argument_self_index_positions::Vector{Vector{Int}})
         isempty(argument_symbols) && error("QEnsembleFunction requires at least one argument symbol; include e.g. t for time or parameter names.")
-        return new(name, argument_symbols, func)
+        return new(name, argument_symbols, func, argument_group_names, argument_group_indices, argument_self_index_positions)
     end
+end
+
+function QEnsembleFunction(name::String,
+                           group_indexes::Vector{String},
+                           argument_signatures::Vector{String},
+                           func::Function)
+    isempty(argument_signatures) && error("QEnsembleFunction requires at least one argument; include e.g. t for time or parameter names.")
+    arg_symbols = Symbol.(argument_signatures)
+    arg_group_names = Vector{String}(undef, length(argument_signatures))
+    self_positions = Vector{Vector{Int}}(undef, length(argument_signatures))
+    for (idx, spec) in enumerate(argument_signatures)
+        if spec == "t"
+            arg_group_names[idx] = "t"
+            self_positions[idx] = Int[]
+            continue
+        end
+        base, tokens = underscore_separate(spec)
+        arg_group_names[idx] = base
+        positions = Vector{Int}(undef, length(tokens))
+        for (pos_idx, tok) in enumerate(tokens)
+            pos = findfirst(==(tok), group_indexes)
+            pos === nothing &&
+                error("Argument \"$spec\" references index \"$tok\" which is not defined on ensemble function group \"$name\".")
+            positions[pos_idx] = pos
+        end
+        self_positions[idx] = positions
+    end
+    return QEnsembleFunction(name,
+                             arg_symbols,
+                             func,
+                             arg_group_names,
+                             zeros(Int, length(argument_signatures)),
+                             self_positions)
+end
+
+function QEnsembleFunction(name::String, argument_symbols::Vector{Symbol}, func::Function)
+    return QEnsembleFunction(name, String[], String.(argument_symbols), func)
 end
 
 function _pdfs_and_scaling(inter::QInterpolator,

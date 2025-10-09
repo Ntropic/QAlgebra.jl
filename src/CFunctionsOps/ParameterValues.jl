@@ -1,28 +1,24 @@
 const _GroupStorage = Union{ComplexF64, Array{ComplexF64}, Vector{Float64}}
 
-export attach_samples!
+export attach_samples!, register_ensemble_sample_size!, resolve_param!
 
 using Base: WeakRef
-using ..Sampler: QEnsembleFunction
+using ..Sampler: QEnsembleFunction, QDistribution, build_discrete_samples, build_continuous_samples
 using ..EnsembleSamples: AbstractEnsembleSample
-
-const KIND_SCALAR = UInt8(1)
-const KIND_TIME_FUNCTION = UInt8(2)
-const KIND_DISTRIBUTION = UInt8(3)
-const KIND_ENSEMBLE_FUNCTION = UInt8(4)
+using ..ParameterGroups: ParameterGroup, ParameterGroupKind,
+                          ParameterGroupScalar, ParameterGroupTimeFunction,
+                          ParameterGroupDistribution, ParameterGroupEnsembleFunction
 
 """
-    ParameterValues(param_info::ParameterInfo; ensemble_group_samples,
-                    ensemble_group_functions, group_functions)
+    ParameterValues(param_info::ParameterInfo; qspace_ref=WeakRef())
 
 Concrete value store that mirrors the parameter layout described by
-`param_info`. Each group owns either a scalar, a time vector, or a dense array
-over `(time, indexes...)`.  The optional keyword arguments allow callers to pass
-in precomputed ensemble sample descriptors (`ensemble_group_samples`), the
-ensemble functions that produce indexed values (`ensemble_group_functions`), and
-plain scalar functions for non-indexed groups (`group_functions`)—the same
-values populated by `QSpace` during construction.  If omitted, entries default
-to `nothing`.
+`param_info`. Each parameter group owns either a scalar, a time vector, or a
+dense array over `(time, indexes...)`. Payloads declared on the shared
+`ParameterGroup` structures (distributions, scalar functions, ensemble
+functions, literals) drive the storage layout and evaluation behaviour. The
+constructor allocates storage and marks which groups are ready based on those
+payloads.
 
 `ParameterValues` keeps lightweight bookkeeping so function-driven groups update
 in a deterministic order: `time_group` points to the explicit time parameter and
@@ -36,90 +32,81 @@ mutable struct ParameterValues
     group_values::Vector{_GroupStorage}
     group_definition_initialized::BitVector
     group_initialized::BitVector
+    group_time_initialized::Vector{Vector{Bool}}
     got_all_definitions::Bool
-    ensemble_group_samples::Vector{Union{Nothing,AbstractEnsembleSample}}
-    ensemble_group_functions::Vector{Union{Nothing,QEnsembleFunction}}
-    group_functions::Vector{Union{Nothing,Function}}
     update_order::Vector{Int}
     time_group::Int
 end
 
-function ParameterValues(param_info::ParameterInfo, ensemble_group_samples::Vector{Union{Nothing,AbstractEnsembleSample}}, ensemble_group_functions::Vector{Union{Nothing,QEnsembleFunction}}, group_functions::Vector{Union{Nothing,Function}}; qspace_ref::WeakRef=WeakRef())
-    group_count = length(param_info.outer_labels_symbols)
-    ensemble_group_functions = copy(ensemble_group_functions)
-    length(ensemble_group_functions) == group_count ||
-        error("Expected $(group_count) ensemble group functions, got $(length(ensemble_group_functions)).")
-    group_functions = copy(group_functions)
-    length(group_functions) == group_count ||
-        error("Expected $(group_count) scalar group functions, got $(length(group_functions)).")
-    length(ensemble_group_samples) == group_count ||
-        error("Expected $(group_count) ensemble group samples, got $(length(ensemble_group_samples)).")
-    ensemble_group_samples = copy(ensemble_group_samples)
+function ParameterValues(param_info::ParameterInfo; qspace_ref::WeakRef=WeakRef())
+    groups = param_info.param_groups
+    group_count = length(groups)
 
     group_values = Vector{_GroupStorage}(undef, group_count)
     group_definition_initialized = falses(group_count)
+    group_initialized = falses(group_count)
+    group_time_initialized = Vector{Vector{Bool}}(undef, group_count)
+
     @inbounds for g in 1:group_count
-        kind_code = param_info.group_kind_codes[g]
-        time_count = param_info.group_time_counts[g]
-        index_sizes = param_info.group_index_sizes[g]
-        if kind_code == KIND_DISTRIBUTION
-            count = length(param_info.params_by_group[g])
+        group = groups[g]
+        time_count = max(group.time_count, 1)
+        group_time_initialized[g] = fill(false, time_count)
+        index_sizes = _effective_index_sizes(group)
+        if group.kind == ParameterGroupDistribution
+            count = length(group.parameter_indices)
             group_values[g] = Vector{Float64}(undef, count)
-            group_definition_initialized[g] = param_info.group_distributions[g] !== nothing
+            group_definition_initialized[g] = group.payload isa QDistribution
             continue
         end
+
         if isempty(index_sizes) && time_count == 1
             group_values[g] = ComplexF64(NaN)
-            group_definition_initialized[g] = (group_functions[g] !== nothing) ||
-                                              (param_info.group_initial_values[g] !== nothing)
-            continue
+        else
+            dims = isempty(index_sizes) ? (time_count,) : (time_count, index_sizes...)
+            group_values[g] = Array{ComplexF64}(undef, dims...)
         end
-        dims = isempty(index_sizes) ? (time_count,) : (time_count, index_sizes...)
-        group_values[g] = Array{ComplexF64}(undef, dims...)
-        if kind_code == KIND_TIME_FUNCTION
-            group_definition_initialized[g] = group_functions[g] !== nothing
-        elseif kind_code == KIND_ENSEMBLE_FUNCTION
-            group_definition_initialized[g] = ensemble_group_functions[g] !== nothing
-        elseif param_info.group_initial_values[g] !== nothing
+
+        if group.kind == ParameterGroupTimeFunction
+            group_definition_initialized[g] = group.payload isa Function
+        elseif group.kind == ParameterGroupEnsembleFunction
+            group_definition_initialized[g] = group.payload isa QEnsembleFunction
+        elseif group.kind == ParameterGroupScalar && group.payload !== nothing
             group_definition_initialized[g] = true
         end
-        if param_info.group_is_t[g]
+
+        if group.is_time_group
             group_definition_initialized[g] = true
         end
     end
 
-    group_initialized = falses(group_count)
     got_all_definitions = all(group_definition_initialized)
-    time_group_idx = findfirst(param_info.group_is_t)
+    time_group_idx = findfirst(group -> group.is_time_group, groups)
     time_group = time_group_idx === nothing ? 0 : time_group_idx
-    update_order = _compute_update_order(param_info.group_kind_codes, time_group)
+    update_order = _compute_update_order(groups, time_group)
 
     pv = ParameterValues(qspace_ref, param_info, group_values, group_definition_initialized,
-                         group_initialized, got_all_definitions, ensemble_group_samples,
-                         ensemble_group_functions, group_functions, update_order, time_group)
+                         group_initialized, group_time_initialized, got_all_definitions, update_order, time_group)
 
     @inbounds for g in 1:group_count
-        init_val = param_info.group_initial_values[g]
-        init_val === nothing && continue
-        _set_group!(pv, g, init_val; allow_function=true)
+        group = groups[g]
+        if group.kind == ParameterGroupScalar && group.payload !== nothing
+            _set_group!(pv, g, group.payload; allow_function=true)
+        end
     end
 
-    update_time_group(pv)
-    update_functions(pv)
-    update_ensemble_group_functions(pv)
+    recompute_functions!(pv, 1)
 
     return pv
 end
 
-function _compute_update_order(group_kind_codes::Vector{UInt8}, time_group::Int)
+function _compute_update_order(groups::Vector{ParameterGroup}, time_group::Int)
     function_groups = Int[]
     ensemble_groups = Int[]
-    @inbounds for (idx, code) in enumerate(group_kind_codes)
-        if idx == time_group
-            continue
-        elseif code == KIND_TIME_FUNCTION
+    @inbounds for (idx, group) in enumerate(groups)
+        idx == time_group && continue
+        if group.kind == ParameterGroupTimeFunction
             push!(function_groups, idx)
-        elseif code == KIND_ENSEMBLE_FUNCTION
+        elseif group.kind == ParameterGroupEnsembleFunction
             push!(ensemble_groups, idx)
         end
     end
@@ -128,31 +115,73 @@ function _compute_update_order(group_kind_codes::Vector{UInt8}, time_group::Int)
         isempty(ensemble_groups) ? function_groups : vcat(function_groups, ensemble_groups)
 end
 
-@inline function _coords_tuple(coords::Vector{Int})
+@inline function _effective_index_sizes(group::ParameterGroup)
+    sizes = group.sample_sizes
+    if !isempty(sizes) && length(sizes) == length(group.indexes) && all(>(0), sizes)
+        return sizes
+    end
+    return group.index_sizes
+end
+
+@inline function _coords_tuple(coords::AbstractVector{Int})
     return Tuple(coords)
 end
 
+@inline function _reset_group_flags!(pv::ParameterValues, group_idx::Int)
+    flags = pv.group_time_initialized[group_idx]
+    fill!(flags, false)
+    pv.group_initialized[group_idx] = false
+end
+
+@inline function _mark_slot_initialized!(pv::ParameterValues, group_idx::Int, slot::Int)
+    flags = pv.group_time_initialized[group_idx]
+    slot = clamp(slot, 1, length(flags))
+    flags[slot] = true
+    pv.group_initialized[group_idx] = flags[1]
+end
+
+@inline function _clamp_slot(pv::ParameterValues, group_idx::Int, slot::Int)
+    flags = pv.group_time_initialized[group_idx]
+    return clamp(slot, 1, length(flags))
+end
+
+@inline function _ensure_group_slot!(pv::ParameterValues, group_idx::Int, slot::Int)
+    slot_idx = _clamp_slot(pv, group_idx, slot)
+    flags = pv.group_time_initialized[group_idx]
+    flags[slot_idx] && return
+    group = pv.param_info.param_groups[group_idx]
+    if group.kind == ParameterGroupTimeFunction
+        _evaluate_scalar_function_group!(pv, group_idx, slot_idx)
+    elseif group.kind == ParameterGroupEnsembleFunction
+        _evaluate_qensemble_group!(pv, group_idx, slot_idx)
+    else
+        flags[slot_idx] = true
+        pv.group_initialized[group_idx] = flags[1]
+    end
+end
+
 @inline function _distribution_slot(info::ParameterInfo, group_idx::Int, param_idx::Int)
-    params = info.params_by_group[group_idx]
+    params = info.param_groups[group_idx].parameter_indices
     pos = findfirst(==(param_idx), params)
-    pos === nothing && error("Parameter $(info.params_str[param_idx]) does not belong to group $(info.outer_labels_symbols[group_idx]).")
+    pos === nothing && error("Parameter $(info.params_str[param_idx]) does not belong to group $(info.param_groups[group_idx].name).")
     return pos
 end
 
 @inline function _distribution_slot(info::ParameterInfo, group_idx::Int, coords::Vector{Int})
-    params = info.params_by_group[group_idx]
+    params = info.param_groups[group_idx].parameter_indices
     for (pos, idx) in enumerate(params)
         info.param_coords[idx] == coords && return pos
     end
-    error("No parameter with coordinates $(coords) in group $(info.outer_labels_symbols[group_idx]).")
+    error("No parameter with coordinates $(coords) in group $(info.param_groups[group_idx].name).")
 end
 
 function _store_value!(pv::ParameterValues, param_idx::Int, value; allow_function::Bool=false)
     info = pv.param_info
     group_idx = info.param_group_by_index[param_idx]
-    if !allow_function && (pv.group_functions[group_idx] !== nothing || pv.ensemble_group_functions[group_idx] !== nothing)
-        name = info.outer_labels_symbols[group_idx]
-        error("Cannot assign values to function-defined parameter group $(name).")
+    group = info.param_groups[group_idx]
+    if !allow_function && ((group.kind == ParameterGroupTimeFunction && group.payload !== nothing) ||
+                            (group.kind == ParameterGroupEnsembleFunction && group.payload !== nothing))
+        error("Cannot assign values to function-defined parameter group $(group.name).")
     end
     coords = info.param_coords[param_idx]
     storage = pv.group_values[group_idx]
@@ -169,7 +198,8 @@ function _store_value!(pv::ParameterValues, param_idx::Int, value; allow_functio
     else
         error("Unsupported storage type $(typeof(storage)) for group $(group_idx).")
     end
-    pv.group_initialized[group_idx] = true
+    slot_idx = length(coords) >= 1 ? coords[1] : 1
+    _mark_slot_initialized!(pv, group_idx, slot_idx)
     pv.group_definition_initialized[group_idx] = true
     pv.got_all_definitions = all(pv.group_definition_initialized)
     return value
@@ -205,33 +235,38 @@ function _fill_group!(pv::ParameterValues, group_idx::Int, value)
     else
         error("Unsupported storage type $(typeof(storage)) for group $(group_idx).")
     end
-    pv.group_initialized[group_idx] = true
+    flags = pv.group_time_initialized[group_idx]
+    fill!(flags, true)
+    pv.group_initialized[group_idx] = flags[1]
     return value
 end
 
 function _set_group_array!(pv::ParameterValues, group_idx::Int, value::AbstractArray)
     info = pv.param_info
-    time_count = info.group_time_counts[group_idx]
-    index_sizes = info.group_index_sizes[group_idx]
+    group = info.param_groups[group_idx]
+    time_count = max(group.time_count, 1)
+    index_sizes = group.index_sizes
     expected_dims = isempty(index_sizes) ? (time_count,) : (time_count, index_sizes...)
     storage = pv.group_values[group_idx]
     if storage isa ComplexF64
         length(value) == 1 ||
-            error("Value shape $(size(value)) does not match expected scalar for group $(info.outer_labels_symbols[group_idx]).")
+            error("Value shape $(size(value)) does not match expected scalar for group $(group.name).")
         pv.group_values[group_idx] = ComplexF64(value[1])
     elseif storage isa Array{ComplexF64}
         isempty(index_sizes) && time_count == 1 && return _fill_group!(pv, group_idx, value[1])
         size(value) == expected_dims ||
-            error("Value shape $(size(value)) does not match expected $(expected_dims) for group $(info.outer_labels_symbols[group_idx]).")
+            error("Value shape $(size(value)) does not match expected $(expected_dims) for group $(group.name).")
         storage .= ComplexF64.(value)
     elseif storage isa Vector{Float64}
         length(value) == length(storage) ||
-            error("Value length $(length(value)) does not match expected $(length(storage)) for group $(info.outer_labels_symbols[group_idx]).")
+            error("Value length $(length(value)) does not match expected $(length(storage)) for group $(group.name).")
         storage .= Float64.(value)
     else
-        error("Group $(info.outer_labels_symbols[group_idx]) does not accept array assignments.")
+        error("Group $(group.name) does not accept array assignments.")
     end
-    pv.group_initialized[group_idx] = true
+    flags = pv.group_time_initialized[group_idx]
+    fill!(flags, true)
+    pv.group_initialized[group_idx] = flags[1]
     return value
 end
 
@@ -242,9 +277,10 @@ end
 
 function _set_group!(pv::ParameterValues, group_idx::Int, value; allow_function::Bool=false)
     info = pv.param_info
-    if !allow_function &&
-       (pv.group_functions[group_idx] !== nothing || pv.ensemble_group_functions[group_idx] !== nothing)
-        error("Cannot assign values to function-defined parameter group $(info.outer_labels_symbols[group_idx]).")
+    group = info.param_groups[group_idx]
+    if !allow_function && ((group.kind == ParameterGroupTimeFunction && group.payload !== nothing) ||
+                           (group.kind == ParameterGroupEnsembleFunction && group.payload !== nothing))
+        error("Cannot assign values to function-defined parameter group $(group.name).")
     end
     if value isa Number
         _fill_group!(pv, group_idx, value)
@@ -283,29 +319,30 @@ function update_t!(pv::ParameterValues, value, slot::Int=0)
     end
     idx === nothing && error("No time parameter t$(slot) registered in ParameterValues.")
     set_param!(pv, idx, value)
-    recompute_functions!(pv)
+    slot_idx = slot + 1
+    pv.got_all_definitions && recompute_functions!(pv, slot_idx)
     return value
 end
 
 set_time!(pv::ParameterValues, value) = update_t!(pv, value, 0)
+set_time!(pv::ParameterValues, value, slot::Int) = update_t!(pv, value, slot)
 
-function _lookup_storage_value(info::ParameterInfo, storage, group_idx::Int, coords::Vector{Int}, param_label::String, initialized::Bool)
+function _lookup_storage_value(info::ParameterInfo, storage, group_idx::Int, coords::Vector{Int})
     if storage isa ComplexF64
-        initialized || error("Parameter $(param_label) is unset.")
         return storage
     elseif storage isa Array{ComplexF64}
-        idxs = _coords_tuple(coords)
-        isassigned(storage, idxs...) ||
-            error("Parameter $(param_label) is unset.")
-        return storage[idxs...]
+        group = info.param_groups[group_idx]
+        idxs = if !isempty(group.sample_sizes) && ndims(storage) == length(coords) - 1
+            _coords_tuple(@view coords[2:end])
+        else
+            _coords_tuple(coords)
+        end
+        return @inbounds storage[idxs...]
     elseif storage isa Vector{Float64}
         position = _distribution_slot(info, group_idx, coords)
-        isassigned(storage, position) ||
-            error("Parameter $(param_label) is unset.")
-        return storage[position]
-    else
-        error("Unsupported storage type $(typeof(storage)) for $(param_label).")
+        return @inbounds storage[position]
     end
+    error("Unsupported storage type $(typeof(storage)) for group $(group_idx).")
 end
 
 @inline function _raw_value(pv::ParameterValues, param_idx::Int)
@@ -314,52 +351,52 @@ end
     storage = pv.group_values[group_idx]
     if storage isa Vector{Float64}
         position = _distribution_slot(info, group_idx, param_idx)
-        isassigned(storage, position) ||
-            error("Parameter $(info.params_str[param_idx]) is unset.")
-        return storage[position]
+        return @inbounds storage[position]
     end
     coords = info.param_coords[param_idx]
-    return _lookup_storage_value(info, storage, group_idx, coords, info.params_str[param_idx], pv.group_initialized[group_idx])
+    slot_idx = length(coords) >= 1 ? coords[1] : 1
+    slot_idx = _clamp_slot(pv, group_idx, slot_idx)
+    _ensure_group_slot!(pv, group_idx, slot_idx)
+    coords_adj = copy(coords)
+    if !isempty(coords_adj)
+        coords_adj[1] = slot_idx
+    end
+    return _lookup_storage_value(info, storage, group_idx, coords_adj)
 end
 
 function value(pv::ParameterValues, param_idx::Int)
-    recompute_functions!(pv)
+    coords = pv.param_info.param_coords[param_idx]
+    slot_idx = length(coords) >= 1 ? coords[1] : 1
+    recompute_functions!(pv, slot_idx)
     return _raw_value(pv, param_idx)
 end
-
-
-value(pv::ParameterValues, param_idx::Int, ::Nothing) = value(pv, param_idx)
 
 function _resolve_index_coords(info::ParameterInfo, param_idx::Int, indexes::ConcreteIndexes)
     tuples = info.param_index_tuples[param_idx]
     coords = copy(info.param_coords[param_idx])
-    for (offset, (ensemble, inner)) in enumerate(tuples)
-        ensemble <= length(indexes.indexes) ||
-            error("Concrete indexes missing ensemble $(ensemble) needed for $(info.params_str[param_idx]).")
-        entries = indexes.indexes[ensemble]
-        inner <= length(entries) ||
-            error("Concrete indexes missing entry $(inner) for ensemble $(ensemble) in parameter $(info.params_str[param_idx]).")
-        idx_val = entries[inner]
-        idx_val > 0 ||
-            error("Concrete index for ensemble $(ensemble) entry $(inner) is unset (<=0) for parameter $(info.params_str[param_idx]).")
-        coords[offset + 1] = idx_val
+    @inbounds for (offset, (ensemble, inner)) in enumerate(tuples)
+        coords[offset + 1] = indexes.indexes[ensemble][inner]
     end
     return coords
 end
 
 function value(pv::ParameterValues, param_idx::Int, indexes::ConcreteIndexes)
-    recompute_functions!(pv)
     info = pv.param_info
     coords = _resolve_index_coords(info, param_idx, indexes)
+    slot_idx = length(coords) >= 1 ? coords[1] : 1
+    recompute_functions!(pv, slot_idx)
     group_idx = info.param_group_by_index[param_idx]
     storage = pv.group_values[group_idx]
     if storage isa Vector{Float64}
         position = _distribution_slot(info, group_idx, coords)
-        isassigned(storage, position) ||
-            error("Parameter $(info.params_str[param_idx]) is unset.")
-        return storage[position]
+        return @inbounds storage[position]
     end
-    return _lookup_storage_value(info, storage, group_idx, coords, info.params_str[param_idx], pv.group_initialized[group_idx])
+    slot_idx = _clamp_slot(pv, group_idx, slot_idx)
+    coords_adj = copy(coords)
+    if !isempty(coords_adj)
+        coords_adj[1] = slot_idx
+    end
+    return _lookup_storage_value(info, storage, group_idx, coords_adj)
 end
 
 function value(pv::ParameterValues, name::Symbol, indexes::Union{Nothing,ConcreteIndexes}=nothing)
@@ -376,7 +413,8 @@ value(pv::ParameterValues, name::String, indexes::Union{Nothing,ConcreteIndexes}
 
 function Base.show(io::IO, pv::ParameterValues)
     info = pv.param_info
-    group_count = length(info.outer_labels_symbols)
+    groups = info.param_groups
+    group_count = length(groups)
     if get(io, :compact, false)
         print(io, "ParameterValues(", group_count, " groups)")
         return
@@ -384,9 +422,9 @@ function Base.show(io::IO, pv::ParameterValues)
     println(io, "ParameterValues:")
     for idx in 1:group_count
         status = pv.group_initialized[idx] ? "✓" : "x"
-        base_name = info.group_display_signatures[idx]
-        kind_code = info.group_kind_codes[idx]
-        pdf_hint = kind_code == KIND_DISTRIBUTION ? " (pdf)" : ""
+        group = groups[idx]
+        base_name = group.display_signature
+        pdf_hint = group.kind == ParameterGroupDistribution ? " (pdf)" : ""
         storage = pv.group_values[idx]
         size_str = if storage isa ComplexF64
             "1"
@@ -402,74 +440,263 @@ function Base.show(io::IO, pv::ParameterValues)
     end
 end
 
-@inline function _evaluate_scalar_function_group!(pv::ParameterValues, group_idx::Int)
-    func = pv.group_functions[group_idx]
-    func === nothing && return
+@inline function _evaluate_scalar_function_group!(pv::ParameterValues, group_idx::Int, slot::Int)
     info = pv.param_info
-    for idx in info.params_by_group[group_idx]
+    group = info.param_groups[group_idx]
+    func = group.payload
+    func isa Function || return
+    slot_idx = _clamp_slot(pv, group_idx, slot)
+    for idx in group.parameter_indices
+        coords = info.param_coords[idx]
+        if group.of_t && coords[1] != slot_idx
+            continue
+        end
         refs = info.function_param_refs[idx]
         if refs === nothing
             result = func()
         else
-            if any(!pv.group_initialized[info.param_group_by_index[ref]] for ref in refs)
-                continue
-            end
             args = map(refs) do ref
+                dep_group = info.param_group_by_index[ref]
+                dep_coords = info.param_coords[ref]
+                _ensure_group_slot!(pv, dep_group, dep_coords[1])
                 _raw_value(pv, ref)
             end
             result = func(args...)
         end
         _store_value!(pv, idx, result; allow_function=true)
     end
-    pv.group_initialized[group_idx] = true
+    if group.of_t
+        _mark_slot_initialized!(pv, group_idx, slot_idx)
+    else
+        flags = pv.group_time_initialized[group_idx]
+        fill!(flags, true)
+        pv.group_initialized[group_idx] = true
+    end
 end
 
-@inline function _evaluate_qensemble_group!(pv::ParameterValues, group_idx::Int)
+# Fallback evaluator for ensemble groups without full sample data.
+@inline function _evaluate_qensemble_group_paramwise!(pv::ParameterValues, group_idx::Int, slot::Int)
     info = pv.param_info
-    func = pv.ensemble_group_functions[group_idx]
-    func === nothing && return
-    for idx in info.params_by_group[group_idx]
+    group = info.param_groups[group_idx]
+    func = group.payload
+    func isa QEnsembleFunction || return
+    slot_idx = _clamp_slot(pv, group_idx, slot)
+    for idx in group.parameter_indices
         refs = info.function_param_refs[idx]
         refs === nothing && continue
-        if any(!pv.group_initialized[info.param_group_by_index[ref]] for ref in refs)
+        coords = info.param_coords[idx]
+        if group.of_t && coords[1] != slot_idx
             continue
         end
         args = map(refs) do ref
+            dep_group = info.param_group_by_index[ref]
+            dep_coords = info.param_coords[ref]
+            _ensure_group_slot!(pv, dep_group, dep_coords[1])
             _raw_value(pv, ref)
         end
         result = func.func(args...)
         _store_value!(pv, idx, result; allow_function=true)
     end
-    pv.group_initialized[group_idx] = true
+    if group.of_t
+        _mark_slot_initialized!(pv, group_idx, slot_idx)
+    else
+        flags = pv.group_time_initialized[group_idx]
+        fill!(flags, true)
+        pv.group_initialized[group_idx] = true
+    end
 end
 
-function update_time_group(pv::ParameterValues)
+@inline function _time_value(pv::ParameterValues, time_group_idx::Int, t_slot::Int)
+    if time_group_idx == 0
+        return t_slot - 1
+    end
+    slot_idx = _clamp_slot(pv, time_group_idx, t_slot)
+    _ensure_group_slot!(pv, time_group_idx, slot_idx)
+    storage = pv.group_values[time_group_idx]
+    if storage isa AbstractArray
+        return storage[slot_idx]
+    elseif storage isa AbstractVector
+        return storage[slot_idx]
+    else
+        return storage
+    end
+end
+
+@inline function _extract_storage_value(storage, indices::Tuple)
+    if storage isa AbstractArray
+        return isempty(indices) ? storage[] : storage[indices...]
+    elseif storage isa AbstractVector
+        isempty(indices) && error("Vector storage expects at least one index.")
+        length(indices) == 1 || error("Vector storage expects one index, got $(length(indices)).")
+        return storage[first(indices)]
+    else
+        return storage
+    end
+end
+
+@inline function _argument_value(pv::ParameterValues,
+                                 arg_group_idx::Int,
+                                 t_slot::Int,
+                                 sample_coords::Vector{Int},
+                                 self_positions::Vector{Int})
+    if arg_group_idx == 0
+        return t_slot - 1
+    end
+    info = pv.param_info
+    group = info.param_groups[arg_group_idx]
+    slot_idx = _clamp_slot(pv, arg_group_idx, t_slot)
+    _ensure_group_slot!(pv, arg_group_idx, slot_idx)
+    storage = pv.group_values[arg_group_idx]
+    time_indices = group.of_t ? (slot_idx,) : ()
+    if isempty(group.indexes)
+        return _extract_storage_value(storage, time_indices)
+    end
+    sub_indices = isempty(self_positions) ? Int[] : [sample_coords[pos] for pos in self_positions]
+    length(sub_indices) == length(group.indexes) ||
+        error("Mismatch between argument sample positions and target group indexes for group $(group.name).")
+    indices_tuple = group.of_t ? (time_indices[1], sub_indices...) : Tuple(sub_indices)
+    return _extract_storage_value(storage, indices_tuple)
+end
+
+# Strip spurious zero-imaginary parts before passing user payloads.
+@inline function _normalize_argument(val)
+    if val isa Complex
+        imag(val) == 0 ? real(val) : val
+    else
+        val
+    end
+end
+
+# Call QEnsembleFunction safely, retrying with truncated arguments if needed.
+@inline function _call_ensemble_function(func::QEnsembleFunction, args::Vector)
+    try
+        return func.func(args...)
+    catch err
+        if err isa MethodError && err.f === func.func
+            arities = map(m -> m.nargs - 1, methods(func.func))
+            if !isempty(arities)
+                target = maximum(arities)
+                if target < length(args)
+                    return func.func(args[1:target]...)
+                end
+            end
+        end
+        rethrow(err)
+    end
+end
+
+# Compute an ensemble-function group when sample grids are available.
+@inline function _evaluate_qensemble_group_samples!(pv::ParameterValues, group_idx::Int, slot::Int)
+    info = pv.param_info
+    group = info.param_groups[group_idx]
+    func = group.payload::QEnsembleFunction
+    sample_sizes = group.sample_sizes
+    length(sample_sizes) == length(group.indexes) && all(>(0), sample_sizes) || return false
+    slot_idx = _clamp_slot(pv, group_idx, slot)
+    for (arg_pos, dep_group_idx) in pairs(func.argument_group_indices)
+        dep_group_idx == 0 && continue
+        dep_group = info.param_groups[dep_group_idx]
+        dep_slot = dep_group.of_t ? slot_idx : 1
+        _ensure_group_slot!(pv, dep_group_idx, dep_slot)
+    end
+    _ensure_ensemble_storage!(pv, group_idx)
+    storage = pv.group_values[group_idx]
+    time_count = max(group.time_count, 1)
+    storage isa AbstractArray{ComplexF64} || return false
+    size(storage, 1) == time_count || return false
+    args = Vector{Any}(undef, length(func.argument_symbols))
+    sample_axis_count = length(sample_sizes)
+    if sample_axis_count == 0
+        sample_coords = Int[]
+        @inbounds for (arg_pos, arg_name) in pairs(func.argument_group_names)
+            dep_group_idx = func.argument_group_indices[arg_pos]
+            dep_group = info.param_groups[dep_group_idx]
+            dep_slot = dep_group.of_t ? slot_idx : 1
+            if arg_name == "t"
+                args[arg_pos] = _normalize_argument(_time_value(pv, dep_group_idx, slot_idx))
+            else
+                arg_val = _argument_value(pv, dep_group_idx, dep_slot, sample_coords, func.argument_self_index_positions[arg_pos])
+                args[arg_pos] = _normalize_argument(arg_val)
+            end
+        end
+        result = _call_ensemble_function(func, args)
+        storage[slot_idx] = ComplexF64(result)
+        _mark_slot_initialized!(pv, group_idx, slot_idx)
+        return true
+    end
+    dims = Tuple(sample_sizes)
+    size(storage) == (time_count, dims...) || return false
+    sample_coords = Vector{Int}(undef, sample_axis_count)
+    for CI in CartesianIndices(dims)
+        @inbounds for k in 1:sample_axis_count
+            sample_coords[k] = CI[k]
+        end
+        @inbounds for (arg_pos, arg_name) in pairs(func.argument_group_names)
+            dep_group_idx = func.argument_group_indices[arg_pos]
+            dep_group = info.param_groups[dep_group_idx]
+            dep_slot = dep_group.of_t ? slot_idx : 1
+            if arg_name == "t"
+                args[arg_pos] = _normalize_argument(_time_value(pv, dep_group_idx, slot_idx))
+            else
+                arg_val = _argument_value(pv, dep_group_idx, dep_slot, sample_coords, func.argument_self_index_positions[arg_pos])
+                args[arg_pos] = _normalize_argument(arg_val)
+            end
+        end
+        result = _call_ensemble_function(func, args)
+        idxs = (slot_idx, sample_coords...)
+        storage[idxs...] = ComplexF64(result)
+    end
+    _mark_slot_initialized!(pv, group_idx, slot_idx)
+    return true
+end
+
+@inline function _evaluate_qensemble_group!(pv::ParameterValues, group_idx::Int, slot::Int)
+    info = pv.param_info
+    group = info.param_groups[group_idx]
+    func = group.payload
+    func isa QEnsembleFunction || return
+    _evaluate_qensemble_group_samples!(pv, group_idx, slot) && return
+    _evaluate_qensemble_group_paramwise!(pv, group_idx, slot)
+end
+
+# Execute scalar time and function groups in dependency order.
+function update_time_group(pv::ParameterValues, slot::Int=1)
     group_count = length(pv.group_values)
     time_group = pv.time_group
     (0 < time_group <= group_count) || return pv
-    if pv.group_functions[time_group] !== nothing
-        _evaluate_scalar_function_group!(pv, time_group)
-    elseif pv.ensemble_group_functions[time_group] !== nothing
-        _evaluate_qensemble_group!(pv, time_group)
+    group = pv.param_info.param_groups[time_group]
+    slot_idx = _clamp_slot(pv, time_group, slot)
+    if group.kind == ParameterGroupTimeFunction && group.payload isa Function
+        _evaluate_scalar_function_group!(pv, time_group, slot_idx)
+    elseif group.kind == ParameterGroupEnsembleFunction && group.payload isa QEnsembleFunction
+        _evaluate_qensemble_group!(pv, time_group, slot_idx)
     end
     return pv
 end
 
-function update_functions(pv::ParameterValues)
+# Recompute all pure function groups (no ensemble coupling).
+function update_functions(pv::ParameterValues, slot::Int=1)
     isempty(pv.update_order) && return pv
     for g in pv.update_order
         g == pv.time_group && continue
-        pv.group_functions[g] === nothing && continue
-        _evaluate_scalar_function_group!(pv, g)
+        group = pv.param_info.param_groups[g]
+        group.kind == ParameterGroupTimeFunction || continue
+        group.payload isa Function || continue
+        slot_idx = _clamp_slot(pv, g, slot)
+        _evaluate_scalar_function_group!(pv, g, slot_idx)
     end
     return pv
 end
 
-function update_ensemble_group_functions(pv::ParameterValues)
+# Recompute ensemble-driven groups, respecting dependency readiness.
+function update_ensemble_group_functions(pv::ParameterValues, slot::Int=1)
     isempty(pv.update_order) && return pv
     for g in pv.update_order
-        pv.ensemble_group_functions[g] === nothing && continue
-        _evaluate_qensemble_group!(pv, g)
+        group = pv.param_info.param_groups[g]
+        group.kind == ParameterGroupEnsembleFunction || continue
+        group.payload isa QEnsembleFunction || continue
+        slot_idx = _clamp_slot(pv, g, slot)
+        _evaluate_qensemble_group!(pv, g, slot_idx)
     end
     return pv
 end
@@ -482,17 +709,15 @@ dependencies and ensemble ordering. Scalar groups driven by pure functions are
 updated before time-dependent ensembles so that downstream evaluations see the
 latest values.
 """
-function recompute_functions!(pv::ParameterValues)
-    update_time_group(pv)
-    update_functions(pv)
-    update_ensemble_group_functions(pv)
+# Ensure every function-backed group reflects the latest inputs.
+function recompute_functions!(pv::ParameterValues, slot::Int=1)
+    update_time_group(pv, slot)
+    update_functions(pv, slot)
+    update_ensemble_group_functions(pv, slot)
     return pv
 end
 
 ensure_functions!(pv::ParameterValues) = recompute_functions!(pv)
-
-param_value(pv::ParameterValues, args...) = value(pv, args...)
-
 
 function _assign_group_storage!(storage, values::AbstractVector{<:Real})
     if storage isa Vector{Float64}
@@ -509,15 +734,244 @@ function _assign_group_storage!(storage, values::AbstractVector{<:Real})
     end
 end
 
+# Resize ensemble storage to match the available sample counts.
+function _ensure_ensemble_storage!(pv::ParameterValues, group_idx::Int)
+    info = pv.param_info
+    group = info.param_groups[group_idx]
+    sizes = group.sample_sizes
+    isempty(sizes) && return
+    length(sizes) == length(group.indexes) || return
+    all(>(0), sizes) || return
+    time_count = max(group.time_count, 1)
+    dims = isempty(group.indexes) ? (time_count,) : (time_count, sizes...)
+    storage = pv.group_values[group_idx]
+    if storage isa Array{ComplexF64} && size(storage) == dims
+        return
+    end
+    pv.group_values[group_idx] = Array{ComplexF64}(undef, dims)
+    _reset_group_flags!(pv, group_idx)
+end
+
+# Record sample counts for each ensemble index of a group.
+function _update_group_sample_sizes!(pv::ParameterValues, group_idx::Int, positions::Vector{Int}, sample_count::Int)
+    info = pv.param_info
+    group = info.param_groups[group_idx]
+    isempty(group.indexes) && return
+    isempty(positions) && return
+    n = length(group.indexes)
+    if isempty(group.sample_sizes) || length(group.sample_sizes) != n
+        group.sample_sizes = fill(0, n)
+    end
+    for pos in positions
+        1 <= pos <= n || error("Sample size position $(pos) out of bounds for group $(group.name).")
+        group.sample_sizes[pos] = sample_count
+    end
+    if group.kind == ParameterGroupEnsembleFunction && all(>(0), group.sample_sizes)
+        _ensure_ensemble_storage!(pv, group_idx)
+    end
+    _reset_group_flags!(pv, group_idx)
+end
+
+# Broadcast a new ensemble sample size to every dependent group.
+function register_ensemble_sample_size!(pv::ParameterValues, outer_idx::Int, sample_count::Int)
+    info = pv.param_info
+    for (group_idx, group) in enumerate(info.param_groups)
+        positions = findall(==(outer_idx), group.index_outer_subspaces)
+        isempty(positions) && continue
+        _update_group_sample_sizes!(pv, group_idx, positions, sample_count)
+    end
+    return pv
+end
+
+# Assign raw sample vectors to their owning groups.
 function attach_samples!(pv::ParameterValues, sample::AbstractEnsembleSample)
+    info = pv.param_info
     for (col, group_idx) in enumerate(sample.group_indices)
         values = sample.samples[:, col]
+        group = info.param_groups[group_idx]
+        if !isempty(group.indexes)
+            positions = collect(eachindex(group.indexes))
+            _update_group_sample_sizes!(pv, group_idx, positions, length(values))
+        else
+            _reset_group_flags!(pv, group_idx)
+        end
         storage = pv.group_values[group_idx]
         pv.group_values[group_idx] = _assign_group_storage!(storage, values)
-        pv.group_initialized[group_idx] = true
-        pv.ensemble_group_samples[group_idx] = sample
+        flags = pv.group_time_initialized[group_idx]
+        fill!(flags, true)
+        pv.group_initialized[group_idx] = flags[1]
         pv.group_definition_initialized[group_idx] = true
     end
     pv.got_all_definitions = all(pv.group_definition_initialized)
     return sample
+end
+
+"""
+    resolve_param!(qspace, group_name, payload)
+
+Attach or update the payload for the parameter group identified by
+`group_name` on an existing `qspace`.  The helper validates the payload type
+against the group's declared kind, updates the shared `ParameterGroup` record,
+marks the corresponding storage in `qspace.param_values` as needing refresh,
+and, when applicable, rebuilds ensemble samplers so newly-specified
+distributions take effect.  Calling [`ensure_functions!`](@ref) is handled
+internally.
+
+`group_name` may be a `Symbol` or `String`.  Supported payloads:
+
+  * `Number` – literal value for scalar groups.
+  * `Function` – definition for time/ensemble function groups (the latter are
+    wrapped into a `QEnsembleFunction`).
+  * `QDistribution` – distribution backing ensemble sampling.
+
+Passing `nothing` is not supported; construct a fresh `QSpace` if you need to
+remove a definition. Returns the modified `qspace` for convenience.
+"""
+function resolve_param!(qspace, group_name, payload)
+    info = qspace.param_info
+    groups = info.param_groups
+    idx = get(qspace.parameter_dicts.group_name_to_index, Symbol(group_name)) do
+        error("Unknown parameter group $(group_name).")
+    end
+    group = groups[idx]
+    kind = group.kind
+    old_payload = group.payload
+    payload === nothing &&
+        error("resolve_param! cannot remove payloads; construct a new QSpace if you need to clear definitions.")
+
+    if kind == ParameterGroupScalar
+        payload isa Number ||
+            error("Scalar group $(group.name) expects a literal number payload.")
+    elseif kind == ParameterGroupTimeFunction
+        payload === nothing || payload isa Function ||
+            error("Time-function group $(group.name) expects a Function payload.")
+    elseif kind == ParameterGroupDistribution
+        payload === nothing || payload isa QDistribution ||
+            error("Distribution group $(group.name) expects a QDistribution payload.")
+    elseif kind == ParameterGroupEnsembleFunction
+        payload === nothing || payload isa QEnsembleFunction || payload isa Function ||
+            error("Ensemble-function group $(group.name) expects a QEnsembleFunction or plain Function payload.")
+    end
+
+    assigned_payload = payload
+    if kind == ParameterGroupEnsembleFunction
+        if payload isa Function
+            assigned_payload = QEnsembleFunction(String(group.name), group.function_args, payload)
+        elseif payload isa QEnsembleFunction
+            assigned_payload = QEnsembleFunction(String(group.name), group.function_args, payload.func)
+        end
+    end
+    if kind in (ParameterGroupDistribution, ParameterGroupEnsembleFunction) &&
+       old_payload !== nothing && assigned_payload !== nothing && old_payload !== assigned_payload
+        @warn "Overwriting payload for parameter group $(group.name)."
+    end
+
+    group.payload = assigned_payload
+
+    pv = qspace.param_values
+    if kind == ParameterGroupDistribution
+        pv.group_definition_initialized[idx] = assigned_payload isa QDistribution
+        _reset_group_flags!(pv, idx)
+    elseif kind == ParameterGroupScalar
+        pv.group_definition_initialized[idx] = true
+        pv.group_time_initialized[idx] .= true
+        pv.group_initialized[idx] = true
+    elseif kind == ParameterGroupTimeFunction
+        pv.group_definition_initialized[idx] = assigned_payload isa Function
+        _reset_group_flags!(pv, idx)
+    elseif kind == ParameterGroupEnsembleFunction
+        pv.group_definition_initialized[idx] = assigned_payload isa QEnsembleFunction
+        _reset_group_flags!(pv, idx)
+        if assigned_payload isa QEnsembleFunction
+            time_group_idx = findfirst(==(Symbol("t")), info.outer_labels_symbols)
+            for arg_pos in eachindex(assigned_payload.argument_symbols)
+                arg_name = assigned_payload.argument_group_names[arg_pos]
+                if arg_name == "t"
+                    assigned_payload.argument_group_indices[arg_pos] = time_group_idx === nothing ? 0 : time_group_idx
+                    continue
+                end
+                target_idx = findfirst(==(Symbol(arg_name)), info.outer_labels_symbols)
+                target_idx === nothing &&
+                    error("resolve_param!: ensemble function $(group.name) references unknown parameter group \"$arg_name\".")
+                assigned_payload.argument_group_indices[arg_pos] = target_idx
+                target_group = groups[target_idx]
+                expected_len = length(target_group.indexes)
+                self_len = length(assigned_payload.argument_self_index_positions[arg_pos])
+                expected_len == self_len ||
+                    error("resolve_param!: argument $(assigned_payload.argument_symbols[arg_pos]) expects $(self_len) index references but parameter group $(target_group.name) declares $(expected_len).")
+            end
+        end
+    end
+
+    pv.group_initialized[idx] = false
+    pv.got_all_definitions = all(pv.group_definition_initialized)
+
+    group_sym = Symbol(group.name)
+    ensembles = qspace.ensembles
+    ensemble_outer_lookup = IdDict{Any,Int}()
+    for ss in qspace.subspaces
+        ens = ss.ensemble
+        ens === nothing && continue
+        ensemble_outer_lookup[ens] = ss.ss_outer_ind
+    end
+
+    if kind == ParameterGroupDistribution
+        for ens in ensembles
+            idx ∈ ens.distribution_group_indices || continue
+            dist_indices = ens.distribution_group_indices
+            all_assigned = true
+            dists = Vector{QDistribution}(undef, length(dist_indices))
+            for (pos, gidx) in enumerate(dist_indices)
+                payload = groups[gidx].payload
+                if payload isa QDistribution
+                    dists[pos] = payload
+                else
+                    all_assigned = false
+                    break
+                end
+            end
+            if all_assigned
+                outer_symbols = info.outer_labels_symbols
+                outer_names = info.outer_labels
+                method = ens.sample_method === :default ?
+                    (ens.as_continuum ? :chebychev : :random) : ens.sample_method
+                sample = if ens.as_continuum
+                    build_continuous_samples(ens, dist_indices, outer_symbols[dist_indices], outer_names[dist_indices], dists;
+                        method=method)
+                else
+                    build_discrete_samples(ens, dist_indices, outer_symbols[dist_indices], outer_names[dist_indices], dists;
+                        method=method,
+                        num_nodes=ens.sample_num_nodes,
+                        atol=ens.sample_atol,
+                        rtol=ens.sample_rtol,
+                        max_iter=ens.sample_max_iter)
+                end
+                ens.sampler = sample
+                attach_samples!(pv, sample)
+                outer_idx = get(ensemble_outer_lookup, ens, 0)
+                if outer_idx != 0
+                    sample_count = size(sample.samples, 1)
+                    register_ensemble_sample_size!(pv, outer_idx, sample_count)
+                end
+            else
+                ens.sampler = nothing
+                for gidx in dist_indices
+                    pv.group_initialized[gidx] = false
+                    if !(groups[gidx].payload isa QDistribution)
+                        pv.group_definition_initialized[gidx] = false
+                    end
+                end
+            end
+        end
+    elseif kind == ParameterGroupEnsembleFunction
+        for ens in ensembles
+            idx ∈ ens.ensemble_function_group_indices || continue
+            # nothing specific to update beyond payload assignment
+        end
+    elseif kind == ParameterGroupScalar && assigned_payload !== nothing
+        _set_group!(pv, idx, assigned_payload; allow_function=true)
+    end
+
+    ensure_functions!(pv)
+    return qspace
 end

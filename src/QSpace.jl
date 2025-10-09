@@ -2,10 +2,12 @@ module QSpaces
 
 using ComplexRationals
 using ..CFunctions
+import ..CFunctions: update_t!, set_time!
 using ..StringUtils
 using ..Cumulants: ReducedCumulantList
 using ..Sampler
 using ..Sampler: AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
+using ..ParameterGroups: ParameterGroup, ParameterGroupKind, ParameterGroupDistribution, ParameterGroupEnsembleFunction
 using Base: WeakRef, GC
 using SparseArrays
 
@@ -158,34 +160,64 @@ include("QSpaceOps/QSpace_abstract.jl")
 include("QSpaceOps/QSpace_parameters.jl")
 using ..Sampler: build_discrete_samples, build_continuous_samples
 
-function assign_ensemble_samples!(subspaces, param_values, ensemble_group_distributions,
-        outer_symbols, outer_names)
+"""
+    assign_ensemble_samples!(subspaces, param_values)
+
+Inspect every ensemble in `subspaces` and (re)build sampling data for those
+whose distribution-backed parameter groups possess payloads. Samplers are
+instantiated only when *every* group registered with the ensemble has an
+assigned `QDistribution`; otherwise the sampler is left unset so dependent code
+does not observe stale samples.
+
+The function is invoked during `QSpace` construction and again whenever
+`resolve_param!` updates a distribution payload.
+"""
+function assign_ensemble_samples!(subspaces, param_values)
+    info = param_values.param_info
+    groups = info.param_groups
+    outer_symbols = info.outer_labels_symbols
+    outer_names = info.outer_labels
     for ss in subspaces
         ens = ss.ensemble
         ens === nothing && continue
-        raw_pairs = [(idx, ensemble_group_distributions[idx]) for idx in ens.parameter_group_indices
-                     if ensemble_group_distributions[idx] !== nothing]
-        isempty(raw_pairs) && continue
-        group_indices = [p[1] for p in raw_pairs]
-        dists = [p[2] for p in raw_pairs]
-        group_symbols = [outer_symbols[idx] for idx in group_indices]
-        group_names = [outer_names[idx] for idx in group_indices]
-        method = ens.sample_method === :default ?
-            (ens.as_continuum ? :chebychev : :random) : ens.sample_method
-        sample = if ens.as_continuum
-            build_continuous_samples(ens, group_indices, group_symbols, group_names, dists;
-                method=method)
-        else
-            build_discrete_samples(ens, group_indices, group_symbols, group_names, dists;
-                method=method,
-                num_nodes=ens.sample_num_nodes,
-                atol=ens.sample_atol,
-                rtol=ens.sample_rtol,
-                max_iter=ens.sample_max_iter)
+        dist_idxs = ens.distribution_group_indices
+        isempty(dist_idxs) && continue
+        all_assigned = true
+        dists = Vector{QDistribution}(undef, length(dist_idxs))
+        for (pos, idx) in enumerate(dist_idxs)
+            payload = groups[idx].payload
+            if payload isa QDistribution
+                dists[pos] = payload
+            else
+                all_assigned = false
+                break
+            end
         end
-        ens.sampler = sample::AbstractEnsembleSample
-        attach_samples!(param_values, sample)
+        if all_assigned
+            group_symbols = outer_symbols[dist_idxs]
+            group_names = outer_names[dist_idxs]
+            method = ens.sample_method === :default ?
+                (ens.as_continuum ? :chebychev : :random) : ens.sample_method
+            sample = if ens.as_continuum
+                build_continuous_samples(ens, dist_idxs, group_symbols, group_names, dists;
+                    method=method)
+            else
+                build_discrete_samples(ens, dist_idxs, group_symbols, group_names, dists;
+                    method=method,
+                    num_nodes=ens.sample_num_nodes,
+                    atol=ens.sample_atol,
+                    rtol=ens.sample_rtol,
+                    max_iter=ens.sample_max_iter)
+            end
+            ens.sampler = sample::AbstractEnsembleSample
+            attach_samples!(param_values, sample)
+            sample_count = size(sample.samples, 1)
+            register_ensemble_sample_size!(param_values, ss.ss_outer_ind, sample_count)
+        else
+            ens.sampler = nothing
+        end
     end
+    ensure_functions!(param_values)
     return nothing
 end
 
@@ -267,11 +299,9 @@ mutable struct QSpace
         operatortype_info = OperatorTypeInfo(operatortypes, commute_fun=op_def.commute_fun, check_n=op_def.check_n) 
 
         # ==========> 3rd Parameters <==========
-        params, param_info, param_values, parameter_dicts, ensemble_group_distributions = ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
-        outer_symbols = param_info.outer_labels_symbols
-        outer_names = param_info.outer_labels
+        params, param_info, param_values, parameter_dicts = ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
 
-        assign_ensemble_samples!(subspaces, param_values, ensemble_group_distributions, outer_symbols, outer_names)
+        assign_ensemble_samples!(subspaces, param_values)
 
         subspace_dicts = build_subspace_dicts(subspaces)
         operator_dicts = build_operator_dicts(operatortypes)
@@ -430,6 +460,14 @@ function get_operator_type(qspace::QSpace, name::Symbol)
     return qspace.operatortypes[idx]
 end
 get_operator_type(qspace::QSpace, name::String) = get_operator_type(qspace, _require_symbol(name))
+
+function update_t!(qspace::QSpace, value, slot::Int=0)
+    update_t!(qspace.param_values, value, slot)
+    return qspace
+end
+
+set_time!(qspace::QSpace, value) = update_t!(qspace, value, 0)
+set_time!(qspace::QSpace, value, slot::Int) = update_t!(qspace, value, slot)
 
 
 ## Test 

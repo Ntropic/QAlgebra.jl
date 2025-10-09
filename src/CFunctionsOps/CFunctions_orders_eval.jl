@@ -2,7 +2,7 @@ export max_exponents, evaluate
 
 import ..ConcreteIndexes
 import ..CFunctions
-using ..CFunctions: has_indexed_parameters, ParameterValues, set_param!, value, recompute_functions!
+using ..CFunctions: ParameterValues, value, recompute_functions!
 
 """
     max_exponents(f::CFunction) -> Vector{Int}
@@ -33,13 +33,13 @@ end
 
 ctimes(c::ComplexRational, d::T) where T <: Number = (c.a + im*c.b) / c.c * d
 
-function _evaluate_atom(a::CAtom, pv::ParameterValues, indexes::Union{Nothing,ConcreteIndexes})
-    prod_val = one(Float64)
+@inline function _atom_product(pv::ParameterValues, exps, indexes::ConcreteIndexes)
+    prod_val = 1.0
     first_term = true
-    for idx in a.var_exponents.nzind
+    @inbounds for idx in exps.nzind
         val = value(pv, idx, indexes)
-        exp = a.var_exponents[idx]
-        term = val ^ exp
+        exp = exps[idx]
+        term = exp == 1 ? val : val ^ exp
         if first_term
             prod_val = term
             first_term = false
@@ -47,76 +47,100 @@ function _evaluate_atom(a::CAtom, pv::ParameterValues, indexes::Union{Nothing,Co
             prod_val *= term
         end
     end
-    return ctimes(a.coeff, prod_val)
+    return first_term ? 1.0 : prod_val
 end
 
-function _evaluate_atom(a::CAtomIndexed, pv::ParameterValues)
-    prod_val = one(Float64)
-    first_term = true
-    for idx in a.var_exponents.nzind
-        val = value(pv, idx, a.indexes)
-        exp = a.var_exponents[idx]
-        term = val ^ exp
-        if first_term
-            prod_val = term
-            first_term = false
-        else
-            prod_val *= term
-        end
-    end
-    return ctimes(a.coeff, prod_val)
+@inline function _evaluate_atom(a::CAtom, pv::ParameterValues, indexes::ConcreteIndexes)
+    return ctimes(a.coeff, _atom_product(pv, a.var_exponents, indexes))
 end
 
-function _evaluate(f::CFunction, pv::ParameterValues, indexes::Union{Nothing,ConcreteIndexes})
-    if f isa CAtom
-        if has_indexed_parameters(f) && indexes === nothing
-            error("Cannot evaluate indexed atom without concrete indexes. Provide indexes via evaluate(...; indexes=...) or convert to CAtomIndexed.")
-        end
-        return _evaluate_atom(f::CAtom, pv, indexes)
-    elseif f isa CAtomIndexed
-        return _evaluate_atom(f::CAtomIndexed, pv)
-    elseif f isa CAbstract
-        error("CAbstract requires substitution before evaluation.")
-    elseif f isa CIntegral
-        error("CIntegral evaluation requires a dedicated backend.")
-    elseif f isa CSum
-        return sum(_evaluate(term, pv, indexes) for term in f.expr)
-    elseif f isa CProd
-        return ctimes(f.coeff, prod(_evaluate(term, pv, indexes) for term in f.expr))
-    elseif f isa CRational
-        return _evaluate(f.numer, pv, indexes) / _evaluate(f.denom, pv, indexes)
-    elseif f isa CExp
-        return ctimes(f.coeff, exp(_evaluate(f.expr, pv, indexes)))
-    elseif f isa CLog
-        return ctimes(f.coeff, log(_evaluate(f.expr, pv, indexes)))
-    elseif f isa CPower
-        return ctimes(f.coeff, _pow_r(_evaluate(f.expr, pv, indexes), f.exponent))
-    elseif f isa CVector
-        return [ctimes(f.coeff, _evaluate(term, pv, indexes)) for term in f.expr]
-    elseif f isa CMatrix
-        m, n = size(f.expr)
-        return reshape([ctimes(f.coeff, _evaluate(term, pv, indexes)) for term in f.expr], m, n)
-    elseif f isa CCustomType
-        arg_values = [_evaluate(term, pv, indexes) for term in f.expr]
-        val = evaluate(f.ctype_def.fun, arg_values, f.ctype_def.index_map)
-        return ctimes(f.coeff, val)
-    elseif f isa CCustomTypeIndexed
-        arg_values = [_evaluate(term, pv, indexes) for term in f.expr]
-        val = evaluate(f.ctype_def.fun, arg_values, f.ctype_def.index_map)
-        return ctimes(f.coeff, val)
-    else
-        error("Evaluation not implemented for $(typeof(f)).")
+@inline function _evaluate_atom(a::CAtomIndexed, pv::ParameterValues)
+    return ctimes(a.coeff, _atom_product(pv, a.var_exponents, a.indexes))
+end
+
+@inline function _evaluate(f::CAtom, pv::ParameterValues, indexes::ConcreteIndexes)
+    return _evaluate_atom(f, pv, indexes)
+end
+
+@inline function _evaluate(f::CAtomIndexed, pv::ParameterValues, ::ConcreteIndexes)
+    return _evaluate_atom(f, pv)
+end
+
+@inline function _evaluate(::CAbstract, ::ParameterValues, ::ConcreteIndexes)
+    error("CAbstract requires substitution before evaluation.")
+end
+
+@inline function _evaluate(::CIntegral, ::ParameterValues, ::ConcreteIndexes)
+    error("CIntegral evaluation requires a dedicated backend.")
+end
+
+@inline function _evaluate(f::CSum, pv::ParameterValues, indexes::ConcreteIndexes)
+    return sum(_evaluate(term, pv, indexes) for term in f.expr)
+end
+
+@inline function _evaluate(f::CProd, pv::ParameterValues, indexes::ConcreteIndexes)
+    return ctimes(f.coeff, prod(_evaluate(term, pv, indexes) for term in f.expr))
+end
+
+@inline function _evaluate(f::CRational, pv::ParameterValues, indexes::ConcreteIndexes)
+    return _evaluate(f.numer, pv, indexes) / _evaluate(f.denom, pv, indexes)
+end
+
+@inline function _evaluate(f::CExp, pv::ParameterValues, indexes::ConcreteIndexes)
+    return ctimes(f.coeff, exp(_evaluate(f.expr, pv, indexes)))
+end
+
+@inline function _evaluate(f::CLog, pv::ParameterValues, indexes::ConcreteIndexes)
+    return ctimes(f.coeff, log(_evaluate(f.expr, pv, indexes)))
+end
+
+@inline function _evaluate(f::CPower, pv::ParameterValues, indexes::ConcreteIndexes)
+    return ctimes(f.coeff, _pow_r(_evaluate(f.expr, pv, indexes), f.exponent))
+end
+
+@inline function _evaluate(f::CVector, pv::ParameterValues, indexes::ConcreteIndexes)
+    entries = [ctimes(f.coeff, _evaluate(term, pv, indexes)) for term in f.expr]
+    if f.row
+        n = length(entries)
+        return reshape(entries, 1, n)
     end
+    return entries
+end
+
+@inline function _evaluate(f::CMatrix, pv::ParameterValues, indexes::ConcreteIndexes)
+    m, n = size(f.expr)
+    data = [ctimes(f.coeff, _evaluate(term, pv, indexes)) for term in f.expr]
+    return reshape(data, m, n)
+end
+
+@inline function _evaluate(f::CCustomType, pv::ParameterValues, indexes::ConcreteIndexes)
+    arg_values = [_evaluate(term, pv, indexes) for term in f.expr]
+    val = evaluate(f.ctype_def.fun, arg_values, f.ctype_def.index_map)
+    return ctimes(f.coeff, val)
+end
+
+@inline function _evaluate(f::CCustomTypeIndexed, pv::ParameterValues, indexes::ConcreteIndexes)
+    arg_values = [_evaluate(term, pv, indexes) for term in f.expr]
+    val = evaluate(f.ctype_def.fun, arg_values, f.ctype_def.index_map)
+    return ctimes(f.coeff, val)
+end
+
+@inline function _evaluate(f::CFunction, ::ParameterValues, ::ConcreteIndexes)
+    error("Evaluation not implemented for $(typeof(f)).")
 end
 
 """
-    evaluate(f::CFunction, values::ParameterValues; indexes=nothing)
+    evaluate(f::CFunction, pv::ParameterValues, indexes::ConcreteIndexes)
 
-Evaluate a CFunction using the definitions in values. 
+Evaluate `f` using parameter values stored in `pv` and the provided concrete
+indexes. All atoms expect fully resolved indexes; callers are responsible for
+ensuring index tuples point to valid samples.
 """
-function evaluate(f::CFunction, pv::ParameterValues; indexes::Union{Nothing,ConcreteIndexes}=nothing)
+function evaluate(f::CFunction, pv::ParameterValues, indexes::ConcreteIndexes)
     recompute_functions!(pv)
     return _evaluate(f, pv, indexes)
 end
 
-### Needs to be rewritten
+function evaluate(f::CFunction, pv::ParameterValues; indexes::ConcreteIndexes)
+    return evaluate(f, pv, indexes)
+end

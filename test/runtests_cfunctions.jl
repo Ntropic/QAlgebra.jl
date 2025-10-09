@@ -1,3 +1,5 @@
+using QAlgebra: ParameterGroupDistribution, ParameterGroupEnsembleFunction
+
 CF_TYPES = (CAtom, CExp, CLog, CRational, CProd, CSum)
 VARS = ["x", "y"]
 
@@ -52,10 +54,11 @@ VARS = ["x", "y"]
         for ex in all_ex
             @test_succeeds evaluate(ex, xv)      "evaluate($ex, xv) failed"
             pv = ParameterValues(ex.param_info)
+            indexes = ConcreteIndexes(ex.param_info)
             for idx in 1:length(ex.param_info.params_name)
                 set_param!(pv, idx, xv[(idx-1) % length(xv) + 1])
             end
-            @test_succeeds evaluate(ex, pv)   "evaluate($ex, pv) failed"
+            @test_succeeds evaluate(ex, pv, indexes)   "evaluate($ex, pv) failed"
         end
     end
     #line("Testing expand modes")
@@ -92,12 +95,12 @@ end
     group_syms = pinfo.outer_labels_symbols
     alpha_group_idx = findfirst(==(Symbol(:alpha)), group_syms)::Int
     gamma_group_idx = findfirst(==(Symbol(:gamma)), group_syms)::Int
-    group_samples = pv.ensemble_group_samples
-    @test group_samples[alpha_group_idx] === nothing
-    @test group_samples[gamma_group_idx] isa DiscreteSamples
-    group_funcs = pv.ensemble_group_functions
-    @test group_funcs[alpha_group_idx] === nothing
-    @test group_funcs[gamma_group_idx] === nothing
+    sampler = qspace.ensembles[1].sampler
+    @test sampler isa DiscreteSamples
+    param_groups = pinfo.param_groups
+    @test param_groups[alpha_group_idx].kind != ParameterGroupEnsembleFunction
+    @test param_groups[gamma_group_idx].kind == ParameterGroupDistribution
+    @test param_groups[gamma_group_idx].payload isa QDistribution
 
     exps_alpha = zeros(Int, pinfo.dims)
     exps_alpha[alpha_idx] = 1
@@ -111,6 +114,7 @@ end
     @test has_indexed_parameters(atom_gamma)
     @test_throws ErrorException evaluate(atom_gamma, ones(pinfo.dims))
 
+    default_indexes = ConcreteIndexes(pinfo)
     concrete = ConcreteIndexes(pinfo)
     concrete.indexes[1] = [2, 1]
     atom_gamma_indexed = CAtomIndexed(pinfo, exps_gamma, concrete)
@@ -118,10 +122,10 @@ end
     set_param!(pv, :alpha, 1.0)
     set_time!(pv, 0.0)
 
-    @test evaluate(atom_alpha, pv) == 1.0
+    @test evaluate(atom_alpha, pv, default_indexes) == 1.0
 
     gamma_group = findfirst(==(Symbol("gamma")), pinfo.outer_labels_symbols)
-    gamma_params = pinfo.params_by_group[gamma_group]
+    gamma_params = param_groups[gamma_group].parameter_indices
     gamma_values = [5.0, 6.0, 7.0]
     for (val_idx, param_idx) in enumerate(gamma_params)
         set_param!(pv, param_idx, gamma_values[val_idx])
@@ -139,19 +143,19 @@ end
     @test value(pv, :t0) == 1.5
     @test value(pv, gamma_idx, concrete) == 6.0
     @test_throws ErrorException value(pv, gamma_idx, ConcreteIndexes(pinfo))
-    @test evaluate(atom_gamma_indexed, pv) == 6.0
-    @test evaluate(atom_gamma, pv; indexes=concrete) == 6.0
+    @test evaluate(atom_gamma_indexed, pv, default_indexes) == 6.0
+    @test evaluate(atom_gamma, pv, concrete) == 6.0
 
     indexed_sum = Indexed(CSum(pinfo, [atom_alpha, atom_gamma]), concrete)
     @test indexed_sum isa CSum
     @test all(term -> term isa CAtomIndexed, indexed_sum.expr)
-    @test evaluate(indexed_sum, pv) isa Float64
+    @test evaluate(indexed_sum, pv, default_indexes) isa Float64
 
     prod_expr = CProd(pinfo, ComplexRational(1, 0, 1), [atom_alpha, atom_gamma], Val(:nosimp))
     indexed_prod = Indexed(prod_expr, concrete)
     @test indexed_prod isa CProd
     @test all(term -> term isa CAtomIndexed, indexed_prod.expr)
-    @test evaluate(indexed_prod, pv) isa Float64
+    @test evaluate(indexed_prod, pv, default_indexes) isa Float64
 
     vec_expr = CVector(pinfo, [atom_alpha, atom_gamma])
     indexed_vec = Indexed(vec_expr, concrete)

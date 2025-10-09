@@ -77,7 +77,7 @@ Ensemble(2, 1, QubitPauli("sigma"); num_modes=4)
 ```
 
 During [`QSpace`](@ref) construction each ensemble automatically records which parameter groups (e.g. `:gamma`) act on
-it via the `parameter_groups` field, while `samples` and `distribution` remain available for later use when sampling
+it via the `param_groups` field, while `samples` and `distribution` remain available for later use when sampling
 ensemble parameter spaces.
 
 
