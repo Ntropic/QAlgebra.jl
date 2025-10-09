@@ -214,6 +214,13 @@ struct ParameterInfo <: AbstractParameterInfo
     param_is_t::BitVector
 
     function_param_refs::Vector{Union{Nothing,Vector{Int}}}
+    ensemble_group_functions::Vector{Union{Nothing,QEnsembleFunction}}
+    group_distributions::Vector{Union{Nothing,QDistribution}}
+    group_functions::Vector{Union{Nothing,Function}}
+    group_display_signatures::Vector{String}
+    group_kind_codes::Vector{UInt8}
+    group_dependencies::Vector{Vector{Int}}
+    group_initial_values::Vector{Any}
     group_time_counts::Vector{Int}
     group_index_sizes::Vector{Vector{Int}}
     param_coords::Vector{Vector{Int}}
@@ -236,6 +243,12 @@ struct ParameterInfo <: AbstractParameterInfo
         subspace_index_maps::Vector{Array{SparsePermutation,2}}, t_index_transform::Array{SparsePermutation,2}, indexes_by_t_index::Vector{Vector{Int}},
         indexes_of_t::Vector{Int}, how_many_by_ensemble::Vector{Int}, param_of_t::BitVector, param_is_t::BitVector,
         function_param_refs::Vector{Union{Nothing,Vector{Int}}},
+        ensemble_group_functions::Vector{Union{Nothing,QEnsembleFunction}},
+        group_distributions::Vector{Union{Nothing,QDistribution}},
+        group_functions::Vector{Union{Nothing,Function}},
+        group_display_signatures::Vector{String},
+        group_kind_codes::Vector{UInt8}, group_dependencies::Vector{Vector{Int}},
+        group_initial_values::Vector{Any},
         group_time_counts::Vector{Int}, group_index_sizes::Vector{Vector{Int}}, param_coords::Vector{Vector{Int}}, params_by_group::Vector{Vector{Int}},
         group_of_t::BitVector, group_is_t::BitVector,
         subspace_info::Any, param_indexes::ParameterIndexes)
@@ -247,7 +260,8 @@ struct ParameterInfo <: AbstractParameterInfo
             indexed_parameter_indexes, where_acting_by_parameter, params_acting_by_index, param_index_tuples,
             subspace_index_maps, t_index_transform,
             indexes_by_t_index, indexes_of_t, how_many_by_ensemble, param_of_t, param_is_t,
-            function_param_refs,
+            function_param_refs, ensemble_group_functions, group_distributions, group_functions, group_display_signatures,
+            group_kind_codes, group_dependencies, group_initial_values,
             group_time_counts, group_index_sizes, param_coords, params_by_group, group_of_t, group_is_t,
             subspace_info, param_indexes, CAbstractDefinition[], CTypeDefinition[], AnyCIntegralDefinition[])
     end

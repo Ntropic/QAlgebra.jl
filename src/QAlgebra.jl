@@ -117,7 +117,7 @@ using .QSpaces
 export OperatorSet, max_operator_magnitude
 export Ensemble, SubSpace, SubSpaceDefinitions, ConcreteIndexes, SubSpaceIndex 
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
-export Parameter, ParameterInfo, ParameterDefinitions
+export Parameter, ParameterInfo, ParameterDefinitions, set_parameter_group_definition!
 export QSpace, SubSpaceDicts, AbstractOperatorDicts
 export get_parameter_group, get_parameter, get_subspace, get_subspace_index, get_ensemble, get_operator_type
 export QubitPauli, QubitPM, Ladder
@@ -127,7 +127,7 @@ include("Plotting.jl")
 
 include("QExpressions.jl")
 using .QExpressions
-using .QExpressions: diffQEqOrdered, diffQEqSet
+using .QExpressions: diffQEqOrdered
 export QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QCumulant, QAtomProduct, permutation, AbstractQSum, QSum, QIntegral, QInt, ∑, ∫, integral, QCompositeProduct, diffQEq, d_dt
 export QCommutator, QExp, QLog, QPower, power, QRoot, root, Expectation
 export Dag, Commutator, same_qspace
@@ -157,5 +157,5 @@ export ensemble_iterator, ensemble_iterator_continuum, multi_ensemble_iterator, 
 
 #include("QEqSets.jl")
 #using .QEqSets
-export diffQEqSet, diffQEqSetOrdered, diffQEqSet, OrderedDiffQEqSet, diffQEqOrdered
+export diffQEqOrdered
 end # module QAlgebra

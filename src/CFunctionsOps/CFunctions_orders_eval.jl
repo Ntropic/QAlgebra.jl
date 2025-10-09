@@ -4,15 +4,6 @@ import ..ConcreteIndexes
 import ..CFunctions
 using ..CFunctions: has_indexed_parameters, ParameterValues, set_param!, value, recompute_functions!
 
-function max_vec(a::Vector{Int}, b::Vector{Int})::Vector{Int}
-    return max.(a, b)
-end
-
-max_exponents(a::CAtom) = Vector(abs.(a.var_exponents))
-max_exponents(a::CAtomIndexed) = Vector(abs.(a.var_exponents))
-max_exponents(a::CAbstract) = error("max_exponents cannot be computed for CAbstract.")
-max_exponents(::CIntegral) = error("max_exponents is undefined for CIntegral.")
-
 """
     max_exponents(f::CFunction) -> Vector{Int}
 
@@ -21,64 +12,15 @@ expressions propagate the per-variable maxima across their children; atoms yield
 absolute values of their sparse exponent vector.
 """
 function max_exponents(f::CFunction)::Vector{Int}
-    if f isa CAtom
-        return max_exponents(f::CAtom)
-    elseif f isa CAtomIndexed
-        return max_exponents(f::CAtomIndexed)
-    elseif f isa CSum
-        dims = dims(f)
-        m = zeros(Int, dims)
-        for term in f.expr
-            m = max_vec(m, max_exponents(term))
+    int_vec::Vector{Int} = zeros(Int, f.param_info.dims) 
+    for leaf in leaf_iter(f) # iterate over the var_exponents::SparseVector{Int,Int}
+        for i in leaf.var_exponents.nzind
+            int_vec[i] = max(int_vec[i], abs(leaf.var_exponents[i]))
         end
-        return m
-    elseif f isa CProd
-        dims = dims(f)
-        m = zeros(Int, dims)
-        for term in f.expr
-            m = max_vec(m, max_exponents(term))
-        end
-        return m
-    elseif f isa CPower
-        return max_exponents(f.expr)
-    elseif f isa CLog
-        return max_exponents(f.expr)
-    elseif f isa CExp
-        return max_exponents(f.expr)
-    elseif f isa CRational
-        return max_vec(max_exponents(f.numer), max_exponents(f.denom))
-    elseif f isa CVector
-        dims = dims(f)
-        m = zeros(Int, dims)
-        for term in f.expr
-            m = max_vec(m, max_exponents(term))
-        end
-        return m
-    elseif f isa CMatrix
-        dims = dims(f)
-        m = zeros(Int, dims)
-        for term in f.expr
-            m = max_vec(m, max_exponents(term))
-        end
-        return m
-    elseif f isa CCustomType
-        dims = dims(f)
-        m = zeros(Int, dims)
-        for term in f.expr
-            m = max_vec(m, max_exponents(term))
-        end
-        return m
-    elseif f isa CCustomTypeIndexed
-        dims = dims(f)
-        m = zeros(Int, dims)
-        for term in f.expr
-            m = max_vec(m, max_exponents(term))
-        end
-        return m
-    else
-        error("max_exponents not implemented for $(typeof(f)).")
     end
+    return int_vec
 end
+
 
 # Rational exponent on a numeric base
 @inline function _pow_r(y, q::Rational{Int})
@@ -169,23 +111,12 @@ end
 
 """
     evaluate(f::CFunction, values::ParameterValues; indexes=nothing)
-    evaluate(f::CFunction, x::AbstractVector)
 
-Numerically evaluate a coefficient expression. The first method consumes a
-[`ParameterValues`](@ref) table (optionally restricting evaluation to concrete
-index selections). The second method is a convenience wrapper that fills a fresh
-`ParameterValues` instance from the numeric vector `x`.
+Evaluate a CFunction using the definitions in values. 
 """
 function evaluate(f::CFunction, pv::ParameterValues; indexes::Union{Nothing,ConcreteIndexes}=nothing)
     recompute_functions!(pv)
     return _evaluate(f, pv, indexes)
 end
 
-function evaluate(f::CFunction, x::AbstractVector{<:Number})
-    pv = ParameterValues(f.param_info)
-    n = min(length(x), length(pv.param_info.params_name))
-    for idx in 1:n
-        set_param!(pv, idx, x[idx])
-    end
-    return evaluate(f, pv)
-end
+### Needs to be rewritten

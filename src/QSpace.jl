@@ -13,7 +13,7 @@ export OperatorSet, operator_magnitude, max_operator_magnitude, SubSpaceDicts, A
 export Ensemble, SubSpace, SubSpaceDefinitions, SubSpaceInfo, SubSpaceIndex, outer, inner, expanded, Index2Symbol, Index2String, Index2Ensemble, Index2Ensemble_and_Summation, SummationIndex2SubSpaceIndex
 export AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
-export Parameter, ParameterDefinitions, map_by_subspace, map_by_tindex
+export Parameter, ParameterDefinitions, set_parameter_group_definition!, map_by_subspace, map_by_tindex
 export QSpace
 export get_parameter_group, get_parameter, get_parameter_index, get_subspace, get_subspace_index, get_ensemble, get_operator_type
 
@@ -287,6 +287,8 @@ mutable struct QSpace
                 params, param_info, param_values, parameter_dicts, subspace_dicts, operator_dicts,
                 I_op, I_ensemble_op, c_one, c_zero, cumulant_cache, max_t_ind)    # Precomputed operator blueprints 
 
+        param_values.qspace = WeakRef(qss)
+
         GC.@preserve qss begin
             for ens in ensembles
                 ens.qspace_ref = WeakRef(qss)
@@ -351,8 +353,9 @@ function Base.show(io::IO, qspace::QSpace)
     end
 
     # Operator types
-    for op in qspace.operatortypes
-        println(io, "   - ", string(op))
+    op_strs = String[operator_type2string(op) for op in qspace.operatortypes]
+    if length(op_strs) > 0 
+        println(io, "   - Abstract Ops:", join(op_strs, ", "))
     end
 end
 

@@ -9,7 +9,7 @@ using SparseArrays
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, /, ^, product, iszero, copy
 using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED, EXPAND_CUMULANTS, vecvec_or, vecvec_or!, findfirstfreeafterbefore, sorted_unique_push!, bubble_insert_unique!
 using ..CFunctions: isnumeric
-export QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, QCumulant, diffQEq, diffQEqOrdered, diffQEqSet, diffQEqSetOrdered, OrderedDiffQEqSet, Expectation, base_operators, d_dt
+export QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, QCumulant, diffQEq, diffQEqOrdered, Expectation, base_operators, d_dt
 
 export @define, @define_basics, QExpr2CFunction
 

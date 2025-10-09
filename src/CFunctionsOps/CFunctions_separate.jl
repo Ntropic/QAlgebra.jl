@@ -22,7 +22,7 @@ Throws an error if `c` still contains `CAbstract` leaves or the expression
 cannot be separated without mixing both parameter sets (e.g. a power of a mixed
 sum).
 """
-function separate_by_cond(c::CFunction, group1::BitVector, group2::BitVector)
+function separate_by_cond(c::T, group1::BitVector, group2::BitVector) where T <: CFunction
     dims = c.param_info.dims
     length(group1) == dims || throw(DimensionMismatch("group1 mask must match parameter dimension"))
     length(group2) == dims || throw(DimensionMismatch("group2 mask must match parameter dimension"))
@@ -62,7 +62,7 @@ function separate_by_cond(c::CFunction, group1::BitVector, group2::BitVector)
     return results
 end
 
-function separate_by_cond(c::CFunction, cond::BitVector)
+function separate_by_cond(c::T, cond::BitVector)  where T <: CFunction
     length(cond) == c.param_info.dims || throw(DimensionMismatch("condition mask must match parameter dimension"))
     return separate_by_cond(c, cond, .!cond)
 end
