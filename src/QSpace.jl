@@ -7,7 +7,7 @@ using ..StringUtils
 using ..Cumulants: ReducedCumulantList
 using ..Sampler
 using ..Sampler: AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
-using ..ParameterGroups: ParameterGroup, ParameterGroupKind, ParameterGroupDistribution, ParameterGroupEnsembleFunction
+using ..ParameterGroups: ParameterGroup, ParameterGroupKind, ParameterGroupDistribution, ParameterGroupEnsembleFunction, WhereWhichParamGroup
 using Base: WeakRef, GC
 using SparseArrays
 
@@ -275,7 +275,8 @@ mutable struct QSpace
     # Parameter fields:
     params::Vector{Parameter}
     param_info::ParameterInfo
-    param_values::ParameterValues
+    where_which_param_groups::WhereWhichParamGroup
+    sample_index_param_values::ParameterValues
     parameter_dicts::ParameterDicts
     subspace_dicts::SubSpaceDicts
     operator_dicts::AbstractOperatorDicts
@@ -299,9 +300,10 @@ mutable struct QSpace
         operatortype_info = OperatorTypeInfo(operatortypes, commute_fun=op_def.commute_fun, check_n=op_def.check_n) 
 
         # ==========> 3rd Parameters <==========
-        params, param_info, param_values, parameter_dicts = ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
+        params, param_info, sample_index_param_values, parameter_dicts = ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
+        where_which = WhereWhichParamGroup(param_info.param_groups)
 
-        assign_ensemble_samples!(subspaces, param_values)
+        assign_ensemble_samples!(subspaces, sample_index_param_values)
 
         subspace_dicts = build_subspace_dicts(subspaces)
         operator_dicts = build_operator_dicts(operatortypes)
@@ -314,10 +316,10 @@ mutable struct QSpace
 
         qss = new( subspaces, subspace_info, ensembles,                           # Subspaces
                 operatortypes, operatortype_info,                                 # Abstract Operators 
-                params, param_info, param_values, parameter_dicts, subspace_dicts, operator_dicts,
+                params, param_info, where_which, sample_index_param_values, parameter_dicts, subspace_dicts, operator_dicts,
                 I_op, I_ensemble_op, c_one, c_zero, cumulant_cache, max_t_ind)    # Precomputed operator blueprints 
 
-        param_values.qspace = WeakRef(qss)
+        sample_index_param_values.qspace = WeakRef(qss)
 
         GC.@preserve qss begin
             for ens in ensembles
@@ -394,32 +396,115 @@ end
     return Symbol(name)
 end
 
-function _resolve_parameter_index(qspace::QSpace, name::Symbol)
-    matches = get(qspace.parameter_dicts.param_name_to_indices, name, nothing)
-    matches === nothing && error("No parameter named $(name) registered in QSpace.")
-    length(matches) == 1 && return matches[1]
-    labels = qspace.params[matches]
-    label_str = join(getfield.(labels, :param_str), ", ")
-    error("Parameter name $(name) is ambiguous. Matches: $(label_str).")
+@inline function _normalize_parameter_lookup(name::Union{Symbol,String})
+    raw = String(strip(string(name)))
+    normalized = unformat_symbol(name)
+    sym = isempty(normalized) ? Symbol(raw) : Symbol(normalized)
+    return sym, raw, normalized
 end
 
-function get_parameter_group(qspace::QSpace, name::Symbol)
-    idx = get(qspace.parameter_dicts.group_name_to_index, name, nothing)
-    idx === nothing && error("No parameter group named $(name) registered in QSpace.")
+@inline function _group_label(group::ParameterGroup)
+    formatted, _ = symbol2formatted(String(group.name))
+    plain = String(group.name)
+    return "$(formatted) ($(plain))"
+end
+
+function _parameter_group_options(qspace::QSpace)
+    [_group_label(group) for group in qspace.param_info.param_groups]
+end
+
+function _parameter_options(qspace::QSpace)
+    unique(_parameter_group_options(qspace))
+end
+
+function _match_parameter_group_strings(qspace::QSpace, raw::String, normalized::String)
+    matches = Int[]
+    for (idx, group) in enumerate(qspace.param_info.param_groups)
+        if raw == group.display_signature || raw == string(group.name)
+            push!(matches, idx)
+        elseif !isempty(normalized) && normalized == unformat_symbol(group.display_signature)
+            push!(matches, idx)
+        end
+    end
+    return unique(matches)
+end
+
+function _match_parameter_strings(qspace::QSpace, raw::String, normalized::String)
+    matches = Int[]
+    for (idx, param) in enumerate(qspace.params)
+        if raw == param.param_str || raw == param.param_name || raw == param.param_latex || raw == param.param_name_no_t
+            push!(matches, idx)
+            continue
+        end
+        if !isempty(normalized)
+            norm_param = unformat_symbol(param.param_str)
+            if normalized == norm_param || normalized == unformat_symbol(param.param_name) || normalized == unformat_symbol(param.param_latex)
+                push!(matches, idx)
+            end
+        end
+    end
+    return unique(matches)
+end
+
+function _resolve_parameter_index(qspace::QSpace, name::Union{Symbol,String})
+    sym, raw, normalized = _normalize_parameter_lookup(name)
+    dict = qspace.parameter_dicts.param_name_to_indices
+    matches = get(dict, sym, Int[])
+    if isempty(matches) && sym != Symbol(raw)
+        matches = get(dict, Symbol(raw), Int[])
+    end
+    matches = copy(matches)
+    if isempty(matches)
+        matches = _match_parameter_strings(qspace, raw, normalized)
+    end
+    if isempty(matches)
+        options = join(_parameter_options(qspace), ", ")
+        norm_hint = (!isempty(normalized) && normalized != raw) ? " (normalized: \"$(normalized)\")" : ""
+        error("No parameter matching \"$(raw)\"$(norm_hint) registered in QSpace. Available parameter groups: $(options).")
+    end
+    if length(matches) == 1
+        return matches[1]
+    end
+    info = qspace.param_info
+    groups = unique(info.param_group_by_index[matches])
+    if length(groups) == 1
+        return matches[1]
+    end
+    names = [_group_label(info.param_groups[g]) for g in groups]
+    error("Parameter name \"$(raw)\" is ambiguous. Matches: $(join(names, ", ")).")
+end
+
+function get_parameter_group(qspace::QSpace, name::Union{Symbol,String})
+    sym, raw, normalized = _normalize_parameter_lookup(name)
+    dict = qspace.parameter_dicts.group_name_to_index
+    idx = get(dict, sym, nothing)
+    if idx === nothing && sym != Symbol(raw)
+        idx = get(dict, Symbol(raw), nothing)
+    end
+    if idx === nothing
+        matches = _match_parameter_group_strings(qspace, raw, normalized)
+        if isempty(matches)
+            options = join(_parameter_group_options(qspace), ", ")
+            norm_hint = (!isempty(normalized) && normalized != raw) ? " (normalized: \"$(normalized)\")" : ""
+            error("No parameter group matching \"$(raw)\"$(norm_hint) registered in QSpace. Available groups: $(options).")
+        elseif length(matches) > 1
+            names = [_group_label(qspace.param_info.param_groups[m]) for m in matches]
+            error("Parameter group name \"$(raw)\" is ambiguous. Matches: $(join(names, ", ")).")
+        else
+            idx = matches[1]
+        end
+    end
     return idx
 end
-get_parameter_group(qspace::QSpace, name::String) = get_parameter_group(qspace, _require_symbol(name))
 
-function get_parameter_index(qspace::QSpace, name::Symbol)
+function get_parameter_index(qspace::QSpace, name::Union{Symbol,String})
     return _resolve_parameter_index(qspace, name)
 end
-get_parameter_index(qspace::QSpace, name::String) = get_parameter_index(qspace, _require_symbol(name))
 
-function get_parameter(qspace::QSpace, name::Symbol)
+function get_parameter(qspace::QSpace, name::Union{Symbol,String})
     idx = _resolve_parameter_index(qspace, name)
     return qspace.params[idx]
 end
-get_parameter(qspace::QSpace, name::String) = get_parameter(qspace, _require_symbol(name))
 
 function _resolve_subspace_location(qspace::QSpace, name::Symbol)
     dicts = qspace.subspace_dicts
@@ -461,13 +546,12 @@ function get_operator_type(qspace::QSpace, name::Symbol)
 end
 get_operator_type(qspace::QSpace, name::String) = get_operator_type(qspace, _require_symbol(name))
 
-function update_t!(qspace::QSpace, value, slot::Int=0)
-    update_t!(qspace.param_values, value, slot)
+function update_t!(qspace::QSpace, value; slot::Int=0)
+    update_t!(qspace.sample_index_param_values, value; slot=slot)
     return qspace
 end
 
-set_time!(qspace::QSpace, value) = update_t!(qspace, value, 0)
-set_time!(qspace::QSpace, value, slot::Int) = update_t!(qspace, value, slot)
+set_time!(qspace::QSpace, value; slot::Int=0) = update_t!(qspace, value; slot=slot)
 
 
 ## Test 

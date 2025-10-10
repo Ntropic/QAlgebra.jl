@@ -1,12 +1,12 @@
 using Combinatorics
 using SparseArrays
 using ..CFunctions: ParameterInfo, ParameterIndexes, ParameterDicts, ParameterValues, build_parameter_dicts
-using ..StringUtils: symbol2formatted, str2sub
+using ..StringUtils: symbol2formatted, str2sub, unformat_symbol, var_unsubstitution, reverse_var_substitution
 using ..SparsePermutationTools: SparsePermutation, denseperm
 using ..Sampler: QDistribution, QEnsembleFunction, AbstractEnsembleSample
 using ..ParameterGroups: ParameterGroupKind, ParameterGroup,
-                          ParameterGroupScalar, ParameterGroupTimeFunction,
-                          ParameterGroupDistribution, ParameterGroupEnsembleFunction
+                          ParameterGroupScalar, ParameterGroupTimeScalar, ParameterGroupTimeFunction,
+                          ParameterGroupDistribution, ParameterGroupEnsembleFunction, WhereWhichParamGroup
 
 """ 
     Parameter(param_name::String, param_of_t::Bool, var_of_ensemble::Bool, var_ensemble_index::Int=0;
@@ -60,7 +60,7 @@ end
     has_indexes = !isempty(indexes)
     has_args = !isempty(function_args)
     if name == "t"
-        return ParameterGroupScalar
+        return ParameterGroupTimeScalar
     elseif has_indexes
         return has_args ? ParameterGroupEnsembleFunction : ParameterGroupDistribution
     elseif has_args || (of_t && name != "t")
@@ -73,7 +73,7 @@ end
 function _assign_group_definition!(group::ParameterGroupDefinition, payload)
     payload === nothing && return group
     kind = group.kind
-    if kind == ParameterGroupScalar
+    if kind in (ParameterGroupScalar, ParameterGroupTimeScalar)
         payload isa Function && error("Parameter group $(group.name) expects a literal value, not a function.")
         group.payload = payload
     elseif kind == ParameterGroupTimeFunction
@@ -132,10 +132,11 @@ ParameterDefinitions(
 struct ParameterDefinitions
     var_param::Vector{ParameterGroupDefinition}
     function ParameterDefinitions(params...)
-        var_param = ParameterGroupDefinition[]
-        for var in params
-            label, payload = _extract_group_payload(var)
-            pre, brace_elements = brace_separate(label)
+    var_param = ParameterGroupDefinition[]
+    for var in params
+        label, payload = _extract_group_payload(var)
+        label_clean = reverse_var_substitution(label)
+        pre, brace_elements = brace_separate(label_clean)
             name, indexes = underscore_separate(pre)
             of_t = (name == "t") || ("t" in brace_elements)
             function_args = [String(arg) for arg in brace_elements]
@@ -145,12 +146,14 @@ struct ParameterDefinitions
             group_def = ParameterGroupDefinition(name, of_t, index_tokens, function_args, nothing, inferred_kind, String[], display_signature)
             payload === nothing || _assign_group_definition!(group_def, payload)
             push!(var_param, group_def)
-        end
-
-        _finalize_group_dependencies!(var_param)
-
-        return new(var_param)
     end
+
+    _finalize_group_dependencies!(var_param)
+
+        sort!(var_param, by = g -> ((g.kind == ParameterGroupTimeScalar && g.name == "t") ? -1 : Int(g.kind), g.name))
+
+    return new(var_param)
+end
 end
 
 function _finalize_group_dependencies!(group_defs::Vector{ParameterGroupDefinition})
@@ -216,7 +219,8 @@ end
 
 function set_parameter_group_definition!(defs::ParameterDefinitions, signature::Union{AbstractString,Symbol}, payload)
     label = String(signature)
-    pre, brace_elements = brace_separate(label)
+    label_clean = reverse_var_substitution(label)
+    pre, brace_elements = brace_separate(label_clean)
     name, indexes = underscore_separate(pre)
     group = _find_group_by_name(defs.var_param, name)
     group === nothing && error("Unknown parameter group \"$name\" in ParameterDefinitions.")
@@ -379,7 +383,7 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
     var_param = copy(vd.var_param)
     if all(group.name != "t" for group in var_param) && !(:t in used_symbols)
         push!(var_param, ParameterGroupDefinition("t", true, String[], String[], nothing,
-                                                  ParameterGroupScalar, String[], _group_display_signature("t", String[], String[])))
+                                                  ParameterGroupTimeScalar, String[], _group_display_signature("t", String[], String[])))
     end
 
     group_defs = var_param
@@ -420,7 +424,7 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
         group_function_args[group_index] = copy(group_def.function_args)
         group_dependency_names[group_index] = copy(group_def.dependencies)
 
-        if kind == ParameterGroupScalar && payload isa Function
+        if kind in (ParameterGroupScalar, ParameterGroupTimeScalar) && payload isa Function
             error("Parameter group $(param_name) expects a literal value, not a function.")
         elseif kind == ParameterGroupTimeFunction && !(payload === nothing || payload isa Function)
             error("Parameter group $(param_name) expects a Function definition.")
@@ -872,9 +876,9 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
         param_coords, subspace_info, param_indexes, param_groups)
 
     param_dicts = build_parameter_dicts(param_info)
-    param_values = ParameterValues(param_info)
+    sample_index_param_values = ParameterValues(param_info)
 
-    return parameters, param_info, param_values, param_dicts
+    return parameters, param_info, sample_index_param_values, param_dicts
 end
 
 #Return parameter mapping vector for switching ensemble inner index within a subspace.

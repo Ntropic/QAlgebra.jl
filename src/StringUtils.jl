@@ -1,7 +1,7 @@
 module StringUtils
 
-export subscript_indexes, superscript_indexes, var_substitution, var_substitution_latex
-export str2sub, str2sup, indexes2str, symbol2formatted, t_suffix, brace, braket, brace_separate, underscore_separate
+export subscript_indexes, superscript_indexes, var_substitution, var_substitution_latex, var_unsubstitution, reverse_var_substitution
+export str2sub, str2sup, indexes2str, symbol2formatted, unformat_symbol, t_suffix, brace, braket, brace_separate, underscore_separate
 export int_exponent2str, exponentdag2str
 """
     subscript_indexes::Dict{Char, String}
@@ -27,6 +27,44 @@ const superscript_indexes = Dict('a' => "ᵃ", 'b' => "ᵇ", 'c' => "ᶜ", 'd' =
 const var_substitution = Dict("alpha" => "α", "beta" => "β", "gamma" => "γ", "delta" => "δ", "epsilon" => "ε", "zeta" => "ζ", "eta" => "η", "theta" => "θ", "iota" => "ι", "kappa" => "κ", "lambda" => "λ", "mu" => "μ", "nu" => "ν", "xi" => "ξ", "rho" => "ρ", "sigma" => "σ", "tau" => "τ", "phi" => "φ", "chi" => "χ", "psi" => "ψ", "omega" => "ω", "pi" => "π")
 const var_substitution_latex = Dict("alpha" => raw"\alpha", "beta" => raw"\beta", "gamma" => raw"\gamma", "delta" => raw"\delta", "epsilon" => raw"\epsilon", "zeta" => raw"\zeta", "eta" => raw"\eta", "theta" => raw"\theta", "iota" => raw"\iota", "kappa" => raw"\kappa", "lambda" => raw"\lambda", "mu" => raw"\mu", "nu" => raw"\nu", "xi" => raw"\xi", "rho" => raw"\rho", "sigma" => raw"\sigma", "tau" => raw"\tau", "phi" => raw"\phi", "chi" => raw"\chi", "psi" => raw"\psi", "omega" => raw"\omega", "pi" => raw"\pi",
     "α" => raw"\alpha", "β" => raw"\beta", "γ" => raw"\gamma", "δ" => raw"\delta", "ε" => raw"\epsilon", "ζ" => raw"\zeta", "η" => raw"\eta", "θ" => raw"\theta", "ι" => raw"\iota", "κ" => raw"\kappa", "λ" => raw"\lambda", "μ" => raw"\mu", "ν" => raw"\nu", "ξ" => raw"\xi", "ρ" => raw"\rho", "σ" => raw"\sigma", "τ" => raw"\tau", "φ" => raw"\phi", "χ" => raw"\chi", "ψ" => raw"\psi", "ω" => raw"\omega", "π" => raw"\pi")
+
+const _var_unsubstitution_dict = Dict{String,String}(value => key for (key, value) in var_substitution)
+
+@inline function var_unsubstitution(symbol::AbstractString)::String
+    return get(_var_unsubstitution_dict, symbol, symbol)
+end
+var_unsubstitution(sym::Symbol) = Symbol(var_unsubstitution(String(sym)))
+
+function reverse_var_substitution(label::AbstractString)::String
+    text = String(label)
+    isempty(text) && return text
+    for (formatted, raw) in _var_unsubstitution_dict
+        occursin(formatted, text) || continue
+        text = replace(text, formatted => raw)
+    end
+    return text
+end
+reverse_var_substitution(sym::Symbol) = reverse_var_substitution(String(sym))
+
+const _subscript_chars = let chars = Set{Char}()
+    for token in values(subscript_indexes)
+        for ch in token
+            push!(chars, ch)
+        end
+    end
+    chars
+end
+
+const _superscript_chars = let chars = Set{Char}()
+    for token in values(superscript_indexes)
+        for ch in token
+            push!(chars, ch)
+        end
+    end
+    chars
+end
+
+const _formatted_extras = union(_subscript_chars, _superscript_chars)
 
 """
     str2sub(s::String) -> String
@@ -92,6 +130,47 @@ function symbol2formatted(symbol::String, indexes::Vector{String}=String[]; do_h
     end
     return symbol_str, symbol_latex
 end
+
+@inline function _latinize_and_strip(str::String)::String
+    buf = IOBuffer()
+    i = firstindex(str)
+    while i <= lastindex(str)
+        ch = str[i]
+        if ch in _formatted_extras
+            i = nextind(str, i)
+            continue
+        end
+        token = string(ch)
+        replacement = get(_var_unsubstitution_dict, token, nothing)
+        write(buf, replacement === nothing ? token : replacement)
+        i = nextind(str, i)
+    end
+    return String(take!(buf))
+end
+
+"""
+    unformat_symbol(label)
+
+Remove adornments (Greek substitutions, subscripts, superscripts, underscores,
+braced index lists, and latex markers) from `label`, returning a plain,
+lowercase identifier suitable for dictionary lookups.
+"""
+function unformat_symbol(label::AbstractString)::String
+    s = strip(String(label))
+    isempty(s) && return s
+    s = replace(s, "\\" => "")
+    s = replace(s, r"\s+" => "")
+    s = _latinize_and_strip(s)
+    s = replace(s, r"_\{[^}]*\}" => "")
+    s = replace(s, r"_[^{}\(\)\[\]]+" => "")
+    s = replace(s, r"\{[^}]*\}" => "")
+    s = replace(s, r"\([^)]*\)" => "")
+    s = replace(s, r"\[[^\]]*\]" => "")
+    s = replace(s, r"[,\s]" => "")
+    return lowercase(s)
+end
+
+unformat_symbol(sym::Symbol)::String = unformat_symbol(String(sym))
 function t_suffix(t_ind::Int; do_latex::Bool=false)
     if t_ind == 0
         return "t"

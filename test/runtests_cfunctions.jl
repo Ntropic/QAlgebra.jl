@@ -56,7 +56,7 @@ VARS = ["x", "y"]
             pv = ParameterValues(ex.param_info)
             indexes = ConcreteIndexes(ex.param_info)
             for idx in 1:length(ex.param_info.params_name)
-                set_param!(pv, idx, xv[(idx-1) % length(xv) + 1])
+                QAlgebra.CFunctions._store_value!(pv, idx, xv[(idx-1) % length(xv) + 1])
             end
             @test_succeeds evaluate(ex, pv, indexes)   "evaluate($ex, pv) failed"
         end
@@ -84,7 +84,7 @@ end
     param_def = ParameterDefinitions("alpha", "gamma_i" => gamma_dist)
     qspace = QSpace(sub_def, op_def, param_def)
     pinfo = qspace.param_info
-    pv = qspace.param_values
+    pv = qspace.sample_index_param_values
 
     alpha_idx = findfirst(==(Symbol(:alpha)), pinfo.inner_labels_symbols_flat)
     gamma_idx = findfirst(!=0, pinfo.indexed_parameter_indexes)
@@ -119,7 +119,8 @@ end
     concrete.indexes[1] = [2, 1]
     atom_gamma_indexed = CAtomIndexed(pinfo, exps_gamma, concrete)
 
-    set_param!(pv, :alpha, 1.0)
+    alpha_param_idx = get_parameter_index(pv, :alpha)
+    QAlgebra.CFunctions._store_value!(pv, alpha_param_idx, 1.0)
     set_time!(pv, 0.0)
 
     @test evaluate(atom_alpha, pv, default_indexes) == 1.0
@@ -128,7 +129,7 @@ end
     gamma_params = param_groups[gamma_group].parameter_indices
     gamma_values = [5.0, 6.0, 7.0]
     for (val_idx, param_idx) in enumerate(gamma_params)
-        set_param!(pv, param_idx, gamma_values[val_idx])
+        QAlgebra.CFunctions._store_value!(pv, param_idx, gamma_values[val_idx])
     end
     @test get_parameter_index(pv, :gamma_1) == gamma_params[1]
     @test get_parameter_index(pv, :gamma_2) == gamma_params[2]

@@ -107,7 +107,7 @@ function compute_integral_weights!(def::CIntegralDefinition, qspace; pv=nothing)
     def.param_info === qspace.param_info ||
         error("Supplied QSpace does not match the CIntegralDefinition ParameterInfo.")
     helpers = getfield(parentmodule(@__MODULE__), :QExpressions)
-    pv_local = pv === nothing ? deepcopy(qspace.param_values) : pv
+    pv_local = pv === nothing ? deepcopy(qspace.sample_index_param_values) : pv
     integrand = helpers._make_integrand(def.expr, pv_local, def.assignments)
     weights = integrate_node_funs(def.interpolator, def.pdfs; f=integrand)
     def.values .= ComplexF64.(weights)

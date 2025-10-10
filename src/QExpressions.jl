@@ -161,7 +161,6 @@ include("QExpressionsOps/QExpressions_composites.jl")
 include("QExpressionsOps/QExpressions_helper.jl") 
 include("QExpressionsOps/QExpressions_expand.jl")
 include("QExpressionsOps/QExpressions_cumulants.jl")
-include("QExpressionsOps/QExpressions_integrals.jl")
 
 """
     diffQEq

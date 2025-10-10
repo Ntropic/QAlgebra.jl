@@ -72,7 +72,7 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
         for idx in (gamma_idx::Int, delta_idx::Int)
             col = findfirst(==(idx), sampler.group_indices)
             @test col !== nothing
-            stored = qspace.param_values.group_values[idx]
+            stored = qspace.sample_index_param_values.group_values[idx]
             expected = sampler.samples[:, col]
             if stored isa AbstractVector{<:Real}
                 @test stored == expected
@@ -93,7 +93,50 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
         @test qspace.param_info.param_groups[gamma_idx::Int].payload === gamma_dist2
         @test qspace.ensembles[1].sampler !== nothing
         resolve_param!(qspace, :alpha, 3.5)
-        @test value(qspace.param_values, :alpha) ≈ 3.5
+        @test value(qspace.sample_index_param_values, :alpha) ≈ 3.5
+    end
+
+    @testset "Parameter readiness" begin
+        subspace_def = SubSpaceDefinitions(h=QubitPM("beta"),
+                                           i=Ensemble(3, 3, QubitPauli("sigma"), as_continuum=true),
+                                           b=Ladder(max_magnitude=2))
+        op_def = OperatorDefinitions()
+        param_def = ParameterDefinitions("alpha" => 2.0,
+                                         "beta(t)" => (t -> t^2),
+                                         "delta_i",
+                                         "eta_i" => QNormal(0.0, 1.0, 2.0, 8),
+                                         "gamma_{i,j}(t, delta_i, delta_j)" => ((t, di, dj) -> t * di + dj),
+                                         "t" => 1.0)
+        q_tmp = QSpace(subspace_def, op_def, param_def; max_t_ind=2)
+        info = q_tmp.param_info
+        pv = q_tmp.sample_index_param_values
+        idx_alpha = findfirst(==(Symbol("alpha")), info.outer_labels_symbols)::Int
+        idx_beta = findfirst(==(Symbol("beta")), info.outer_labels_symbols)::Int
+        idx_delta = findfirst(==(Symbol("delta")), info.outer_labels_symbols)::Int
+        idx_eta = findfirst(==(Symbol("eta")), info.outer_labels_symbols)::Int
+        idx_gamma = findfirst(==(Symbol("gamma")), info.outer_labels_symbols)::Int
+        idx_t = findfirst(==(Symbol("t")), info.outer_labels_symbols)::Int
+
+        @test pv.group_definition_initialized[idx_delta] == false
+        @test pv.group_initialized[idx_alpha] == true
+        @test pv.group_initialized[idx_beta] == true
+        @test pv.group_initialized[idx_delta] == false
+        @test pv.group_initialized[idx_eta] == false
+        @test pv.group_initialized[idx_gamma] == false
+        @test pv.group_initialized[idx_t] == true
+
+        resolve_param!(q_tmp, :delta, QUniform(-1.0, 1.0, 8))
+        @test pv.group_definition_initialized[idx_delta] == true
+        @test pv.group_initialized[idx_delta] == true
+        @test pv.group_initialized[idx_eta] == true
+        @test pv.group_initialized[idx_gamma] == true
+        @test get_parameter_group(q_tmp, "δᵢ") == idx_delta
+        gamma_param_idx = QAlgebra.QSpaces.get_parameter_index(q_tmp, "γᵢ")
+        @test gamma_param_idx in q_tmp.param_info.param_groups[idx_gamma].parameter_indices
+        resolve_param!(q_tmp, idx_delta, QUniform(-0.5, 0.5, 8))
+        @test pv.group_definition_initialized[idx_delta] == true
+        resolve_param!(q_tmp, "δᵢ", QUniform(-0.25, 0.25, 8))
+        @test pv.group_definition_initialized[idx_delta] == true
     end
 
     @testset "Ensemble Naming" begin

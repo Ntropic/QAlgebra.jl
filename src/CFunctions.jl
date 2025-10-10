@@ -19,7 +19,7 @@ export contains_non_simple_CFunction, Indexed, has_indexed_parameters
 export list_cabstracts, list_ctypes, list_cintegrals
 export where_acting, where_acting!, which_params_acting, which_params_acting!, param_index_tuples
 export which_ensemble_acting, which_ensemble_acting!, substitute, separate_by_cond
-export ParameterValues, set_param!, set_time!, update_t!, get_parameter_index, value, param_value, recompute_functions!, ensure_functions!, compute_integral_weights!, resolve_param!
+export ParameterValues, set_time!, update_t!, get_parameter_index, value, param_value, recompute_functions!, ensure_functions!, compute_integral_weights!, resolve_param!
 
 import Base: copy, exp, log, length, getindex, iterate, size
 import ComplexRationals: isonelike
@@ -118,7 +118,7 @@ struct CIntegralDefinition{N} <: CDef
     interpolator::QInterpolator
     axis_lengths::Vector{Int}
     pdfs::Vector{Function}
-    assignments::Vector{Vector{Int}}
+    assignments::Vector{Vector{Int}}  # cached parameter index lists for assigning interpolated values
     values::Array{ComplexF64,N}
     function CIntegralDefinition(index::Int,
                                  sortkey::Int,
