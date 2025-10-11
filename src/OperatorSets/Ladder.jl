@@ -1,5 +1,37 @@
 export Ladder
 
+function cleanup_terms(terms::Vector{Tuple{T,S}})::Vector{Tuple{T,S}} where {T<:Number,S}
+    # 1) sort once by index
+    sort!(terms, by = x -> x[2])
+    # 2) prealloc output to worst‑case length and scan in one pass
+    n = length(terms)
+    T0 = typeof(terms[1][1])
+    S0 = typeof(terms[1][2])
+    cleaned = Vector{Tuple{T0,S0}}(undef, n)
+    cnt = 0
+    i = 1
+    @inbounds while i ≤ n
+        sumc, idx = terms[i]           # destructure once
+        j = i + 1
+        # inner loop: accumulate identical idx
+        @inbounds while j ≤ n && terms[j][2] == idx
+            sumc += terms[j][1]
+            j += 1
+        end
+
+        # push nonzero
+        if sumc != zero(T0)
+            cnt += 1
+            cleaned[cnt] = (sumc, idx)
+        end
+
+        i = j
+    end
+    resize!(cleaned, cnt)                # trim unused slots
+    return cleaned
+end
+
+
 @doc raw"""
     Ladder(; max_magnitude::Int=-1) -> OperatorSet
 

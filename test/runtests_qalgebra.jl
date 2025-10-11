@@ -93,7 +93,8 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
         @test qspace.param_info.param_groups[gamma_idx::Int].payload === gamma_dist2
         @test qspace.ensembles[1].sampler !== nothing
         resolve_param!(qspace, :alpha, 3.5)
-        @test value(qspace.sample_index_param_values, :alpha) ≈ 3.5
+        alpha_group_idx = findfirst(==(Symbol("alpha")), info.outer_labels_symbols)::Int
+        @test value(qspace.sample_index_param_values, alpha_group_idx, -1, Int[]) ≈ 3.5
     end
 
     @testset "Parameter readiness" begin

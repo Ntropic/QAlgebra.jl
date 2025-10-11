@@ -1,7 +1,7 @@
 using Combinatorics
 using SparseArrays
 using ..CFunctions: ParameterInfo, ParameterIndexes, ParameterDicts, ParameterValues, build_parameter_dicts
-using ..StringUtils: symbol2formatted, str2sub, unformat_symbol, var_unsubstitution, reverse_var_substitution
+using ..StringUtils: symbol2formatted, str2sub, var_unsubstitution, var_unsubstitution, reverse_var_substitution
 using ..SparsePermutationTools: SparsePermutation, denseperm
 using ..Sampler: QDistribution, QEnsembleFunction, AbstractEnsembleSample
 using ..ParameterGroups: ParameterGroupKind, ParameterGroup,
@@ -787,7 +787,7 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
                 end
             end
             if !isempty(required_index_tokens) && !(required_index_tokens ⊆ used_index_tokens)
-                missing = setdiff(required_index_tokens, used_index_tokens)
+                _missing = setdiff(required_index_tokens, used_index_tokens)
                 signature = group_defs[g].name
                 if !isempty(group_indexes[g])
                     signature *= "_{" * join(group_indexes[g], ",") * "}"
@@ -795,7 +795,7 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
                 if group_of_t[g]
                     signature *= "(t)"
                 end
-                message_missing = join(collect(missing), ", ")
+                message_missing = join(collect(_missing), ", ")
                 error("Ensemble function for $(signature) does not reference index(es) $(message_missing). Each underscore index in $(signature) must appear in the function arguments.")
             end
             function_param_refs[idx] = refs
@@ -868,7 +868,7 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
         ens.ensemble_function_group_indices = func_idxs
     end
 
-    param_info = CFunctions.ParameterInfo(outer_labels_symbols, inner_labels_symbols_flat, outer_labels, outer_labels_str, outer_labels_latex, param_names,
+    param_info = ParameterInfo(outer_labels_symbols, inner_labels_symbols_flat, outer_labels, outer_labels_str, outer_labels_latex, param_names,
         param_strs, param_latex, param_of_indexes, param_group_by_index,
         t_index_by_index, indexed_parameter_indexes,
         where_acting_by_parameter, params_acting_by_index, param_index_tuples, subspace_index_maps, t_index_transform, indexes_by_t_index,
@@ -876,7 +876,7 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
         param_coords, subspace_info, param_indexes, param_groups)
 
     param_dicts = build_parameter_dicts(param_info)
-    sample_index_param_values = ParameterValues(param_info)
+    sample_index_param_values = ParameterValues(param_groups)
 
     return parameters, param_info, sample_index_param_values, param_dicts
 end
@@ -894,4 +894,3 @@ end
 
 # Return parameter mapping vector for switching from t_index2 to t_index1.
 map_by_tindex(t_index1::Int, t_index2::Int, pinfo::ParameterInfo) = denseperm(pinfo.t_index_transform[t_index1+1, t_index2+1])
-# from t_index2 to t_index1 

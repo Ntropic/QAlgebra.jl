@@ -135,13 +135,13 @@ end
     @test get_parameter_index(pv, :gamma_2) == gamma_params[2]
     @test get_parameter_index(pv, :gamma_i) == gamma_params[1]
     @test get_parameter_index(pv, :gamma_j) == gamma_params[2]
-    t0_idx = get_parameter_index(pv, :t0)
-    @test value(pv, gamma_params[1]) == 5.0
-    @test value(pv, :gamma_2) == 6.0
-    @test value(pv, t0_idx) == 0.0
-    @test value(pv, :t0) == 0.0
+    gamma_group_idx = findfirst(==(Symbol("gamma")), pinfo.outer_labels_symbols)::Int
+    @test value(pv, gamma_group_idx, -1, [1]) == 5.0
+    @test value(pv, gamma_group_idx, -1, [2]) == 6.0
+    time_group_idx = findfirst(==(Symbol("t")), pinfo.outer_labels_symbols)::Int
+    @test value(pv, time_group_idx, 0, Int[]) == 0.0
     set_time!(pv, 1.5)
-    @test value(pv, :t0) == 1.5
+    @test value(pv, time_group_idx, 0, Int[]) == 1.5
     @test value(pv, gamma_idx, concrete) == 6.0
     @test_throws ErrorException value(pv, gamma_idx, ConcreteIndexes(pinfo))
     @test evaluate(atom_gamma_indexed, pv, default_indexes) == 6.0

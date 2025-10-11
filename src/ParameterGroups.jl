@@ -53,7 +53,7 @@ mutable struct ParameterGroup
     function_args::Vector{String}
     dependency_names::Vector{String}
     dependency_indices::Vector{Int}
-    ensemble_outer_indices::Vector{Int}
+    ensemble_outer_indices::Vector{Int}   # the group indices of the ensembles it belongs to 
     index_outer_subspaces::Vector{Int}
     ensemble_presence::BitVector
     parameter_indices::Vector{Int}

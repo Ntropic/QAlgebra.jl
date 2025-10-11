@@ -2,7 +2,8 @@ module QSpaces
 
 using ComplexRationals
 using ..CFunctions
-import ..CFunctions: update_t!, set_time!
+import ..ParameterGroups: ParameterGroupPayload
+# import ..CFunctions: update_t!, _resolve_param_core!
 using ..StringUtils
 using ..Cumulants: ReducedCumulantList
 using ..Sampler
@@ -17,18 +18,10 @@ export AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
 export Parameter, ParameterDefinitions, set_parameter_group_definition!, map_by_subspace, map_by_tindex
 export QSpace
-export get_parameter_group, get_parameter, get_parameter_index, get_subspace, get_subspace_index, get_ensemble, get_operator_type
+export resolve_param!
 
 Is = Vector{Int}
 
-struct SubSpaceDicts
-    by_outer::Dict{Symbol,Int}
-    by_inner::Dict{Symbol,Tuple{Int,Int}}
-end
-
-struct AbstractOperatorDicts
-    by_name::Dict{Symbol,Int}
-end
 """
     OperatorSet(name, particle_type, len, neutral_element, base_ops, ops, op_product, op_dag, op2str, op2latex; kwargs...)
 
@@ -160,68 +153,14 @@ include("QSpaceOps/QSpace_abstract.jl")
 include("QSpaceOps/QSpace_parameters.jl")
 using ..Sampler: build_discrete_samples, build_continuous_samples
 
-"""
-    assign_ensemble_samples!(subspaces, param_values)
-
-Inspect every ensemble in `subspaces` and (re)build sampling data for those
-whose distribution-backed parameter groups possess payloads. Samplers are
-instantiated only when *every* group registered with the ensemble has an
-assigned `QDistribution`; otherwise the sampler is left unset so dependent code
-does not observe stale samples.
-
-The function is invoked during `QSpace` construction and again whenever
-`resolve_param!` updates a distribution payload.
-"""
-function assign_ensemble_samples!(subspaces, param_values)
-    info = param_values.param_info
-    groups = info.param_groups
-    outer_symbols = info.outer_labels_symbols
-    outer_names = info.outer_labels
-    for ss in subspaces
-        ens = ss.ensemble
-        ens === nothing && continue
-        dist_idxs = ens.distribution_group_indices
-        isempty(dist_idxs) && continue
-        all_assigned = true
-        dists = Vector{QDistribution}(undef, length(dist_idxs))
-        for (pos, idx) in enumerate(dist_idxs)
-            payload = groups[idx].payload
-            if payload isa QDistribution
-                dists[pos] = payload
-            else
-                all_assigned = false
-                break
-            end
-        end
-        if all_assigned
-            group_symbols = outer_symbols[dist_idxs]
-            group_names = outer_names[dist_idxs]
-            method = ens.sample_method === :default ?
-                (ens.as_continuum ? :chebychev : :random) : ens.sample_method
-            sample = if ens.as_continuum
-                build_continuous_samples(ens, dist_idxs, group_symbols, group_names, dists;
-                    method=method)
-            else
-                build_discrete_samples(ens, dist_idxs, group_symbols, group_names, dists;
-                    method=method,
-                    num_nodes=ens.sample_num_nodes,
-                    atol=ens.sample_atol,
-                    rtol=ens.sample_rtol,
-                    max_iter=ens.sample_max_iter)
-            end
-            ens.sampler = sample::AbstractEnsembleSample
-            attach_samples!(param_values, sample)
-            sample_count = size(sample.samples, 1)
-            register_ensemble_sample_size!(param_values, ss.ss_outer_ind, sample_count)
-        else
-            ens.sampler = nothing
-        end
-    end
-    ensure_functions!(param_values)
-    return nothing
+struct SubSpaceDicts
+    by_outer::Dict{Symbol,Int}
+    by_inner::Dict{Symbol,Tuple{Int,Int}}
 end
-
-function build_subspace_dicts(subspaces)::SubSpaceDicts
+struct AbstractOperatorDicts
+    by_name::Dict{Symbol,Int}
+end
+function build_subspace_dicts(subspaces::Vector{SubSpace})::SubSpaceDicts
     outer_map = Dict{Symbol,Int}()
     inner_map = Dict{Symbol,Tuple{Int,Int}}()
     for (idx, ss) in enumerate(subspaces)
@@ -238,8 +177,7 @@ function build_subspace_dicts(subspaces)::SubSpaceDicts
     end
     return SubSpaceDicts(outer_map, inner_map)
 end
-
-function build_operator_dicts(operatortypes)::AbstractOperatorDicts
+function build_operator_dicts(operatortypes::Vector{OperatorType})::AbstractOperatorDicts
     map = Dict{Symbol,Int}()
     for (idx, optype) in enumerate(operatortypes)
         if haskey(map, optype.name_sym)
@@ -303,23 +241,21 @@ mutable struct QSpace
         params, param_info, sample_index_param_values, parameter_dicts = ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
         where_which = WhereWhichParamGroup(param_info.param_groups)
 
-        assign_ensemble_samples!(subspaces, sample_index_param_values)
+        # assign_ensemble_samples!(subspaces, sample_index_param_values) # To Do 
 
         subspace_dicts = build_subspace_dicts(subspaces)
         operator_dicts = build_operator_dicts(operatortypes)
 
         # Generate the string representations
         c_one = CAtom(param_info, spzeros(Int, length(params)))
-        c_zero = CAtom(param_info, ComplexRational(0,0,1), spzeros(Int, length(params)))
+        c_zero = CAtom(param_info, ComplexRational(0,0, 1), spzeros(Int, length(params)))
         cumulant_cache = ReducedCumulantList(1)
         ensembles = Ensemble[ss.ensemble for ss in subspaces if ss.ensemble !== nothing]
 
-        qss = new( subspaces, subspace_info, ensembles,                           # Subspaces
+        qss = new(subspaces, subspace_info, ensembles,                           # Subspaces 
                 operatortypes, operatortype_info,                                 # Abstract Operators 
                 params, param_info, where_which, sample_index_param_values, parameter_dicts, subspace_dicts, operator_dicts,
                 I_op, I_ensemble_op, c_one, c_zero, cumulant_cache, max_t_ind)    # Precomputed operator blueprints 
-
-        sample_index_param_values.qspace = WeakRef(qss)
 
         GC.@preserve qss begin
             for ens in ensembles
@@ -383,7 +319,6 @@ function Base.show(io::IO, qspace::QSpace)
         show(io, rhs)
         println(io)
     end
-
     # Operator types
     op_strs = String[operator_type2string(op) for op in qspace.operatortypes]
     if length(op_strs) > 0 
@@ -391,201 +326,8 @@ function Base.show(io::IO, qspace::QSpace)
     end
 end
 
-@inline function _require_symbol(name)
-    name isa Symbol && return name
-    return Symbol(name)
-end
 
-@inline function _normalize_parameter_lookup(name::Union{Symbol,String})
-    raw = String(strip(string(name)))
-    normalized = unformat_symbol(name)
-    sym = isempty(normalized) ? Symbol(raw) : Symbol(normalized)
-    return sym, raw, normalized
-end
+include("QSpaceOps/QSpace_get_types.jl")
+include("QSpaceOps/QSpace_set_payloads.jl")
 
-@inline function _group_label(group::ParameterGroup)
-    formatted, _ = symbol2formatted(String(group.name))
-    plain = String(group.name)
-    return "$(formatted) ($(plain))"
-end
-
-function _parameter_group_options(qspace::QSpace)
-    [_group_label(group) for group in qspace.param_info.param_groups]
-end
-
-function _parameter_options(qspace::QSpace)
-    unique(_parameter_group_options(qspace))
-end
-
-function _match_parameter_group_strings(qspace::QSpace, raw::String, normalized::String)
-    matches = Int[]
-    for (idx, group) in enumerate(qspace.param_info.param_groups)
-        if raw == group.display_signature || raw == string(group.name)
-            push!(matches, idx)
-        elseif !isempty(normalized) && normalized == unformat_symbol(group.display_signature)
-            push!(matches, idx)
-        end
-    end
-    return unique(matches)
-end
-
-function _match_parameter_strings(qspace::QSpace, raw::String, normalized::String)
-    matches = Int[]
-    for (idx, param) in enumerate(qspace.params)
-        if raw == param.param_str || raw == param.param_name || raw == param.param_latex || raw == param.param_name_no_t
-            push!(matches, idx)
-            continue
-        end
-        if !isempty(normalized)
-            norm_param = unformat_symbol(param.param_str)
-            if normalized == norm_param || normalized == unformat_symbol(param.param_name) || normalized == unformat_symbol(param.param_latex)
-                push!(matches, idx)
-            end
-        end
-    end
-    return unique(matches)
-end
-
-function _resolve_parameter_index(qspace::QSpace, name::Union{Symbol,String})
-    sym, raw, normalized = _normalize_parameter_lookup(name)
-    dict = qspace.parameter_dicts.param_name_to_indices
-    matches = get(dict, sym, Int[])
-    if isempty(matches) && sym != Symbol(raw)
-        matches = get(dict, Symbol(raw), Int[])
-    end
-    matches = copy(matches)
-    if isempty(matches)
-        matches = _match_parameter_strings(qspace, raw, normalized)
-    end
-    if isempty(matches)
-        options = join(_parameter_options(qspace), ", ")
-        norm_hint = (!isempty(normalized) && normalized != raw) ? " (normalized: \"$(normalized)\")" : ""
-        error("No parameter matching \"$(raw)\"$(norm_hint) registered in QSpace. Available parameter groups: $(options).")
-    end
-    if length(matches) == 1
-        return matches[1]
-    end
-    info = qspace.param_info
-    groups = unique(info.param_group_by_index[matches])
-    if length(groups) == 1
-        return matches[1]
-    end
-    names = [_group_label(info.param_groups[g]) for g in groups]
-    error("Parameter name \"$(raw)\" is ambiguous. Matches: $(join(names, ", ")).")
-end
-
-function get_parameter_group(qspace::QSpace, name::Union{Symbol,String})
-    sym, raw, normalized = _normalize_parameter_lookup(name)
-    dict = qspace.parameter_dicts.group_name_to_index
-    idx = get(dict, sym, nothing)
-    if idx === nothing && sym != Symbol(raw)
-        idx = get(dict, Symbol(raw), nothing)
-    end
-    if idx === nothing
-        matches = _match_parameter_group_strings(qspace, raw, normalized)
-        if isempty(matches)
-            options = join(_parameter_group_options(qspace), ", ")
-            norm_hint = (!isempty(normalized) && normalized != raw) ? " (normalized: \"$(normalized)\")" : ""
-            error("No parameter group matching \"$(raw)\"$(norm_hint) registered in QSpace. Available groups: $(options).")
-        elseif length(matches) > 1
-            names = [_group_label(qspace.param_info.param_groups[m]) for m in matches]
-            error("Parameter group name \"$(raw)\" is ambiguous. Matches: $(join(names, ", ")).")
-        else
-            idx = matches[1]
-        end
-    end
-    return idx
-end
-
-function get_parameter_index(qspace::QSpace, name::Union{Symbol,String})
-    return _resolve_parameter_index(qspace, name)
-end
-
-function get_parameter(qspace::QSpace, name::Union{Symbol,String})
-    idx = _resolve_parameter_index(qspace, name)
-    return qspace.params[idx]
-end
-
-function _resolve_subspace_location(qspace::QSpace, name::Symbol)
-    dicts = qspace.subspace_dicts
-    if haskey(dicts.by_outer, name)
-        return qspace.subspaces[dicts.by_outer[name]], nothing
-    elseif haskey(dicts.by_inner, name)
-        idx, inner_idx = dicts.by_inner[name]
-        return qspace.subspaces[idx], inner_idx
-    else
-        error("No subspace associated with key $(name).")
-    end
-end
-
-function get_subspace(qspace::QSpace, name::Symbol)
-    subspace, _ = _resolve_subspace_location(qspace, name)
-    return subspace
-end
-get_subspace(qspace::QSpace, name::String) = get_subspace(qspace, _require_symbol(name))
-
-function get_subspace_index(qspace::QSpace, name::Symbol)
-    _, inner_idx = _resolve_subspace_location(qspace, name)
-    inner_idx === nothing && error("Key $(name) refers to an outer subspace; no inner index to return.")
-    return inner_idx
-end
-get_subspace_index(qspace::QSpace, name::String) = get_subspace_index(qspace, _require_symbol(name))
-
-function get_ensemble(qspace::QSpace, name::Symbol)
-    subspace = get_subspace(qspace, name)
-    ens = subspace.ensemble
-    ens === nothing && error("Subspace $(subspace.key) is not an ensemble.")
-    return ens
-end
-get_ensemble(qspace::QSpace, name::String) = get_ensemble(qspace, _require_symbol(name))
-
-function get_operator_type(qspace::QSpace, name::Symbol)
-    idx = get(qspace.operator_dicts.by_name, name, nothing)
-    idx === nothing && error("No operator type named $(name) registered in QSpace.")
-    return qspace.operatortypes[idx]
-end
-get_operator_type(qspace::QSpace, name::String) = get_operator_type(qspace, _require_symbol(name))
-
-function update_t!(qspace::QSpace, value; slot::Int=0)
-    update_t!(qspace.sample_index_param_values, value; slot=slot)
-    return qspace
-end
-
-set_time!(qspace::QSpace, value; slot::Int=0) = update_t!(qspace, value; slot=slot)
-
-
-## Test 
-#xi, yi, zi = base_operators("i", qs)
-#I = base_operators("I", qs)
-#alpha, beta = base_operators("params", qs)
-function cleanup_terms(terms::Vector{Tuple{T,S}})::Vector{Tuple{T,S}} where {T<:Number,S}
-    # 1) sort once by index
-    sort!(terms, by = x -> x[2])
-    # 2) prealloc output to worst‑case length and scan in one pass
-    n = length(terms)
-    T0 = typeof(terms[1][1])
-    S0 = typeof(terms[1][2])
-    cleaned = Vector{Tuple{T0,S0}}(undef, n)
-    cnt = 0
-    i = 1
-    @inbounds while i ≤ n
-        sumc, idx = terms[i]           # destructure once
-        j = i + 1
-        # inner loop: accumulate identical idx
-        @inbounds while j ≤ n && terms[j][2] == idx
-            sumc += terms[j][1]
-            j += 1
-        end
-
-        # push nonzero
-        if sumc != zero(T0)
-            cnt += 1
-            cleaned[cnt] = (sumc, idx)
-        end
-
-        i = j
-    end
-    resize!(cleaned, cnt)                # trim unused slots
-    return cleaned
-end
 end # module QSpaces

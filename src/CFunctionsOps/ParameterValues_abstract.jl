@@ -1,5 +1,6 @@
 using Base: WeakRef
 import .CFunctions
+import .CFunctions: update_t!
 import .ParameterGroups
 
 const _GroupStorageAbstract = Union{ComplexF64, Array{ComplexF64}, Vector{Float64}}
@@ -304,13 +305,10 @@ function _set_distribution_params!(aip::AbstractIndexParameters, assignments; sl
             for (val_idx, storage_pos) in enumerate(positions)
                 storage[storage_pos] = vals[val_idx]
             end
-            flags = pv.group_time_initialized[group_idx]
             if group.of_t
-                slot_idx = clamp(slot + 1, 1, length(flags))
-                flags[slot_idx] = true
-                pv.group_initialized[group_idx] = flags[1]
+                local_slot = slot + 1
+                CFunctions._mark_slot_initialized!(pv, group_idx, local_slot)
             else
-                fill!(flags, true)
                 pv.group_initialized[group_idx] = true
             end
             pv.group_definition_initialized[group_idx] = true
@@ -326,7 +324,7 @@ function _set_distribution_params!(aip::AbstractIndexParameters, assignments; sl
         for group_idx in touched_groups
             group = info.param_groups[group_idx]
             if group.of_t
-                slot_idx = clamp(slot + 1, 1, length(pv.group_time_initialized[group_idx]))
+                slot_idx = CFunctions._clamp_slot(pv, group_idx, slot + 1)
                 CFunctions._refresh_group_dependents!(pv, group_idx; slot=slot_idx)
             else
                 CFunctions._refresh_group_dependents!(pv, group_idx)

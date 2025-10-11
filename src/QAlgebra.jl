@@ -84,11 +84,6 @@ export int_exponent2str, exponentdag2str
 
 include("QSpaceOps/Sampler.jl")
 using .Sampler
-using .Sampler: QDistribution, QNormal, QUniform, QEnsembleFunction, pdf
-using .Sampler: QInterpolator, build_interpolation_nodes, eval_interpolation, nodes, basis_values, basis_values!
-using .Sampler: QIntegrator, integrate_node_funs, normalization_constant, eval_integration
-using .Sampler: build_discrete_samples, build_continuous_samples
-using .Sampler: EnsembleSamples, AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 
 export QDistribution, QNormal, QUniform, QEnsembleFunction, pdf
 export QInterpolator, build_interpolation_nodes, eval_interpolation, nodes, basis_values, basis_values!
@@ -111,8 +106,8 @@ export contains_non_simple_CFunction, has_indexed_parameters, Indexed
 export list_cabstracts, list_ctypes, list_cintegrals
 export where_acting, where_acting!, which_ensemble_acting, which_ensemble_acting!
 export which_params_acting, which_params_acting!, separate_by_cond, param_index_tuples
-export ParameterValues, set_time!, update_t!, get_parameter_index, value, param_value, recompute_functions!, ensure_functions!, attach_samples!, resolve_param!
-export WhereWhichParamGroup, AbstractIndexParameters, set_distribution_params!
+export ParameterValues#, update_t!, value, resolve_param!
+export WhereWhichParamGroup, AbstractIndexParameters
 
 include("Cumulants.jl")
 using .Cumulants
@@ -127,8 +122,6 @@ export QSpace, SubSpaceDicts, AbstractOperatorDicts
 export get_parameter_group, get_parameter, get_subspace, get_subspace_index, get_ensemble, get_operator_type
 export QubitPauli, QubitPM, Ladder
 export DiscreteSamples, ContinuousSamples
-
-include("ParameterGroupsOps/ParameterGroups_abstract.jl")
 
 include("Plotting.jl")
 

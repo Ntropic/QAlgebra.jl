@@ -19,7 +19,8 @@ export contains_non_simple_CFunction, Indexed, has_indexed_parameters
 export list_cabstracts, list_ctypes, list_cintegrals
 export where_acting, where_acting!, which_params_acting, which_params_acting!, param_index_tuples
 export which_ensemble_acting, which_ensemble_acting!, substitute, separate_by_cond
-export ParameterValues, set_time!, update_t!, get_parameter_index, value, param_value, recompute_functions!, ensure_functions!, compute_integral_weights!, resolve_param!
+export ParameterValues#, update_t!, value, resolve_param!
+export compute_integral_weights!
 
 import Base: copy, exp, log, length, getindex, iterate, size
 import ComplexRationals: isonelike

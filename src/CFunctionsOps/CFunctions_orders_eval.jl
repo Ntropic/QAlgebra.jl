@@ -2,7 +2,7 @@ export max_exponents, evaluate
 
 import ..ConcreteIndexes
 import ..CFunctions
-using ..CFunctions: ParameterValues, value, recompute_functions!
+using ..CFunctions: ParameterValues #, value, recompute_functions!
 
 """
     max_exponents(f::CFunction) -> Vector{Int}
