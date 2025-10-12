@@ -177,25 +177,21 @@ function which_ensemble_acting!(f::CIntegral, where_non_trivial::Vector{BitVecto
 end
 function which_ensemble_acting!(f::CAtom, where_non_trivial::Vector{BitVector})::Vector{BitVector}
     vexp_inds = f.var_exponents.nzind
-    which_inds = f.param_info.indexed_parameter_indexes
-    where_actings = f.param_info.where_acting_by_parameter
-    for ind in vexp_inds 
-        curr_which_ind = which_inds[ind]
-        if curr_which_ind != 0
-            vecvec_or!(where_non_trivial, where_actings[curr_which_ind])
-        end
+    params = f.param_info.parameters
+    for ind in vexp_inds
+        param = params[ind]
+        param.indexed_param || continue
+        vecvec_or!(where_non_trivial, param.acts_on)
     end
     return where_non_trivial
 end
 function which_ensemble_acting!(f::CAtomIndexed, where_non_trivial::Vector{BitVector})::Vector{BitVector}
     vexp_inds = f.var_exponents.nzind
-    which_inds = f.param_info.indexed_parameter_indexes
-    where_actings = f.param_info.where_acting_by_parameter
+    params = f.param_info.parameters
     for ind in vexp_inds
-        curr_which_ind = which_inds[ind]
-        if curr_which_ind != 0
-            vecvec_or!(where_non_trivial, where_actings[curr_which_ind])
-        end
+        param = params[ind]
+        param.indexed_param || continue
+        vecvec_or!(where_non_trivial, param.acts_on)
     end
     return where_non_trivial
 end

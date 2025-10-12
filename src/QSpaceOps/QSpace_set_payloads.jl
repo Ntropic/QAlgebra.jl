@@ -10,7 +10,7 @@ does not observe stale samples.
 The function is invoked during `QSpace` construction and again whenever
 `resolve_param!` updates a distribution payload.
 """
-function assign_ensemble_samples!(groups::Vector{ParameterGroup}, subspace_info::SubSpaceInfo, param_values::ParameterValues)
+function assign_ensemble_samples!(groups::AbstractVector{ParameterGroupLike}, subspace_info::SubSpaceInfo, param_values::ParameterValues)
     info = param_values.param_info
     outer_symbols = info.outer_labels_symbols
     outer_names = info.outer_labels
@@ -69,8 +69,8 @@ end
 Attach or update the payload for a parameter group on an existing `qspace`. This could be a a scalar value or a Function. 
     The function checks if the argument is in line with the requirements of the parameter group. 
 """
-#function resolve_param!(qspace::QSpace, name::Union{Symbol,String}, payload::ParameterGroupPayload)
+#function resolve_param!(qspace::QSpace, name::Union{Symbol,String}, payload::ParameterGroupStorageUnion)
 #    group_idx = get_parameter_group(qspace, name)
-#    return _resolve_param_core!(qspace, group_idx, payload)
+#    return _resolve_param!(qspace, group_idx, payload)
 #end
-
+using ..ParameterGroups: ParameterGroupLike

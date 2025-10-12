@@ -31,13 +31,11 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
         info = qspace.param_info
         ensemble_idx = info.subspace_info.ensemble_index_by_outer_index[outer_idx]
         ensemble_idx == 0 && return false
-        for inner_bits in info.params_acting_by_index[ensemble_idx]
-            for (param_idx, acts) in pairs(inner_bits)
-                acts || continue
-                if info.param_group_by_index[param_idx] == group_idx
-                    return true
-                end
-            end
+        for param in info.parameters
+            param.group_index == group_idx || continue
+            acts = param.acts_on
+            ensemble_idx > length(acts) && continue
+            any(acts[ensemble_idx]) && return true
         end
         return false
     end
@@ -62,14 +60,32 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
         @test beta_idx !== nothing
         @test gamma_idx !== nothing
         @test delta_idx !== nothing
+        alpha_idx = alpha_idx::Int
+        beta_idx = beta_idx::Int
+        gamma_idx = gamma_idx::Int
+        delta_idx = delta_idx::Int
         ensemble_outer = 2
-        @test !_group_acts_on_subspace(qspace, alpha_idx::Int, ensemble_outer)
-        @test _group_acts_on_subspace(qspace, gamma_idx::Int, ensemble_outer)
-        @test _group_acts_on_subspace(qspace, delta_idx::Int, ensemble_outer)
+        @test !_group_acts_on_subspace(qspace, alpha_idx, ensemble_outer)
+        @test _group_acts_on_subspace(qspace, gamma_idx, ensemble_outer)
+        @test _group_acts_on_subspace(qspace, delta_idx, ensemble_outer)
         sampler = qspace.ensembles[1].sampler
         param_groups = qspace.param_info.param_groups
         @test sampler isa DiscreteSamples
-        for idx in (gamma_idx::Int, delta_idx::Int)
+        gamma_deps = param_groups[gamma_idx].dependency_indices
+        delta_deps = param_groups[delta_idx].dependency_indices
+        @test delta_idx in gamma_deps
+        @test gamma_idx in delta_deps
+        @test !(gamma_idx in gamma_deps)
+        @test !(delta_idx in delta_deps)
+        alpha_subspaces = param_groups[alpha_idx].ensemble_subspaces
+        gamma_subspaces = param_groups[gamma_idx].ensemble_subspaces
+        delta_subspaces = param_groups[delta_idx].ensemble_subspaces
+        @test isempty(alpha_subspaces)
+        @test length(gamma_subspaces) == 1
+        @test length(delta_subspaces) == 1
+        @test gamma_subspaces[1] === qspace.subspaces[ensemble_outer]
+        @test delta_subspaces[1] === qspace.subspaces[ensemble_outer]
+        for idx in (gamma_idx, delta_idx)
             col = findfirst(==(idx), sampler.group_indices)
             @test col !== nothing
             stored = qspace.sample_index_param_values.group_values[idx]
@@ -216,7 +232,7 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
             end
         end
 
-        indexed_param = findfirst(!iszero, param_info.indexed_parameter_indexes)
+        indexed_param = findfirst(p -> p.indexed_param, param_info.parameters)
         @test indexed_param !== nothing
         idx_val = indexed_param::Int
         tuples = param_index_tuples(param_info, idx_val)

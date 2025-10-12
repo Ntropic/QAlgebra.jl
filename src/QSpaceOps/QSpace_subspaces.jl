@@ -1,4 +1,5 @@
 import ..SubSpaceIndex
+using ..ParameterGroups: AbstractSubSpace
 using ..EnsembleSamples: AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 
 """
@@ -117,7 +118,7 @@ records the operator set it draws from, multiplicities for ensemble replication,
 links back to the parent `Ensemble` when applicable. The public API constructs these
 objects through [`SubSpaceDefinitions`](@ref).
 """
-struct SubSpace
+struct SubSpace <: AbstractSubSpace
     key_symbol::Symbol
     keys_symbols::Vector{Symbol}
     key::String                     # Original input key

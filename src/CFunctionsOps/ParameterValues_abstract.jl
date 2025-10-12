@@ -2,6 +2,7 @@ using Base: WeakRef
 import .CFunctions
 import .CFunctions: update_t!
 import .ParameterGroups
+using .ParameterGroups: ParameterGroup, ParameterGroupLike
 
 const _GroupStorageAbstract = Union{ComplexF64, Array{ComplexF64}, Vector{Float64}}
 
@@ -12,7 +13,7 @@ struct AbstractIndexParameters
     where_which::WhereWhichParamGroup
 end
 
-@inline function _zero_storage(group::ParameterGroup)
+@inline function _zero_storage(group::ParameterGroup{T}) where {T}
     time_count = max(group.time_count, 1)
     idx_sizes = group.index_sizes
     if group.kind == ParameterGroups.ParameterGroupDistribution
@@ -50,21 +51,23 @@ end
 @inline function _distribution_slot(info::CFunctions.ParameterInfo, group_idx::Int, param_idx::Int)
     params = info.param_groups[group_idx].parameter_indices
     pos = findfirst(==(param_idx), params)
-    pos === nothing && error("Parameter $(info.params_str[param_idx]) does not belong to group $(info.param_groups[group_idx].name).")
+    param = info.parameters[param_idx]
+    pos === nothing && error("Parameter $(param.param_str) does not belong to group $(info.param_groups[group_idx].name).")
     return pos
 end
 
 @inline function _store_param_value!(aip::AbstractIndexParameters, param_idx::Int, value)
     info = aip.param_info
-    group_idx = info.param_group_by_index[param_idx]
+    param = info.parameters[param_idx]
+    group_idx = param.group_index
     _group_stored(aip, group_idx) || error("Parameter group $(info.param_groups[group_idx].name) is not stored in AbstractIndexParameters.")
     group = info.param_groups[group_idx]
     storage = aip.group_values[group_idx]
-    coords = info.param_coords[param_idx]
+    coords = param.coords
 
     if storage isa ComplexF64
         isempty(coords) || length(coords) == 1 ||
-            error("Expected scalar storage for parameter $(info.params_name[param_idx]).")
+            error("Expected scalar storage for parameter $(info.parameters[param_idx].param_name).")
         aip.group_values[group_idx] = ComplexF64(value)
     elseif storage isa Array{ComplexF64}
         idxs = if !isempty(group.sample_sizes) && ndims(storage) == length(coords) - 1
@@ -90,11 +93,12 @@ end
 
 @inline function _raw_param_value(aip::AbstractIndexParameters, param_idx::Int)
     info = aip.param_info
-    group_idx = info.param_group_by_index[param_idx]
+    param = info.parameters[param_idx]
+    group_idx = param.group_index
     _group_stored(aip, group_idx) || error("Parameter group $(info.param_groups[group_idx].name) is not stored in AbstractIndexParameters.")
     storage = aip.group_values[group_idx]
     group = info.param_groups[group_idx]
-    coords = info.param_coords[param_idx]
+    coords = param.coords
 
     if storage isa ComplexF64
         return storage
@@ -204,12 +208,13 @@ function _evaluate_time_function_groups!(aip::AbstractIndexParameters, slot_idx:
         func = group.payload
         func isa Function || continue
         for param_idx in group.parameter_indices
-            coords = info.param_coords[param_idx]
+            param = info.parameters[param_idx]
+            coords = param.coords
             if group.of_t
                 isempty(coords) && continue
                 coords[1] == slot_idx || continue
             end
-            refs = info.function_param_refs[param_idx]
+            refs = param.function_refs
             result = if refs === nothing
                 func()
             else
@@ -287,8 +292,9 @@ function _set_distribution_params!(aip::AbstractIndexParameters, assignments; sl
                 error("Distribution group $(group.name) does not use flat vector storage.")
             positions = Int[]
             for (pos, param_idx) in enumerate(group.parameter_indices)
-                tuples = info.param_index_tuples[param_idx]
-                coords = info.param_coords[param_idx]
+                param = info.parameters[param_idx]
+                tuples = param.ensemble_tuples
+                coords = param.coords
                 if group.of_t
                     coords[1] == slot + 1 || continue
                 end

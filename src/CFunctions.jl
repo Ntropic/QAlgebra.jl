@@ -8,7 +8,7 @@ using SparseArrays
 using ..SparsePermutationTools: SparsePermutation
 using ..QAlgebra: get_default, FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
 using ..Sampler: QInterpolator, ContinuousSamples, integrate_node_funs
-using ..ParameterGroups: ParameterGroup
+using ..ParameterGroups: ParameterGroup, ParameterGroupLike
 
 export CFunction, CAbstractDefinition, CTypeDefinition, CIntegralDefinition, ParameterInfo
 export define_cabstract, define_ctype, define_cintegral
@@ -191,18 +191,6 @@ struct ParameterInfo <: AbstractParameterInfo
     outer_labels::Vector{String}
     outer_labels_str::Vector{String}
     outer_labels_latex::Vector{String}
-    params_name::Vector{String}
-    params_str::Vector{String}
-    params_latex::Vector{String}
-
-    param_of_indexes::BitVector
-    param_group_by_index::Vector{Int}
-    t_index_by_index::Vector{Int}
-
-    indexed_parameter_indexes::Vector{Int}
-    where_acting_by_parameter::Vector{Vector{BitVector}}
-    params_acting_by_index::Vector{Vector{BitVector}}
-    param_index_tuples::Vector{Vector{Tuple{Int,Int}}}
 
     subspace_index_maps::Vector{Array{SparsePermutation,2}}
     t_index_transform::Array{SparsePermutation,2}
@@ -210,46 +198,39 @@ struct ParameterInfo <: AbstractParameterInfo
     indexes_of_t::Vector{Int}
 
     how_many_by_ensemble::Vector{Int}
-    param_of_t::BitVector
-    param_is_t::BitVector
-
-    function_param_refs::Vector{Union{Nothing,Vector{Int}}}
-    param_coords::Vector{Vector{Int}}
 
     subspace_info::Any
     param_indexes::ParameterIndexes
-    param_groups::Vector{ParameterGroup}
+    param_groups::Vector{ParameterGroupLike}
+    parameters::Vector{Any}
     abstract_definitions::Vector{CAbstractDefinition}
     custom_ctype::Vector{CTypeDefinition}
     integral_definitions::Vector{AnyCIntegralDefinition}
 
     function ParameterInfo(
         outer_labels_symbols::Vector{Symbol}, inner_labels_symbols_flat::Vector{Symbol}, outer_labels::Vector{String},
-        outer_labels_str::Vector{String}, outer_labels_latex::Vector{String}, params_name::Vector{String},
-        params_str::Vector{String}, params_latex::Vector{String}, param_of_indexes::BitVector, param_group_by_index::Vector{Int},
-        t_index_by_index::Vector{Int}, indexed_parameter_indexes::Vector{Int},
-        where_acting_by_parameter::Vector{Vector{BitVector}}, params_acting_by_index::Vector{Vector{BitVector}}, param_index_tuples::Vector{Vector{Tuple{Int,Int}}},
+        outer_labels_str::Vector{String}, outer_labels_latex::Vector{String},
         subspace_index_maps::Vector{Array{SparsePermutation,2}}, t_index_transform::Array{SparsePermutation,2}, indexes_by_t_index::Vector{Vector{Int}},
-        indexes_of_t::Vector{Int}, how_many_by_ensemble::Vector{Int}, param_of_t::BitVector, param_is_t::BitVector,
-        function_param_refs::Vector{Union{Nothing,Vector{Int}}}, param_coords::Vector{Vector{Int}},
-        subspace_info::Any, param_indexes::ParameterIndexes, param_groups::Vector{ParameterGroup})
+        indexes_of_t::Vector{Int}, how_many_by_ensemble::Vector{Int},
+        subspace_info::Any, param_indexes::ParameterIndexes, param_groups::Vector{ParameterGroupLike}, parameters::Vector{Any})
         dims = length(inner_labels_symbols_flat)
         new(dims, outer_labels_symbols, inner_labels_symbols_flat, outer_labels,
             outer_labels_str, outer_labels_latex,
-            params_name, params_str, params_latex, param_of_indexes,
-            param_group_by_index, t_index_by_index,
-            indexed_parameter_indexes, where_acting_by_parameter, params_acting_by_index, param_index_tuples,
             subspace_index_maps, t_index_transform,
-            indexes_by_t_index, indexes_of_t, how_many_by_ensemble, param_of_t, param_is_t,
-            function_param_refs, param_coords,
-            subspace_info, param_indexes, param_groups, CAbstractDefinition[], CTypeDefinition[], AnyCIntegralDefinition[])
+            indexes_by_t_index, indexes_of_t, how_many_by_ensemble,
+            subspace_info, param_indexes, param_groups, parameters, CAbstractDefinition[], CTypeDefinition[], AnyCIntegralDefinition[])
     end
 end
 function Base.show(io::IO, info::ParameterInfo)
-    max_val = maximum(info.param_group_by_index)
-    idxs = [findfirst(==(i), info.param_group_by_index) for i in 1:max_val]
-    param_str = join((info.params_str[i] for i in idxs), ",")
-    print(io, "ParameterInfo([", param_str, "])")
+    params = info.parameters
+    labels = String[]
+    for group_idx in 1:length(info.param_groups)
+        idx = findfirst(p -> p.group_index == group_idx, params)
+        idx === nothing && continue
+        param = params[idx]
+        push!(labels, param.param_str)
+    end
+    print(io, "ParameterInfo([", join(labels, ","), "])")
 end
 
 
@@ -262,19 +243,19 @@ function build_parameter_dicts(info::ParameterInfo)::ParameterDicts
     param_name_to_indices = Dict{Symbol,Vector{Int}}()
     time_slot_to_param = Dict{Int,Int}()
 
-    for idx in eachindex(info.params_name)
-        coords = info.param_coords[idx]
-        group_idx = info.param_group_by_index[idx]
+    for (idx, param) in enumerate(info.parameters)
+        coords = param.coords
+        group_idx = param.group_index
         base_symbol = String(info.outer_labels_symbols[group_idx])
-        sym_str = Symbol(info.params_str[idx])
-        sym_name = Symbol(info.params_name[idx])
+        sym_str = Symbol(param.param_str)
+        sym_name = Symbol(param.param_name)
         _register_param_key!(param_name_to_indices, sym_str, idx)
         _register_param_key!(param_name_to_indices, sym_name, idx)
-        placeholder = _normalize_param_placeholder(info.params_name[idx])
+        placeholder = _normalize_param_placeholder(param.param_name)
         placeholder !== nothing && _register_param_key!(param_name_to_indices, placeholder, idx)
-        numeric_key = _numeric_param_key(base_symbol, coords, info.param_of_t[idx])
+        numeric_key = _numeric_param_key(base_symbol, coords, param.param_of_t)
         numeric_key !== nothing && _register_param_key!(param_name_to_indices, numeric_key, idx)
-        if info.param_is_t[idx]
+        if param.is_t
             t_idx = coords[1] - 1
             _register_param_key!(param_name_to_indices, Symbol("t$(t_idx)"), idx)
             time_slot_to_param[t_idx] = idx
@@ -291,9 +272,9 @@ Return the cached `(ensemble, inner)` tuples describing where parameter
 `param_index` acts. Non-indexed parameters yield an empty vector.
 """
 function param_index_tuples(param_info::ParameterInfo, param_index::Int)
-    1 ≤ param_index ≤ length(param_info.param_index_tuples) ||
+    1 ≤ param_index ≤ length(param_info.parameters) ||
         error("Parameter index $(param_index) out of bounds.")
-    return param_info.param_index_tuples[param_index]
+    return param_info.parameters[param_index].ensemble_tuples
 end
 
 """

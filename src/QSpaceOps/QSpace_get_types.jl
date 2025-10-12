@@ -8,7 +8,7 @@ export get_parameter_group, get_subspace, get_subspace_index, get_ensemble, get_
     return sym, String(name), normalized
 end
 
-@inline function _group_label(group::ParameterGroup)
+@inline function _group_label(group::ParameterGroup{T}) where {T}
     formatted, _ = symbol2formatted(String(group.name))
     plain = String(group.name)
     return "$(formatted) ($(plain))"

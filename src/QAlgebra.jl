@@ -93,7 +93,7 @@ export EnsembleSamples, AbstractEnsembleSample, DiscreteSamples, ContinuousSampl
 
 include("ParameterGroups.jl")
 using .ParameterGroups
-export ParameterGroupKind, ParameterGroup, ParameterGroupScalar, ParameterGroupTimeScalar, ParameterGroupTimeFunction, ParameterGroupDistribution, ParameterGroupEnsembleFunction
+export ParameterGroupKind, ParameterGroup, ParameterGroupScalar, ParameterGroupTimeScalar, ParameterGroupTimeFunction, ParameterGroupDistribution, ParameterGroupEnsembleFunction, ParameterGroupEnsembleTimeFunction
 
 include("CFunctions.jl")
 using .CFunctions

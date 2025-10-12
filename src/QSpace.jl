@@ -2,13 +2,12 @@ module QSpaces
 
 using ComplexRationals
 using ..CFunctions
-import ..ParameterGroups: ParameterGroupPayload
 # import ..CFunctions: update_t!, _resolve_param_core!
 using ..StringUtils
 using ..Cumulants: ReducedCumulantList
 using ..Sampler
 using ..Sampler: AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
-using ..ParameterGroups: ParameterGroup, ParameterGroupKind, ParameterGroupDistribution, ParameterGroupEnsembleFunction, WhereWhichParamGroup
+using ..ParameterGroups: ParameterGroup, ParameterGroupKind, ParameterGroupDistribution, ParameterGroupEnsembleFunction, ParameterGroupEnsembleTimeFunction, WhereWhichParamGroup
 using Base: WeakRef, GC
 using SparseArrays
 
@@ -269,13 +268,17 @@ end
 # Define the custom show for QSpace.
 function Base.show(io::IO, qspace::QSpace)
     if get(io, :compact, false)
-        param_str = join(
-            length(qspace.params) < 12 ?
-                (p.param_str for p in qspace.params) :
-                (qspace.params[findfirst(==(i), qspace.param_info.param_group_by_index)].param_str
-                 for i in 1:maximum(qspace.param_info.param_group_by_index)),
-            ","
-        )
+        param_str = if length(qspace.params) < 12
+            join((p.param_str for p in qspace.params), ",")
+        else
+            group_labels = String[]
+            for g in 1:length(qspace.param_info.param_groups)
+                idx = findfirst(p -> p.group_index == g, qspace.params)
+                idx === nothing && continue
+                push!(group_labels, qspace.params[idx].param_str)
+            end
+            join(group_labels, ",")
+        end
         subs = [join(ss.keys[1:ss.num_operator_indexes], ",") for ss in qspace.subspaces]
         ops  = string.(qspace.operatortypes)
         print(io, "QSpace([", param_str, "], sub=", subs, ", ops=", ops, ")")
@@ -285,12 +288,13 @@ function Base.show(io::IO, qspace::QSpace)
     if length(qspace.params) < 12
         param_str = join([p.param_str for p in qspace.params], ",")
     else
-        max_val = maximum(qspace.param_info.param_group_by_index)
-        indexes = Int[] 
-        for i in 1:max_val
-            push!(indexes, findfirst(==(i), qspace.param_info.param_group_by_index))
+        group_labels = String[]
+        for g in 1:length(qspace.param_info.param_groups)
+            idx = findfirst(p -> p.group_index == g, qspace.params)
+            idx === nothing && continue
+            push!(group_labels, qspace.params[idx].param_str)
         end
-        param_str = join([qspace.params[i].param_str for i in indexes], ",")
+        param_str = join(group_labels, ",")
     end
     println(io, "QSpace: [" * param_str * "]")
 

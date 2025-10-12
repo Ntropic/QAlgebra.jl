@@ -5,11 +5,9 @@ import ..Sampler: QDistribution, QEnsembleFunction
 const _IndexLookupValue = Union{Number, AbstractVector, AbstractArray, Dict, Function}
 
 function has_indexed_parameters(a::CAtom)::Bool
-    idx_map = a.param_info.indexed_parameter_indexes
+    params = a.param_info.parameters
     for ind in a.var_exponents.nzind
-        if idx_map[ind] != 0
-            return true
-        end
+        params[ind].indexed_param && return true
     end
     return false
 end
@@ -219,8 +217,9 @@ function _indexed(f::CFunction, indexes::AbstractVector{<:AbstractVector{<:Integ
 end
 
 function _indexed_parameter_name(atom::CAtomIndexed, idx::Int, do_latex::Bool)::String
-    default = do_latex ? atom.param_info.params_latex[idx] : atom.param_info.params_str[idx]
-    tuples = atom.param_info.param_index_tuples[idx]
+    param = atom.param_info.parameters[idx]
+    default = do_latex ? param.param_latex : param.param_str
+    tuples = param.ensemble_tuples
     isempty(tuples) && return default
     indexes = atom.indexes
     values = Int[]
@@ -234,11 +233,11 @@ function _indexed_parameter_name(atom::CAtomIndexed, idx::Int, do_latex::Bool)::
 end
 
 function _indexed_parameter_names(atom::CAtomIndexed, do_latex::Bool)::Vector{String}
-    defaults = do_latex ? copy(atom.param_info.params_latex) : copy(atom.param_info.params_str)
-    tuples = atom.param_info.param_index_tuples
+    params = atom.param_info.parameters
+    defaults = do_latex ? [p.param_latex for p in params] : [p.param_str for p in params]
     isempty(atom.indexes.indexes) && return defaults
     for idx in eachindex(defaults)
-        isempty(tuples[idx]) && continue
+        isempty(params[idx].ensemble_tuples) && continue
         defaults[idx] = _indexed_parameter_label(atom.param_info, idx, atom.indexes, do_latex)
     end
     return defaults
@@ -246,8 +245,9 @@ end
 
 
 function _indexed_parameter_label(param_info::ParameterInfo, param_index::Int, indexes::ConcreteIndexes, do_latex::Bool)
-    base_str = do_latex ? param_info.params_latex[param_index] : param_info.params_str[param_index]
-    tuples = param_info.param_index_tuples[param_index]
+    param = param_info.parameters[param_index]
+    base_str = do_latex ? param.param_latex : param.param_str
+    tuples = param.ensemble_tuples
     isempty(tuples) && return base_str
     return _indexed_parameter_label_from_tuples(base_str, tuples, indexes, do_latex)
 end
@@ -277,7 +277,8 @@ end
 function _indexed_parameter_value(param_info::ParameterInfo, param_index::Int, indexes::ConcreteIndexes, values::AbstractVector)
     length(values) == param_info.dims ||
         throw(DimensionMismatch("Expected a value vector of length $(param_info.dims), got $(length(values))."))
-    tuples = param_info.param_index_tuples[param_index]
+    param = param_info.parameters[param_index]
+    tuples = param.ensemble_tuples
     idxs = _collect_index_values(indexes, tuples)
     raw_value = values[param_index]
     raw_value === nothing &&

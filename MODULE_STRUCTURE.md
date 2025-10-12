@@ -27,7 +27,7 @@ Keeping the distinction between abstract indices (symbolic coordinates used duri
 `src/QAlgebra.jl` knits together helper modules, sampling utilities, parameter infrastructure, subspace management, operator metadata, and the expression layer. The structs collaborate in layered fashion: subspace definitions establish the operator canvas, parameter definitions populate values over that canvas, operator definitions describe abstract families, and the `QSpace` aggregate binds everything for use by `CFunctions` and `QExpressions`.
 
 ### Parameter Layer
-- `ParameterDefinitions` (see `src/QSpaceOps/QSpace_parameters.jl:57`) parses user declarations into `ParameterGroupDefinition` records, infers each group's kind, validates optional payloads, and records dependencies. Payloads can already contain literals, time functions, distributions, or ensemble functions, so initial values are present as soon as the definitions are parsed.
+- `ParameterDefinitions` (see `src/QSpaceOps/QSpace_parameters.jl:57`) parses user declarations directly into `ParameterGroup` templates, infers the kind, validates payloads, and records dependencies. Payloads can already contain literals, time functions, distributions, or ensemble functions, so initial values are present as soon as the definitions are parsed.
 - `ParameterDefinitions2Parameters` (ibid. `:379`) expands group definitions into concrete `Parameter` instances, initialises `ParameterGroup` metadata, and assembles `ParameterInfo` (`src/CFunctions.jl:186`) with indexing maps for both algebraic and sampling contexts.
 - During that expansion each group records `group_outer_indices` and `group_index_outer_subspaces`, aligning parameter arguments with the ensemble subspaces captured in `SubSpaceInfo`. This step ties abstract ensemble indices to the correct subspace blocks.
 - `ParameterValues` (`src/CFunctionsOps/ParameterValues.jl:18`) allocates storage per group, tracks definition status, and encodes dependency-aware update waves. `WhereWhichParamGroup` (`src/ParameterGroups.jl:46`) partitions groups by kind so downstream code can quickly fetch “all distributions”, “all time functions”, and similar slices.
@@ -58,7 +58,7 @@ Keeping the distinction between abstract indices (symbolic coordinates used duri
 ## Key Struct Connectivity
 | Anchor struct | Connected structs | Purpose |
 | --- | --- | --- |
-| `ParameterDefinitions` | `ParameterGroupDefinition`, `ParameterGroup`, `Parameter` | Parses user declarations and expands groups into concrete parameters. |
+| `ParameterDefinitions` | `ParameterGroup`, `Parameter` | Parses user declarations and expands groups into concrete parameters. |
 | `ParameterGroup` | `ParameterValues`, `Ensemble` | Supplies runtime storage layout and registers ensemble affiliations for sampling. |
 | `ParameterInfo` | `ParameterValues`, `ParameterIndexes`, `CFunctions` abstractions | Central index map for evaluation, substitution, and integral construction. |
 | `SubSpaceDefinitions` | `SubSpace`, `SubSpaceInfo`, `OperatorSet`, `Ensemble` | Builds the operator canvas and attaches sampling metadata. |
