@@ -3,7 +3,7 @@ module ParameterGroups
 export ParameterGroupKind, ParameterGroup, ParameterGroupLike, ParameterGroupScalar, ParameterGroupTimeScalar, ParameterGroupTimeFunction,
        ParameterGroupDistribution, ParameterGroupEnsembleFunction, ParameterGroupEnsembleTimeFunction,
        ParameterGroupStorageUnion, parameter_group_input_type, parameter_group_storage_type, parameter_group_storage_target_type, parameter_group_value_type, parameter_group_kind_name, 
-       WhereWhichParamGroup
+       WhereWhichParamGroup, AbstractEnsemble
 
 using ..Sampler: QDistribution, QEnsembleFunction
 
@@ -73,6 +73,7 @@ const PARAMETER_GROUP_KIND_NAMES = (
     "EnsembleTimeFunction")
 
 abstract type AbstractSubSpace end
+abstract type AbstractEnsemble end
 
 const ParameterGroupStorageUnion = Union{PARAMETER_GROUP_PAYLOAD_TYPES...}
 

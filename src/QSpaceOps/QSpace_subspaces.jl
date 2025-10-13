@@ -1,5 +1,5 @@
 import ..SubSpaceIndex
-using ..ParameterGroups: AbstractSubSpace
+using ..ParameterGroups: AbstractSubSpace, AbstractEnsemble
 using ..EnsembleSamples: AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 
 """
@@ -27,7 +27,7 @@ Create an `Ensemble`: a container for ensemble–subspace metadata.
 - `sample_rtol::Float64 = 1e-7`: Relative tolerance reused by sampling helpers.
 - `sample_max_iter::Int = 128`: Maximum refinement iterations for inverse-CDF halving-steps.
 """
-mutable struct Ensemble
+mutable struct Ensemble <: AbstractEnsemble
     num_operator_indexes::Int
     num_sum_indexes::Int
     operator_set::OperatorSet
