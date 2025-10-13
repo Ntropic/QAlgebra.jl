@@ -5,8 +5,10 @@ using ..Sampler: QEnsembleFunction, QDistribution, build_discrete_samples, build
 using ..ParameterGroups: ParameterGroup, ParameterGroupLike, ParameterGroupKind, AbstractEnsemble,
                           ParameterGroupScalar, ParameterGroupTimeScalar, ParameterGroupTimeFunction, ParameterGroupStorageUnion,
                           ParameterGroupDistribution, ParameterGroupEnsembleFunction, ParameterGroupEnsembleTimeFunction,
-                          WhereWhichParamGroup, parameter_group_value_type, parameter_group_kind_name, parameter_group_storage_target_type
+                          WhereWhichParamGroup, parameter_group_input_type, parameter_group_value_type, parameter_group_kind_name, parameter_group_storage_target_type
 using Base: @propagate_inbounds, checkbounds
+
+export update_t!, resolve_param!
 
 include("ParameterValuesOps/ParameterValues_setget.jl") # Fast paths for accessing values. 
 
@@ -50,6 +52,9 @@ function ParameterValues(groups::AbstractVector{ParameterGroupLike})
         group_values[g] = GroupVals(val, group.of_t) 
         if !isnothing(group.payload) || group.is_time_group
             group_definition_initialized[g] = true
+            if group.is_time_group 
+                group_initialized[g] = true
+            end
         end
     end
     got_all_definitions = all(group_definition_initialized)
@@ -64,16 +69,35 @@ function ParameterValues(groups::AbstractVector{ParameterGroupLike})
     group_update_waves = _compute_group_update_waves(group_dependencies, update_order, group_count, time_group)
 
     pv = ParameterValues(where_which, groups, group_values, group_definition_initialized, group_initialized,
-                         group_times_initialized, got_all_definitions, time_group, how_many_times, group_dependencies, group_update_waves)
+                         group_times_initialized, got_all_definitions, time_group, how_many_times, 
+                         group_dependencies, group_update_waves)
+
+    # for each group, resolve_param! if its not nothing 
+    if groups[time_group].payload !== nothing
+        possible_times = findall(group_times_initialized).-1
+        for update_index in pv.group_update_waves[time_group] 
+            for time_index in possible_times
+                conditional_t_update!(pv, update_index, time_index)
+            end
+        end
+    end
+    for (g, group) in enumerate(groups)
+        if !isnothing(group.payload) && g != time_group
+            resolve_param!(pv, g, group.payload)
+        end
+    end
+
     return pv
 end
 
 function array_scaling(group::ParameterGroup)::Vector{Int}
-    index_sizes = isempty(group.index_sizes) ? zeros(Int, length(group.sample_sizes)) : copy(group.index_sizes)
+    index_sizes = isempty(group.sample_sizes) ? zeros(Int, length(group.index_sizes)) : copy(group.sample_sizes)
     return group.of_t ? vcat(group.time_count, index_sizes) : index_sizes
 end 
 function construct_emtpy_arrays(group::ParameterGroup{T}) where {T}
-    array_dims = array_scaling(group)
+    return construct_emtpy_arrays(group, array_scaling(group))
+end
+function construct_emtpy_arrays(group::ParameterGroup{T}, array_dims::Vector{Int}) where {T}
     correct_type = parameter_group_value_type(group.kind)
     if correct_type <: Vector{Float64}
         @assert length(array_dims) == 1 "Vector type (as used by $(parameter_group_kind_name(group.kind)) - $(group.name)) requires exactly one dimension, got $(length(array_dims))"
@@ -184,9 +208,9 @@ function Base.show(io::IO, pv::ParameterValues)
         pdf_hint = group.kind == ParameterGroupDistribution ? " (pdf)" : ""
         labels[idx] = group.display_signature * pdf_hint
         storage = pv.group_values[idx]
-        sizes[idx] = storage isa Float64 ? "1" :
-             (storage isa Vector{Float64} ? string(length(storage)) :
-             (storage isa Array{Float64} ? join(string.(size(storage)), "×") : ""))
+        sizes[idx] = storage.value isa Float64 ? "1" :
+             (storage.value isa Vector{Float64} ? string(length(storage.value)) :
+             (storage.value isa Array{Float64} ? join(string.(size(storage.value)), "×") : ""))
 
     end
     name_width = isempty(labels) ? length("group") : max(length("group"), maximum(length, labels))
@@ -218,7 +242,7 @@ end
     @inbounds V[time_index, I...] = val
     return val
 end
-@inbounds time(pv::ParameterValues, time_index::Int) = pv.group_values[pv.time_group].value[time_index]
+@inbounds time(pv::ParameterValues, time_index::Int) = pv.group_values[pv.time_group].value[time_index+1]
 
 # ==================================> Compute Values <===========================================================
 
@@ -238,7 +262,7 @@ end
 # Compute the values for a group using its payload. 
 @inline function payload2values!(pv::ParameterValues, g::Int, time_index::Int)::Nothing
     kind = pv.groups[g].kind :: ParameterGroupKind
-    payload2values!(kind, pv, g, time_index) 
+    payload2values!(Val(kind), pv, g, time_index) 
 end
 payload2values!(::Val{ParameterGroupTimeScalar}, pv::ParameterValues, g::Int, time_index::Int) = error("Values for time groups are set via update_t! ")
 function payload2values!(::Val{ParameterGroupScalar}, pv::ParameterValues, g::Int, time_index::Int)::Nothing
@@ -266,12 +290,13 @@ function payload2values!(::Val{ParameterGroupEnsembleTimeFunction}, pv::Paramete
     payload = pv.groups[g].payload
     output  = pv.group_values[g].value              # Array{Float64}
     arg_ids = payload.argument_group_indices
-    arg_vecs = [pv.group_values[i].value for i in arg_ids]
-    t = time_index + 1                              # external 0-based → 1-based storage
+    arg_vecs = [pv.group_values[i].value for i in arg_ids[2:end]]
+    t_ind = time_index + 1
+    t = time(pv, time_index)                              # external 0-based → 1-based storage
     sample_axes = ntuple(d -> axes(output, d + 1), ndims(output) - 1)
     @inbounds for idx in CartesianIndices(sample_axes)
         args = ntuple(j -> arg_vecs[j][idx.I[j]], length(arg_vecs))
-        output[t, idx] = payload.func(time_index, args...)
+        output[CartesianIndex(t_ind, idx.I...)] = payload.func(t, args...)
     end
     return nothing
 end
@@ -284,122 +309,85 @@ function conditional_t_update!(pv::ParameterValues, g::Int, time_index::Int=0)::
     return nothing 
 end
 
-@inline function conditional_payload2update!(pv::ParameterValues, g::Int)::Nothing
-    kind = pv.groups[g].kind
-    conditional_payload2update(Val(kind), pv, g)
-    return nothing
-end
-
-function conditional_payload2update!(::Val{ParameterGroupScalar}, pv::ParameterValues, g::Int)::Nothing
-    pv.group_definition_initialized[g] = pv.groups[g].payload !== nothing
+function conditional_payload2update_of_time!(pv::ParameterValues, g::Int, time_indexes::Vector{Int})::Nothing
     if conditions_met_for_computing_values(pv, g)
-        payload2values!(Val(ParameterGroupScalar), pv, g, 0)
+        kind = pv.groups[g].kind
+        for time_index in time_indexes
+            payload2values!(Val(kind), pv, g, time_index)
+        end
         pv.group_initialized[g] = true
     end
     return nothing
 end
 
-function conditional_payload2update!(::Val{ParameterGroupDistribution}, pv::ParameterValues, g::Int)::Nothing
-    payload = pv.groups[g].payload
-    pv.group_definition_initialized[g] = payload isa QDistribution
-    if payload isa QDistribution
-        _maybe_sample_distribution_ensemble!(pv, g)
-    end
-    return nothing
-end
-
-function conditional_payload2update_of_time!(pv::ParameterValues, g::Int, time_index::Int)::Nothing
+function conditional_payload2update!(pv::ParameterValues, g::Int)::Nothing
     kind = pv.groups[g].kind
-    conditional_payload2update_of_time(Val(kind), pv, g, time_index)
-    return nothing
+    conditional_payload2update!(Val(kind), pv, g)
 end
-@inline function conditional_payload2update_of_time!(::Val{ParameterGroupTimeFunction}, pv::ParameterValues, g::Int, time_index::Int)::Nothing
-    group = pv.groups[g]
-    pv.group_definition_initialized[g] = group.payload isa Function
-    slot_count = length(pv.group_times_initialized)
-    slot0, slot1 = _normalise_time_slot(time_index, slot_count)
-    if slot1 === nothing || (slot1 <= slot_count && slot1 > 0 && !pv.group_times_initialized[slot1])
-        pv.got_all_definitions = all(pv.group_definition_initialized)
-        return nothing
-    end
+function conditional_payload2update!(::Val{K}, pv::ParameterValues, g::Int)::Nothing  where {K}
     if conditions_met_for_computing_values(pv, g)
-        payload2values!(Val(ParameterGroupTimeFunction), pv, g, slot0)
-        if slot_count == 0
-            pv.group_initialized[g] = true
-        else
-            pv.group_initialized[g] = all(pv.group_times_initialized)
-        end
+        payload2values!(Val(K), pv, g, 0)
+        pv.group_initialized[g] = true
     end
     return nothing
 end
-
-@inline function _normalise_time_slot(requested::Int, slot_count::Int)::Tuple{Int,Union{Int,Nothing}}
-    slot_count == 0 && return (requested, nothing)
-    if 1 <= requested <= slot_count
-        return (requested - 1, requested)
-    end
-    slot0 = requested
-    slot1 = slot0 + 1
-    if 1 <= slot1 <= slot_count
-        return (slot0, slot1)
-    else
-        return (slot0, nothing)
-    end
-end
-
-function _maybe_sample_distribution_ensemble!(pv::ParameterValues, group_index::Int)::Bool
+function conditional_payload2update!(::Val{ParameterGroupDistribution}, pv::ParameterValues, group_index::Int)::Nothing
     group = pv.groups[group_index]
     subspaces = group.ensemble_subspaces
-    isempty(subspaces) && return false
     ens = subspaces[1].ensemble
-    ens === nothing && return false
-    dist_idxs = ens.distribution_group_indices
-    isempty(dist_idxs) && return false
-    groups = pv.groups
-    for idx in dist_idxs
-        payload = groups[idx].payload
-        payload isa QDistribution || return false
-        pv.group_definition_initialized[idx] = true
+    dist_idxs = ens.distribution_group_indices # check if they are ready 
+    if any([isnothing(pv.groups[dist_id].payload) for dist_id in dist_idxs])
+        return nothing
     end
+    groups = pv.groups
     sample = _build_ensemble_samples(ens, dist_idxs, groups)
     _apply_ensemble_samples!(pv, ens, sample)
-    return true
+    return nothing
 end
 
-function _build_ensemble_samples(ensemble::AbstractEnsemble, dist_idxs::Vector{Int}, groups::Vector{ParameterGroupLike})::AbstractEnsembleSample
+function update_ensemble_sample_sizes!(pv::ParameterValues, g::Int)::Nothing
+    group = pv.groups[g]
+    payload = group.payload
+    @assert group.kind ∈ (ParameterGroupEnsembleFunction, ParameterGroupEnsembleTimeFunction) "Cannot update sample sizes via update_ensemble_sample_sizes! for group of kind $(group.kind). "
+    new_sizes::Vector{Int} = [size(pv.group_values[inds].value)[1] for inds in payload.argument_group_indices]
+    pv.group_values[g] = GroupVals(construct_emtpy_arrays(group, new_sizes), group.of_t)
+    return nothing
+end
+function _build_ensemble_samples(ensemble, dist_idxs::Vector{Int}, groups::Vector{ParameterGroupLike})::AbstractEnsembleSample
     group_symbols = Symbol[groups[idx].name for idx in dist_idxs]
     group_names = String.(group_symbols)
     dists = QDistribution[groups[idx].payload for idx in dist_idxs]
-    method = ensemble.sample_method === :default ?
-        (ensemble.as_continuum ? :chebychev : :random) :
-        ensemble.sample_method
+    method = ensemble.sample_method === :default ? (ensemble.as_continuum ? :chebychev : :random) : ensemble.sample_method
     if ensemble.as_continuum
         return build_continuous_samples(ensemble, dist_idxs, group_symbols, group_names, dists; method=method)
     else
         return build_discrete_samples(ensemble, dist_idxs, group_symbols, group_names, dists; method=method, num_nodes=ensemble.sample_num_nodes,  atol=ensemble.sample_atol, rtol=ensemble.sample_rtol, max_iter=ensemble.sample_max_iter)
     end
 end
-
-function _apply_ensemble_samples!(pv::ParameterValues, ensemble::AbstractEnsemble, sample::AbstractEnsembleSample)::Nothing
+function _apply_ensemble_samples!(pv::ParameterValues, ensemble, sample::AbstractEnsembleSample)::Nothing
     ensemble.sampler = sample
     samples = sample.samples
     sample_count = size(samples, 1)
+    combined_update_wave::Vector{Int} = Int[]
     for (col_pos, group_idx) in enumerate(sample.group_indices)
         vals = copy(samples[:, col_pos])
         storage = pv.group_values[group_idx].value
-        storage isa Vector{Float64} ||
-            error("Distribution group $(pv.groups[group_idx].name) does not use vector storage.")
         if length(storage) == length(vals)
             copyto!(storage, vals)
         else
             pv.group_values[group_idx].value = vals
         end
         pv.group_initialized[group_idx] = true
-        pv.group_definition_initialized[group_idx] = true
         pv.groups[group_idx].sample_sizes = [sample_count]
+        append!(combined_update_wave, pv.group_update_waves[group_idx])
+    end
+    combined_update_wave = unique(combined_update_wave)
+    for idx in combined_update_wave
+        update_ensemble_sample_sizes!(pv, idx)
     end
     return nothing
 end
+
 
 # ==================================> Update the Payloads and recompute conditionally <=====================================================================
 function update_t!(pv::ParameterValues, value::Float64; slot::Int=0)::Nothing
@@ -412,35 +400,44 @@ function update_t!(pv::ParameterValues, value::Float64; slot::Int=0)::Nothing
     for update_index in pv.group_update_waves[time_group] 
         conditional_t_update!(pv, update_index, slot)
     end
-    return Nothing
+    return nothing
 end
 
 function resolve_param!(pv::ParameterValues, g::Int, payload::Union{Number, Function, QDistribution, QEnsembleFunction})::Nothing
     group = pv.groups[g]
     kind = group.kind
-    correct_type = parameter_group_value_type(kind)
-    @assert typeof(payload) <: correct_type "The parameter group $(group.name) is a $(parameter_group_kind_name(kind)) and expects are payloads $(correct_type), got $(typeof(payload))."
-    @assert kind != ParameterGroupTimeScalar "Don't set the time via resolve_param, use update_t!"
-    @assert kind ∉ [ParameterGroupEnsembleFunction, ParameterGroupEnsembleTimeFunction] "ParameterGroupEnsembleFunctions must be set during ParameterDefinitions."
-    group.payload = payload 
-    update_wave = pv.group_update_waves[g]
-    possible_times = findall(pv.group_times_initialized)
-    if group.of_t
-        for time_index in possible_times
-            conditional_payload2update_of_time!(pv, g, time_index)
-        end
-    else
-        conditional_payload2update(pv, g)
+    correct_type = parameter_group_input_type(kind)
+
+    if kind ∈ [ParameterGroupEnsembleFunction, ParameterGroupEnsembleTimeFunction] && isa(payload, Function)
+        payload = QEnsembleFunction(String(group.name), copy(group.indexes), copy(group.function_args), payload)
     end
-    for up in update_wave
-        if pv.groups[up].of_time
-            for time_index in possible_times
-                payload2values!(pv, up, time_index)
+
+    @assert typeof(payload) <: correct_type "The parameter group $(group.name) is a $(parameter_group_kind_name(kind)) and expects payload $(correct_type), got $(typeof(payload))."
+    @assert kind != ParameterGroupTimeScalar "Don't set the time via resolve_param, use update_t!"
+    group.payload = payload
+    pv.group_definition_initialized[g] = true
+    update_wave = pv.group_update_waves[g]
+    possible_times = findall(pv.group_times_initialized).-1
+    if group.of_t
+        conditional_payload2update_of_time!(pv, g, possible_times)
+    else
+        kind = pv.groups[g].kind
+        conditional_payload2update!(Val(kind), pv, g)
+    end
+    for up in update_wave 
+        if conditions_met_for_computing_values(pv, up)
+            if pv.groups[up].of_t
+                for time_index in possible_times
+                    payload2values!(pv, up, time_index)
+                end
+            else
+                payload2values!(pv, up, 0)
             end
-        else
-            payload2values!(pv, up, 0)
+            pv.group_initialized[up] = true
         end
     end
     pv.got_all_definitions = all(pv.group_definition_initialized)
-    return Nothing
+    return nothing
 end
+
+include("ParameterValuesOps/ParameterValues_abstract.jl") 

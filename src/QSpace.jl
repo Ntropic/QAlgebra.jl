@@ -2,7 +2,7 @@ module QSpaces
 
 using ComplexRationals
 using ..CFunctions
-# import ..CFunctions: update_t!, _resolve_param_core!
+import ..CFunctions: update_t!, resolve_param!
 using ..StringUtils
 using ..Cumulants: ReducedCumulantList
 using ..Sampler
@@ -17,7 +17,6 @@ export AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
 export Parameter, ParameterDefinitions, set_parameter_group_definition!, map_by_subspace, map_by_tindex
 export QSpace
-export resolve_param!
 
 Is = Vector{Int}
 
@@ -240,8 +239,6 @@ mutable struct QSpace
         params, param_info, sample_index_param_values, parameter_dicts = ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
         where_which = WhereWhichParamGroup(param_info.param_groups)
 
-        # assign_ensemble_samples!(subspaces, sample_index_param_values) # To Do 
-
         subspace_dicts = build_subspace_dicts(subspaces)
         operator_dicts = build_operator_dicts(operatortypes)
 
@@ -256,6 +253,7 @@ mutable struct QSpace
                 params, param_info, where_which, sample_index_param_values, parameter_dicts, subspace_dicts, operator_dicts,
                 I_op, I_ensemble_op, c_one, c_zero, cumulant_cache, max_t_ind)    # Precomputed operator blueprints 
 
+        
         GC.@preserve qss begin
             for ens in ensembles
                 ens.qspace_ref = WeakRef(qss)
@@ -330,8 +328,26 @@ function Base.show(io::IO, qspace::QSpace)
     end
 end
 
-
 include("QSpaceOps/QSpace_get_types.jl")
-include("QSpaceOps/QSpace_set_payloads.jl")
+using ..ParameterGroups: ParameterGroupStorageUnion
+""" 
+    update_t!(qspace::QSpace, value::Float64; slot::Int=0)
+Change the time for one of the time parameters, selected via slot. 
+""" 
+function update_t!(qspace::QSpace, value::Float64; slot::Int=0)
+    update_t!(qspace.sample_index_param_values, value; slot=slot)
+    return qspace
+end
+
+"""
+    resolve_param!(qspace, name, payload)
+
+Attach or update the payload for a parameter group on an existing `qspace`. This could be a a scalar value or a Function. 
+    The function checks if the argument is in line with the requirements of the parameter group. 
+"""
+function resolve_param!(qspace::QSpace, name::Union{Symbol,String}, payload::ParameterGroupStorageUnion)
+    group_idx = get_parameter_group(qspace, name)
+    return resolve_param!(qspace.sample_index_param_values, group_idx, payload)
+end
 
 end # module QSpaces

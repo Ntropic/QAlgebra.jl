@@ -45,8 +45,8 @@ const PARAMETER_GROUP_PAYLOAD_TYPES = (
     Union{Nothing, Float64},
     Union{Nothing, Function},
     Union{Nothing, QDistribution},
-    Union{QEnsembleFunction},
-    Union{QEnsembleFunction})
+    Union{Nothing, QEnsembleFunction},
+    Union{Nothing, QEnsembleFunction})
 
 const PARAMETER_GROUP_PAYLOAD_TARGET_TYPES = (
     Vector{Float64},

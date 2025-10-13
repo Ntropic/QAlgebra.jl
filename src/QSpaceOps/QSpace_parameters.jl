@@ -175,6 +175,18 @@ function _finalize_group_dependencies!(groups::Vector{ParameterGroupLike})
     for group in groups
         deps = String[]
         if group.kind in (ParameterGroupEnsembleFunction, ParameterGroupEnsembleTimeFunction, ParameterGroupTimeFunction)
+            if group.kind == ParameterGroupTimeFunction && isempty(group.indexes)
+                invalid_args = String[]
+                for arg in group.function_args
+                    arg == "t" && continue
+                    push!(invalid_args, arg)
+                end
+                if !isempty(invalid_args)
+                    signature = _group_display_signature(String(group.name), group.indexes, group.function_args)
+                    message_missing = join(invalid_args, ", ")
+                    error("Time function $(signature) without ensemble indexes may only reference `t`; remove argument(s) $(message_missing) or convert the group to an ensemble function.")
+                end
+            end
             for arg in group.function_args
                 if arg == "t"
                     push!(deps, "t")
@@ -220,9 +232,7 @@ end
     return nothing
 end
 
-function _ensure_signature_alignment!(group::ParameterGroupLike,
-                                      indexes,
-                                      function_args::Vector{String})
+function _ensure_signature_alignment!(group::ParameterGroupLike, indexes, function_args::Vector{String})
     parsed_indexes = [String(x) for x in indexes]
     parsed_args = [String(x) for x in function_args]
     parsed_indexes == group.indexes ||
@@ -244,9 +254,7 @@ function set_parameter_group_definition!(defs::ParameterDefinitions, signature::
     return group
 end
 
-set_parameter_group_definition!(defs::ParameterDefinitions, pair::Pair) =
-    set_parameter_group_definition!(defs, pair[1], pair[2])
-
+set_parameter_group_definition!(defs::ParameterDefinitions, pair::Pair) = set_parameter_group_definition!(defs, pair[1], pair[2])
 
 function Base.show(io::IO, param_def::ParameterDefinitions)
     var_str_vec = []
@@ -265,7 +273,6 @@ function _build_qensemble_function(name::String, indexes::Vector{String}, brace_
     isempty(brace_elements) && error("Parameter \"$name\" requires a parentheses list specifying argument order when providing an ensemble function, e.g. \"$name(t, alpha)\" => (t, alpha) -> ...")
     return QEnsembleFunction(name, indexes, brace_elements, f)
 end
-
 
 function contiguous_blocks(v::Vector{Int})
     seen = Set{Int}()
@@ -686,10 +693,7 @@ function build_time_param_lookup!(groups::Vector{ParameterGroupLike}, parameters
     return lookup
 end
 
-function resolve_function_arguments!(groups::Vector{ParameterGroupLike},
-                                     parameters::Vector{Parameter},
-                                     params_by_group::Vector{Vector{Int}},
-                                     time_param_lookup::Dict{Int,Int})
+function resolve_function_arguments!(groups::Vector{ParameterGroupLike}, parameters::Vector{Parameter}, params_by_group::Vector{Vector{Int}}, time_param_lookup::Dict{Int,Int})
     group_count = length(groups)
 
     for g in 1:group_count
@@ -871,6 +875,16 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
                                          max_t_ind::Int)::Tuple{Vector{Parameter}, ParameterInfo, ParameterValues, ParameterDicts}
     groups = deepcopy(vd.groups)
     ensure_time_group!(groups, used_symbols)
+    if max_t_ind > 0
+        desired_slots = max_t_ind + 1
+        for group in groups
+            group.kind == ParameterGroupTimeScalar || continue
+            group.payload = group.payload isa Vector{Float64} ?
+                vcat(group.payload, fill(Float64(NaN), max(desired_slots - length(group.payload), 0))) :
+                fill(Float64(NaN), desired_slots)
+            group.time_count = desired_slots
+        end
+    end
 
     group_count = length(groups)
 
@@ -886,8 +900,7 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
             error("Variable name $param_name_sym is already used in the system! Please choose a distinct name.")
         end
 
-        ensemble_maps, t_maps = parameter_group2params!(parameters, group, group_index,
-                                                        subspace_info, subspaces, max_t_ind)
+        ensemble_maps, t_maps = parameter_group2params!(parameters, group, group_index, subspace_info, subspaces, max_t_ind)
         push!(ensemble_index_maps, ensemble_maps)
         push!(t_index_maps, t_maps)
 

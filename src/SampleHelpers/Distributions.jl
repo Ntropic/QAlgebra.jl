@@ -120,10 +120,7 @@ struct QEnsembleFunction
     end
 end
 
-function QEnsembleFunction(name::String,
-                           group_indexes::Vector{String},
-                           argument_signatures::Vector{String},
-                           func::Function)
+function QEnsembleFunction(name::String, group_indexes::Vector{String}, argument_signatures::Vector{String}, func::Function)
     isempty(argument_signatures) && error("QEnsembleFunction requires at least one argument; include e.g. t for time or parameter names.")
     arg_symbols = Symbol.(argument_signatures)
     arg_group_names = Vector{String}(undef, length(argument_signatures))
@@ -145,12 +142,7 @@ function QEnsembleFunction(name::String,
         end
         self_positions[idx] = positions
     end
-    return QEnsembleFunction(name,
-                             arg_symbols,
-                             func,
-                             arg_group_names,
-                             zeros(Int, length(argument_signatures)),
-                             self_positions)
+    return QEnsembleFunction(name, arg_symbols, func, arg_group_names, zeros(Int, length(argument_signatures)), self_positions)
 end
 
 function QEnsembleFunction(name::String, argument_symbols::Vector{Symbol}, func::Function)
@@ -199,15 +191,7 @@ function integrate_node_funs(inter::QInterpolator,
                                rtol=rtol)
 end
 
-function Integrator(inter::QInterpolator,
-                    distributions::Vector{QDistribution};
-                    f::Union{Nothing,Function}=nothing,
-                    atol::Float64=1e-9,
-                    rtol::Float64=1e-7)
+function Integrator(inter::QInterpolator, distributions::Vector{QDistribution}; f::Union{Nothing,Function}=nothing, atol::Float64=1e-9, rtol::Float64=1e-7)
     pdfs, scale = _pdfs_and_scaling(inter, distributions)
-    return QIntegrator(inter, pdfs;
-                      f=f,
-                      constant=scale,
-                      atol=atol,
-                      rtol=rtol)
+    return QIntegrator(inter, pdfs;  f=f, constant=scale, atol=atol, rtol=rtol)
 end
