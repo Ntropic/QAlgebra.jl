@@ -122,6 +122,16 @@ function resolve_ensemble_values!(pv::ParameterValues{AbstractIndexMode}, idx::S
         pv.group_initialized[group_idx] = true
     end
 
+    return nothing
+end
+
+function refresh_ensemble_values!(pv::ParameterValues{AbstractIndexMode}, idx::SubSpaceIndex)::Nothing
+    outer = idx.outer
+    maps = pv.ensemble_distribution_groups
+    (1 <= outer <= length(maps)) || throw(ArgumentError("Invalid subspace index $(outer) for refresh_ensemble_values!"))
+    groups = maps[outer]
+    isempty(groups) && return nothing
+
     dependents = pv.group_update_waves
     for group_idx in groups
         for dep in dependents[group_idx]

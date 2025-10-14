@@ -103,7 +103,7 @@ export contains_non_simple_CFunction, Indexed
 export list_cabstracts, list_ctypes, list_cintegrals
 export where_acting, where_acting!, which_ensemble_acting, which_ensemble_acting!
 export which_params_acting, which_params_acting!, separate_by_cond, param_index_tuples
-export ParameterValues, update_t!, resolve_param!, resolve_ensemble_values!
+export ParameterValues, update_t!, resolve_param!, resolve_ensemble_values!, refresh_ensemble_values!
 export WhereWhichParamGroup, AbstractIndexParameters
 
 include("Cumulants.jl")

@@ -19,7 +19,7 @@ export contains_non_simple_CFunction, Indexed
 export list_cabstracts, list_ctypes, list_cintegrals
 export where_acting, where_acting!, which_params_acting, which_params_acting!, param_index_tuples
 export which_ensemble_acting, which_ensemble_acting!, substitute, separate_by_cond
-export ParameterValues, update_t!, resolve_param!, resolve_ensemble_values!
+export ParameterValues, update_t!, resolve_param!, resolve_ensemble_values!, refresh_ensemble_values!
 export compute_integral_weights!
 
 import Base: copy, exp, log, length, getindex, iterate, size
