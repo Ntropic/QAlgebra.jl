@@ -17,9 +17,6 @@ function _parameter_group_options(qspace::QSpace)
     [_group_label(group) for group in qspace.param_info.param_groups]
 end
 
-function _parameter_options(qspace::QSpace)
-    unique(_parameter_group_options(qspace))
-end
 function _match_parameter_group_strings(qspace::QSpace, raw::String, normalized::String)
     matches = Int[]
     for (idx, group) in enumerate(qspace.param_info.param_groups)
@@ -27,22 +24,6 @@ function _match_parameter_group_strings(qspace::QSpace, raw::String, normalized:
             push!(matches, idx)
         elseif !isempty(normalized) && normalized == var_unsubstitution(group.display_signature)
             push!(matches, idx)
-        end
-    end
-    return unique(matches)
-end
-function _match_parameter_strings(qspace::QSpace, raw::String, normalized::String)
-    matches = Int[]
-    for (idx, param) in enumerate(qspace.params)
-        if raw == param.param_str || raw == param.param_name || raw == param.param_latex || raw == param.param_name_no_t
-            push!(matches, idx)
-            continue
-        end
-        if !isempty(normalized)
-            norm_param = var_unsubstitution(param.param_str)
-            if normalized == norm_param || normalized == var_unsubstitution(param.param_name) || normalized == var_unsubstitution(param.param_latex)
-                push!(matches, idx)
-            end
         end
     end
     return unique(matches)

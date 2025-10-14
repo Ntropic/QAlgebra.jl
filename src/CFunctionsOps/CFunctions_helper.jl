@@ -344,6 +344,7 @@ True if all exponents in all terms are zero.
 """
 isnumeric(f::CAtom) = iszero(f.coeff) || all(==(0), f.var_exponents)
 isnumeric(f::CAtomIndexed) = iszero(f.coeff) || all(==(0), f.var_exponents)
+isnumeric(::CEval) = true
 isnumeric(f::CAbstract) = false
 isnumeric(::CIntegral) = false
 isnumeric(f::CFunction) = all(leaf -> isnumeric(leaf) , leaf_iter(f))
@@ -529,19 +530,9 @@ end
 function isonelike(f::CAtomIndexed)::Bool
     return isonelike(f.coeff) && isnumeric(f)
 end
-function simple_CSum(f::CSum)::Bool
-    return !any(term -> term isa Union{CAtom, CAtomIndexed}, f.expr)
+function isonelike(f::CEval)::Bool
+    return isone(f.value)
 end
-function simple_CSum(f::CAtom)::Bool
-    return true 
-end
-function simple_CSum(f::CAtomIndexed)::Bool
-    return true
-end
-function simple_CSum(f::CFunction)::Bool
-    return false 
-end
-
 # factor a simple sum into:  (pre_F) * (new_f)
 # Only runs when the sum is of "monomial-like" terms (e.g., atoms) so we can safely
 # factor a common scalar and a common exponent offset.

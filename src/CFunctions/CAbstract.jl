@@ -80,11 +80,8 @@ end
 coeff(a::CAbstract) = [a.coeff]
 exponent(a::CAbstract) = a.exponent
 var_exponents(a::CAbstract) = spzeros(Int, a.param_info.dims)
-isdag(a::CAbstract) = a.dag
 modify_coeff(a::CAbstract, c::ComplexRational) = CAbstract(a.param_info, c, a.index, a.exponent, a.dag)
 modify_exponent(a::CAbstract, q::Rational{Int}) = CAbstract(a.param_info, a.coeff, a.index, q, a.dag)
 modify_exponent(a::CAbstract, n::Int) = modify_exponent(a, n//1)
 modify_dag(a::CAbstract, d::Bool=true) = CAbstract(a.param_info, a.coeff, a.index, a.exponent, d)
-toggle_dag(a::CAbstract) = modify_dag(a, !a.dag)
 repartition(::CAbstract, ::Vector{Tuple{Int,Int}}) = error("You should not repartition abstract parameters! Remove them before repartitioning.")
-

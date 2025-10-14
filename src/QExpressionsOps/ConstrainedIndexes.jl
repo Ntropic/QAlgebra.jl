@@ -21,14 +21,6 @@ function neqconstraint_of_SubSpaceIndex(qspace::QSpace, constraint::NeqConstrain
     return NeqConstraint{SubSpaceIndex}(lhs, rhs)
 end
 
-# build an all-true constraint row for a given index
-function process_sumindex_and_constraint(qspace::QSpace, idx::SubSpaceIndex)
-    subspace = qspace.subspaces[idx.outer]
-    @assert subspace.is_ensemble_ss "Summation indexes must be ensemble indexes "
-    @assert subspace.num_operator_indexes < idx.inner "You need to sum using a summation index, "
-    return trues(subspace.ensemble_size)
-end
-
 function sort_indexes_and_constraints_into_ensemble_blocks(qspace::QSpace, indexes::Vector{SubSpaceIndex}, neq::Bool, constraints::Vector{NeqConstraint{SubSpaceIndex}})::Vector{ConstrainedIndexBlock}
     subspace_info = qspace.subspace_info 
     where_ensembles = subspace_info.where_ensembles
@@ -187,17 +179,6 @@ function _flatten_indexes(blocks::Vector{ConstrainedIndexBlock})::Vector{SubSpac
         end
     end
     return result
-end
-# collect every constraint row from all blocks into one vector
-function _flatten_constraints(blocks::Vector{ConstrainedIndexBlock})::Vector{BitVector}
-    # collect every constraint row in block order
-    rows = BitVector[]
-    for block in blocks
-        for row in block.constraints
-            push!(rows, BitVector(row))
-        end
-    end
-    return rows
 end
 # bubble insert and return insertion index
 function bubble_insert_index!(v::Vector{SubSpaceIndex}, x::SubSpaceIndex)::Int

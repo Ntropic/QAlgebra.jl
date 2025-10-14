@@ -105,19 +105,17 @@ end
     exps_alpha = zeros(Int, pinfo.dims)
     exps_alpha[alpha_idx] = 1
     atom_alpha = CAtom(pinfo, exps_alpha)
-    @test !has_indexed_parameters(atom_alpha)
     @test evaluate(atom_alpha, ones(pinfo.dims)) == 1.0
 
     exps_gamma = zeros(Int, pinfo.dims)
     exps_gamma[gamma_idx] = 1
     atom_gamma = CAtom(pinfo, exps_gamma)
-    @test has_indexed_parameters(atom_gamma)
     @test_throws ErrorException evaluate(atom_gamma, ones(pinfo.dims))
 
     default_indexes = ConcreteIndexes(pinfo)
     concrete = ConcreteIndexes(pinfo)
     concrete.indexes[1] = [2, 1]
-    atom_gamma_indexed = CAtomIndexed(pinfo, exps_gamma, concrete)
+    atom_gamma_indexed = CAtomIndexed(atom_gamma, concrete)
 
     alpha_param_idx = get_parameter_index(pv, :alpha)
     QAlgebra.CFunctions._store_value!(pv, alpha_param_idx, 1.0)

@@ -115,10 +115,6 @@ get_coeff(q::AbstractQSum) = q.qspace.c_one
 
 all_indexes(q::AbstractQSum)::Vector{SubSpaceIndex} = _flatten_indexes(q.blocks)
 iter_all_indexes(q::AbstractQSum) = Base.Iterators.flatten((block.indexes for block in q.blocks))
-iter_all_constraints(q::AbstractQSum) = Base.Iterators.flatten((block.constraints for block in q.blocks))
-container_iter_all_indexes_with_refs(q::AbstractQSum) = Base.Iterators.flatten(
-    ((block.indexes, i, block.indexes[i]) for i in eachindex(block.indexes)) for block in q.blocks)
-length_all_indexes(q::AbstractQSum) = sum(length(block) for block in q.blocks)
 
 _to_subspace_index(qspace::QSpace, idx::SubSpaceIndex) = idx
 _to_subspace_index(qspace::QSpace, idx::Union{Symbol,String}) = SubSpaceIndex(idx, qspace.subspace_info)

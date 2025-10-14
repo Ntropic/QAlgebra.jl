@@ -36,16 +36,6 @@ function QubitPauli(symbol::String="")::OperatorSet
     function pauli_dag(op::Vector{Int})::Vector{Tuple{ComplexRational,Vector{Int}}}
         return [(ComplexRational(1,0,1), op)]
     end
-    function paulistr2ind(str::String)::Vector{Tuple{ComplexRational,Vector{Int}}}
-        if length(str) == 0
-            return [(ComplexRational(1,0,1), 4)]
-        end
-        res = findfirst(==(str), ops)
-        if isnothing(res)
-            error("Invalid Pauli string: $str, must be one of $ops, or empty")
-        end
-        return [(ComplexRational(1,0,1), res)]
-    end
     function pauli2str(inds::Vector{Int}, sym::String=""; formatted::Bool=true)::String
         # create underscored string representation of sym using subscript_indexes
         ind = inds[1]

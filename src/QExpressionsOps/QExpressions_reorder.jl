@@ -64,19 +64,6 @@ end
     return var_inds
 end
 
-function _var_perm_full(param_info::ParameterInfo, ensemble_outers::Vector{Int}, where_defined::Vector{BitVector})
-    length(ensemble_outers) == length(where_defined) ||
-        throw(ArgumentError("Mismatch between ensemble metadata and where_defined mask."))
-    var_inds = collect(1:param_info.dims)
-    for (ensemble_idx, outer) in enumerate(ensemble_outers)
-        w = where_defined[ensemble_idx]
-        isempty(w) && continue
-        order = sortperm(w, rev=true)
-        var_inds = _apply_subspace_permutation(var_inds, outer, order, param_info)
-    end
-    return sparseperm(var_inds)
-end
-
 @inline permutation_moves(p::Vector{Int})::Vector{Tuple{Int, Int}} = [(i, pi) for (i, pi) in enumerate(p) if pi > i]
 
 @inline function _collect_changed_pairs(mapvec::Vector{Int})::Vector{Tuple{Int, Int}}

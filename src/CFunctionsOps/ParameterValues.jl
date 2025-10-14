@@ -42,6 +42,7 @@ mutable struct ParameterValues{Mode<:ParameterValuesMode}
     group_dependencies::Vector{Vector{Int}}
     group_update_waves::Vector{Vector{Int}}
     ensemble_distribution_groups::Vector{Vector{Int}}
+    locked::Bool
 end
 function ParameterValues(groups::AbstractVector{ParameterGroupLike}; mode::ParameterValuesMode=SampleIndexMode(), ensemble_distribution_groups::Vector{Vector{Int}}=Vector{Vector{Int}}())
     return ParameterValues{typeof(mode)}(groups, ensemble_distribution_groups)
@@ -86,7 +87,7 @@ function ParameterValues{Mode}(groups::AbstractVector{ParameterGroupLike}, ensem
     map_copy = Mode === SampleIndexMode ? Vector{Vector{Int}}() : [copy(v) for v in ensemble_distribution_groups]
     pv = ParameterValues{Mode}(where_which, groups, group_values, group_definition_initialized, group_initialized,
                          group_times_initialized, got_all_definitions, time_group, how_many_times, 
-                         group_dependencies, group_update_waves, map_copy)
+                         group_dependencies, group_update_waves, map_copy, false)
 
     if time_group != 0 && groups[time_group].payload !== nothing
         possible_times = findall(pv.group_times_initialized).-1
@@ -418,6 +419,10 @@ function resolve_param!(pv::ParameterValues{SampleIndexMode}, g::Int, payload::U
     group = pv.groups[g]
     kind = group.kind
     correct_type = parameter_group_input_type(kind)
+
+    if pv.locked && kind != ParameterGroupTimeFunction
+        error("ParameterValues is locked; only time-dependent function groups may be resolved (attempted $(parameter_group_kind_name(kind))).")
+    end
 
     if kind ∈ [ParameterGroupEnsembleFunction, ParameterGroupEnsembleTimeFunction] && isa(payload, Function)
         payload = QEnsembleFunction(String(group.name), copy(group.indexes), copy(group.function_args), payload)

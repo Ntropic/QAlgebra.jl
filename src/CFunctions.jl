@@ -12,10 +12,10 @@ using ..ParameterGroups: ParameterGroup, ParameterGroupLike
 
 export CFunction, CAbstractDefinition, CTypeDefinition, CIntegralDefinition, ParameterInfo
 export define_cabstract, define_ctype, define_cintegral
-export CAbstract, CIntegral, CCustomType, CCustomTypeIndexed, CAtom, CAtomIndexed, CSum, CRational, CProd, CExp, CLog, CPower, CVector, CMatrix
+export CAbstract, CIntegral, CCustomType, CCustomTypeIndexed, CAtom, CAtomIndexed, CAtomReferenced, CEval, CSum, CRational, CProd, CExp, CLog, CPower, CVector, CMatrix
 export CMatrix, CVector, CPower
 export coeff, var_exponents, unique_first_terms
-export contains_non_simple_CFunction, Indexed, has_indexed_parameters
+export contains_non_simple_CFunction, Indexed
 export list_cabstracts, list_ctypes, list_cintegrals
 export where_acting, where_acting!, which_params_acting, which_params_acting!, param_index_tuples
 export which_ensemble_acting, which_ensemble_acting!, substitute, separate_by_cond
@@ -359,9 +359,7 @@ end
 end
 
 coeff(a::CAtom)::Vector{ComplexRational} = [a.coeff]
-modify_exponents(a::CAtom, var_exponents) = CAtom(a.param_info, a.coeff, var_exponents)
 modify_coeff(a::CAtom, coeff::ComplexRational)::CAtom = CAtom(a.param_info, coeff, a.var_exponents)
-modify_coeff_exponents(a::CAtom, coeff::ComplexRational, var_exponents) = CAtom(a.param_info, coeff, var_exponents)
 var_exponents(a::CAtom) = a.var_exponents
 length(a::CAtom) = 1
 function repartition(f::CAtom, var_tuples::Vector{Tuple{Int, Int}})::CAtom 
@@ -654,9 +652,6 @@ getindex(M::CMatrix, i::Int, j::Int) = M.expr[i, j]
 repartition(M::CMatrix, var_tuples::Vector{Tuple{Int,Int}}) = CMatrix(M.param_info, M.coeff, reshape(repartition.(M.expr[:], Ref(var_tuples)), size(M.expr)))
 var_exponents(a::CMatrix) = spzeros(Int, a.param_info.dims)
 
-include("CFunctionsOps/CFunctions_Indexed.jl")
-
-
 #### Some basic functions ##############################################################################################
 
 
@@ -700,20 +695,23 @@ Render `f` as a plain-text string using the coefficient formatting preferences.
 """
 function to_string end
 contains_non_simple_CFunction(c::CAtom)::Bool = false 
-contains_non_simple_CFunction(c::CAtomIndexed)::Bool = false
-contains_non_simple_CFunction(c::CSum)::Bool = any(contains_non_simple_CFunction, c.expr)
-# Not sure if CRational should be counted here?! -> Design choices 
-
-
+include("CFunctionsOps/ParameterValues.jl")
+include("CFunctionsOps/CAtoms_variants.jl")
+include("CFunctionsOps/CFunctions_Indexed.jl")
 include("CFunctionsOps/CFunctions_algebra.jl")
 include("CFunctionsOps/CFunctions_sort.jl")
 include("CFunctionsOps/CFunctions_substitute.jl")
 include("CFunctionsOps/CFunctions_simplify.jl")
-include("CFunctionsOps/ParameterValues.jl")
 include("CFunctionsOps/CFunctions_eval.jl")
 include("CFunctionsOps/CFunctions_expand.jl")
 include("CFunctionsOps/CFunctions_helper.jl")
 include("CFunctionsOps/CFunctions_separate.jl")
 include("CFunctionsOps/CFunctions_print.jl")
+
+contains_non_simple_CFunction(c::CAtomIndexed)::Bool = false
+contains_non_simple_CFunction(c::CAtomReferenced)::Bool = false
+contains_non_simple_CFunction(c::CEval)::Bool = false
+contains_non_simple_CFunction(c::CSum)::Bool = any(contains_non_simple_CFunction, c.expr)
+# Not sure if CRational should be counted here?! -> Design choices 
 
 end # module CFunctions

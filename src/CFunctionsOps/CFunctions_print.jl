@@ -1,4 +1,5 @@
 using LaTeXStrings
+using ..StringUtils: indexes2str
 using ..CFunctions
 export stringer, to_stringer, to_string
 
@@ -21,6 +22,45 @@ end
     return xor(acc_sig, sig), out
 end
 
+@inline function indexed_parameter_label(param_info::ParameterInfo, param_index::Int, indexes::ConcreteIndexes, do_latex::Bool)
+    param = param_info.params[param_index]
+    base_str = do_latex ? param.param_latex : param.param_str
+    ens_indexes = param.ensemble_indexes
+    isempty(ens_indexes) && return base_str
+    values = String[]
+    for ens_idx in ens_indexes
+        ensemble = ens_idx.outer
+        inner = ens_idx.inner
+        ensemble ≤ length(indexes.indexes) || error("Concrete indexes missing ensemble $(ensemble).")
+        entries = indexes.indexes[ensemble]
+        inner ≤ length(entries) || error("Concrete indexes missing entry $(inner) in ensemble $(ensemble).")
+        push!(values, string(entries[inner]))
+    end
+    return base_str * indexes2str(values; do_latex=do_latex)
+end
+
+@inline function indexed_parameter_names(atom::CAtomIndexed, do_latex::Bool)::Vector{String}
+    params = atom.param_info.params
+    defaults = do_latex ? [p.param_latex for p in params] : [p.param_str for p in params]
+    isempty(atom.indexes.indexes) && return defaults
+    for idx in eachindex(defaults)
+        isempty(params[idx].ensemble_indexes) && continue
+        defaults[idx] = indexed_parameter_label(atom.param_info, idx, atom.indexes, do_latex)
+    end
+    return defaults
+end
+
+@inline function indexes_suffix(indexes::ConcreteIndexes, do_latex::Bool)
+    flat = String[]
+    for ensemble in indexes.indexes
+        for idx in ensemble
+            idx == 0 && continue
+            push!(flat, string(idx))
+        end
+    end
+    return indexes2str(flat; do_latex=do_latex)
+end
+
 function sign_string(c::ComplexRational, do_latex::Bool=false)::Tuple{Bool, String}
     neg = is_negative(c)
     body = string(neg ? -c : c, do_latex=do_latex)
@@ -31,6 +71,8 @@ function is_abs_one(c::CFunction)
     if isnumeric(c)
         if isa(c, Union{CAtom, CAtomIndexed})
             return is_abs_one(c.coeff)
+        elseif isa(c, CEval)
+            return isone(abs(c.value))
         elseif isa(c, CSum)
             if length(c) == 1
                 return is_abs_one(c[1])
@@ -123,10 +165,16 @@ function stringer(a::CAtom; do_latex::Bool=false, do_frac::Bool=true, braced::Bo
 end
 
 function stringer(a::CAtomIndexed; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=true)
-    params = CFunctions._indexed_parameter_names(a, do_latex)
+    params = indexed_parameter_names(a, do_latex)
     exps = a.var_exponents
     @assert length(params) == length(exps) "Number of symbols must match number of variables"
     return _stringer_atom(a.coeff, exps, params; do_latex=do_latex, do_frac=do_frac, is_numeric=isnumeric(a))
+end
+
+function stringer(c::CEval; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=true)
+    val = c.value
+    str = do_latex ? string(val) : string(val)
+    return false, str
 end
 
 function stringer(C::CAbstract; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=false)
@@ -192,8 +240,7 @@ function stringer(C::CCustomTypeIndexed; do_latex::Bool=false, do_frac::Bool=tru
             base *= "(" * join(times, ",") * ")"
         end
     end
-
-    suffix = CFunctions._indexes_suffix(C.indexes, do_latex)
+    suffix = indexes_suffix(C.indexes, do_latex)
     base *= suffix
 
     return with_coeff(C.coeff, base; do_latex=do_latex)

@@ -199,19 +199,6 @@ end
 _default_pdf(x::Float64) = 1.0
 _default_pdf(x) = 1.0
 
-# normalize a pdf or vector of pdfs to a vector length == dims
-function _pdfvec(pdfs, dims::Int)
-    if pdfs === nothing
-        return [ _default_pdf for _ in 1:dims ]
-    elseif pdfs isa Function
-        return [ pdfs for _ in 1:dims ]
-    else
-        v = collect(pdfs)
-        length(v) == dims || error("length(pdfs)=$(length(v)) must equal number of dimensions=$dims")
-        return v
-    end
-end
-
 # ---------- Unified constructor ----------
 """
     QInterpolator(method::Symbol,

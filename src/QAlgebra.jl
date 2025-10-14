@@ -21,9 +21,6 @@ end
 function set_default(name::Symbol, value)
     @set_preferences!(String(name) => value)
 end
-function default_if_nothing(x, key)
-    return x === nothing ? get_default(key) : x
-end
 
 # --- Module-level global variables (not const) ---
 # These are initialized immediately at module load time
@@ -102,7 +99,7 @@ export define_cabstract, define_ctype, define_cintegral
 export CFunction, CAtom, CMatrix, CVector, CPower, CAtomIndexed, CCustomTypeIndexed
 export reorder, evaluate, stringer, to_stringer, to_string, sort_key
 export coeff, var_exponents, expand, substitute
-export contains_non_simple_CFunction, has_indexed_parameters, Indexed
+export contains_non_simple_CFunction, Indexed
 export list_cabstracts, list_ctypes, list_cintegrals
 export where_acting, where_acting!, which_ensemble_acting, which_ensemble_acting!
 export which_params_acting, which_params_acting!, separate_by_cond, param_index_tuples

@@ -186,16 +186,6 @@ function index_number_for_ensemble(block_sizes::Vector{Int}, bin_cache::Binomial
     end
 end
 
-function bubble_insert_return_index!(used_indexes::Vector{Int}, val::Int, current_index::Int)::Int
-    #pos = searchsortedfirst(used_indexes, val) # only makes sense for large vectors because of internal interval halving
-    n = length(used_indexes)
-    while current_index <= n && used_indexes[current_index] < val
-        current_index += 1
-    end
-    insert!(used_indexes, current_index, val)
-    return current_index+1
-end
-
 @inline function _rank_non_decreasing_block(block::Vector{Int}, n::Int, ws::EnsembleRankWorkspace)::Int
     rank::Int = 0
     start_val::Int = 1

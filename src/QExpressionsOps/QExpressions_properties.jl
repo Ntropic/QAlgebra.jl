@@ -310,16 +310,6 @@ iter_QInts(::QObj) = ()
 function simple_isa(q::QExpr, type::Type)::Bool
     return length(q) == 1 && isa(q.terms[1], type)
 end
-function isaQAtomProduct(q::QExpr)::Bool
-    if length(q) > 1
-        return false
-    else
-        # length(q) == 1 
-        if isa(q.terms[1], QAtomProduct)
-            return true
-        end
-    end
-end
 import Base: isone, iszero
 function isone(q::QAtomProduct)::Bool
     if isnumeric(q) && isnumeric(q.coeff_fun)
@@ -337,15 +327,6 @@ iszero(q::QAtomProduct) = iszero(q.coeff_fun)
 iszero(q::AbstractQSum) = iszero(q.expr)
 iszero(q::T) where T<:QComposite = iszero(q.coeff_fun) || iszero(q.expr)
 iszero(q::T) where T<:QMultiComposite = iszero(q.coeff_fun) || any(iszero, q.expr) 
-
-##################
-
-function where_neutral(q::QTerm, qspace::QSpace)::BitVector
-    return [op == neut for (op, neut) in zip(q.op_indices, qspace.I_op)]
-end
-function where_neutral(q::QAbstract, qspace::QSpace)::BitVector
-    return q.operator_type.expanded_ss_acting   # should never be modified! copy would be safer, but slower
-end
 
 """
     where_acting(q::QObj)
@@ -448,22 +429,6 @@ end
 @inline commutes_QAtom(qa::QAbstract, qt::QTerm, qspace::QSpace) = commutes_QAtom(qt, qa, qspace::QSpace)
 @inline commutes_QAtom_inds(inds::Vector{Int}, q1::QTerm, q2::QAbstract, qspace::QSpace) = length(inds) == 0
 @inline commutes_QAtom_inds(inds::Vector{Int}, q1::QAbstract, q2::QTerm, qspace::QSpace) = length(inds) == 0
-
-function any_overlaps(multi_where_acting::Vector{BitVector})
-    n = length(multi_where_acting)
-    if n ≤ 1
-        return false, multi_where_acting[1]
-    end
-
-    added = multi_where_acting[1]
-    for i in 2:n
-        if any(added .& multi_where_acting[i])
-            return true, added
-        end
-        added = added .| multi_where_acting[i]
-    end
-    return false, added
-end
 @inline function commutes(q1::QAtomProduct, q2::QAtomProduct)::Bool
     qspace = q1.qspace
     acts1 = where_acting.(q1.expr, Ref(qspace))  # cache acting masks for q1 atoms
@@ -513,11 +478,6 @@ function commutes(Q1::S, Q2::T) where {S<:QAtomProduct,T<:QComposite}
 end
 # for QCompositeProduct we need to track this differently. 
 
-# define internal commutes function for QMultiComposite 
-# do the internal degrees of freedom commute? 
-function QCommutator_commutes(Q::QCommutator)::Bool
-    return commutes(Q.expr[1], Q.expr[2])
-end
 each_commutes(exprs::Vector{QExpr}, Q2::QExpr)::Bool = all(commutes(Q1, Q2) for Q1 in exprs)
 each_commutes(Q1::QExpr, exprs::Vector{QExpr})::Bool = all(commutes(Q1, Q2) for Q2 in exprs)
 each_commutes(exprs1::Vector{QExpr}, exprs2::Vector{QExpr}) = all(commutes(Q1, Q2) for Q1 in exprs1, Q2 in exprs2)
@@ -615,19 +575,6 @@ function where_acting_index(q::QTerm, qspace::QSpace)::Vector{Int}
     return [i for (i, op) in enumerate(q.op_indices) if op != qspace.I_op[i]]
 end
 order(q::QTerm, qspace::QSpace)::Int = length(where_acting_index(q, qspace))
-
-function operator_magnitudes(q::QTerm, qspace::QSpace)::Vector{Int}
-    magnitudes::Vector{Int} = Vector{Int}(undef, length(q.op_indices))
-    curr_ind::Int = 1
-    for ss in qspace.subspaces
-        curr_ensemble_size = ss.ensemble_size
-        for i in 1:curr_ensemble_size
-            magnitudes[curr_ind] = ss.op_set.operator_magnitude(q.op_indices[curr_ind])
-            curr_ind += 1  
-        end
-    end
-    return magnitudes 
-end
 
 ########## Statespace check infra ##############################################
 function same_qspace(a::S, b::T)::Bool where {S<:QNotAtom,T<:QNotAtom}

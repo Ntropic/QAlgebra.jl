@@ -102,6 +102,26 @@ end
     return ctimes(a.coeff, _atom_product(a.param_info, pv, a.var_exponents, a.indexes))
 end
 
+@inline function _atom_product(a::CAtomReferenced{Mode}) where {Mode<:ParameterValuesMode}
+    prod_val = 1.0
+    first_term = true
+    @inbounds for (ptr, anchor, exp) in zip(a.ptrs, a.anchors, a.exponents)
+        val = _factor_value(ptr, anchor)
+        term = exp == 1 ? val : val ^ exp
+        if first_term
+            prod_val = term
+            first_term = false
+        else
+            prod_val *= term
+        end
+    end
+    return first_term ? 1.0 : prod_val
+end
+
+@inline function _evaluate_atom(a::CAtomReferenced{Mode}) where {Mode<:ParameterValuesMode}
+    return ctimes(a.coeff, _atom_product(a))
+end
+
 @inline function _evaluate(f::CAtom,
                            pv::ParameterValues{SampleIndexMode},
                            indexes::ConcreteIndexes)
@@ -112,6 +132,19 @@ end
                            pv::ParameterValues{SampleIndexMode},
                            ::ConcreteIndexes)
     return _evaluate_atom(f, pv)
+end
+
+@inline function _evaluate(f::CEval,
+                           ::ParameterValues{Mode},
+                           ::ConcreteIndexes) where {Mode<:ParameterValuesMode}
+    return f.value
+end
+
+@inline function _evaluate(f::CAtomReferenced{Mode},
+                           pv::ParameterValues{Mode},
+                           ::ConcreteIndexes) where {Mode<:ParameterValuesMode}
+    pv === f.pv || error("CAtomReferenced is bound to a different ParameterValues instance.")
+    return _evaluate_atom(f)
 end
 
 @inline function _evaluate(::CAbstract, ::ParameterValues, ::ConcreteIndexes)
@@ -209,6 +242,10 @@ end
 
 @inline function _abstract_evaluate(f::CAtom, pv::ParameterValues{AbstractIndexMode})
     return _evaluate_atom(f, pv)
+end
+
+@inline function _abstract_evaluate(f::CEval, ::ParameterValues{AbstractIndexMode})
+    return f.value
 end
 
 @inline function _abstract_evaluate(::CAtomIndexed, ::ParameterValues{AbstractIndexMode})

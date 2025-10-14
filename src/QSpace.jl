@@ -332,8 +332,20 @@ end
 
 # ------------------------------------------------------------------
 # ConcreteIndexes convenience constructors
-@inline ConcreteIndexes(qspace::QSpace) = ConcreteIndexes(qspace.param_info)
-@inline ConcreteIndexes(qspace::QSpace, indexes::AbstractVector{<:AbstractVector{<:Integer}}) = ConcreteIndexes(qspace.param_info, indexes)
+@inline function _ensemble_expected_lengths(qspace::QSpace)::Vector{Int}
+    lengths = Int[]
+    for ss in qspace.subspaces
+        ss.is_ensemble_ss || continue
+        push!(lengths, length(ss.keys_symbols))
+    end
+    return lengths
+end
+@inline ConcreteIndexes(qspace::QSpace) = ConcreteIndexes(_ensemble_expected_lengths(qspace))
+@inline function ConcreteIndexes(qspace::QSpace, indexes::AbstractVector{<:AbstractVector{<:Integer}})
+    expected = _ensemble_expected_lengths(qspace)
+    vectors = [Vector{Int}(idx) for idx in indexes]
+    return ConcreteIndexes(expected, vectors)
+end
 
 
 include("QSpaceOps/QSpace_get_types.jl")

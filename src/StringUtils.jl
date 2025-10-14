@@ -283,10 +283,6 @@ function int_exponent2str(base::String, exponent::Int, dag::Bool=false; do_latex
     core, suffix = _split_trailing_args(base)
     return core * exp_str * suffix
 end
-function int_exponents2str(bases::Vector{String}, exponents::Vector{Int}, dag::Bool=false; do_latex::Bool=false)::String
-    return join([int_exponent2str(b, x, dag; do_latex=do_latex) for (b,x) in zip(bases, exponents)])
-end
-
 function exp2str(exponent_str::String; do_latex::Bool=false)::String 
     if do_latex && length(exponent_str) > 0
         exponent_str = "^{$exponent_str}"
