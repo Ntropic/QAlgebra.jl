@@ -1,25 +1,8 @@
-export max_exponents, evaluate
+export evaluate
 
 import ..ConcreteIndexes
 import ..CFunctions
 using ..CFunctions: ParameterValues #, value, recompute_functions!
-
-"""
-    max_exponents(f::CFunction) -> Vector{Int}
-
-Return the maximum absolute exponent for each parameter appearing in `f`. Composite
-expressions propagate the per-variable maxima across their children; atoms yield the
-absolute values of their sparse exponent vector.
-"""
-function max_exponents(f::CFunction)::Vector{Int}
-    int_vec::Vector{Int} = zeros(Int, f.param_info.dims) 
-    for leaf in leaf_iter(f) # iterate over the var_exponents::SparseVector{Int,Int}
-        for i in leaf.var_exponents.nzind
-            int_vec[i] = max(int_vec[i], abs(leaf.var_exponents[i]))
-        end
-    end
-    return int_vec
-end
 
 
 # Rational exponent on a numeric base

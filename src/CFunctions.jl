@@ -19,7 +19,7 @@ export contains_non_simple_CFunction, Indexed, has_indexed_parameters
 export list_cabstracts, list_ctypes, list_cintegrals
 export where_acting, where_acting!, which_params_acting, which_params_acting!, param_index_tuples
 export which_ensemble_acting, which_ensemble_acting!, substitute, separate_by_cond
-export ParameterValues#, update_t!, value, resolve_param!
+export ParameterValues, update_t!, resolve_param!, resolve_ensemble_values!
 export compute_integral_weights!
 
 import Base: copy, exp, log, length, getindex, iterate, size
@@ -708,7 +708,7 @@ include("CFunctionsOps/CFunctions_sort.jl")
 include("CFunctionsOps/CFunctions_substitute.jl")
 include("CFunctionsOps/CFunctions_simplify.jl")
 include("CFunctionsOps/ParameterValues.jl")
-include("CFunctionsOps/CFunctions_orders_eval.jl")
+include("CFunctionsOps/CFunctions_eval.jl")
 include("CFunctionsOps/CFunctions_expand.jl")
 include("CFunctionsOps/CFunctions_helper.jl")
 include("CFunctionsOps/CFunctions_separate.jl")

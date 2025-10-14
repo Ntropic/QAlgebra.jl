@@ -58,7 +58,6 @@ and drive simplification passes shared with `QExpressions`.
 coeff
 var_exponents
 contains_non_simple_CFunction
-max_exponents
 evaluate
 unique_first_terms
 ```

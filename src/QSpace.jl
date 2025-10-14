@@ -2,12 +2,12 @@ module QSpaces
 
 using ComplexRationals
 using ..CFunctions
-import ..CFunctions: update_t!, resolve_param!
+import ..CFunctions: ParameterValues, AbstractIndexMode, ParameterInfo, update_t!, resolve_param!
 using ..StringUtils
 using ..Cumulants: ReducedCumulantList
 using ..Sampler
 using ..Sampler: AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
-using ..ParameterGroups: ParameterGroup, ParameterGroupKind, ParameterGroupDistribution, ParameterGroupEnsembleFunction, ParameterGroupEnsembleTimeFunction, WhereWhichParamGroup
+using ..ParameterGroups: ParameterGroup, ParameterGroupLike, ParameterGroupKind, ParameterGroupDistribution, ParameterGroupEnsembleFunction, ParameterGroupEnsembleTimeFunction, WhereWhichParamGroup
 using Base: WeakRef, GC
 using SparseArrays
 
@@ -17,6 +17,7 @@ export AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
 export Parameter, ParameterDefinitions, set_parameter_group_definition!, map_by_subspace, map_by_tindex
 export QSpace
+export AbstractIndexParameters
 
 Is = Vector{Int}
 
@@ -348,6 +349,26 @@ Attach or update the payload for a parameter group on an existing `qspace`. This
 function resolve_param!(qspace::QSpace, name::Union{Symbol,String}, payload::ParameterGroupStorageUnion)
     group_idx = get_parameter_group(qspace, name)
     return resolve_param!(qspace.sample_index_param_values, group_idx, payload)
+end
+
+"""
+    AbstractIndexParameters(qspace::QSpace)
+
+Construct `ParameterValues{AbstractIndexMode}` for the given `qspace`. 
+Allows evaluating CFunctions using specific parameter values mapped to the abstract ensemble subspace indexes.
+"""
+function AbstractIndexParameters(qspace::QSpace)
+    subspaces = qspace.subspaces
+    info = qspace.param_info
+    maps = Vector{Vector{Int}}(undef, length(subspaces))
+    @inbounds for (idx, ss) in enumerate(subspaces)
+        if ss.ensemble === nothing
+            maps[idx] = Int[]
+        else
+            maps[idx] = copy(ss.ensemble.distribution_group_indices)
+        end
+    end
+    return ParameterValues(info.param_groups; mode=AbstractIndexMode(), ensemble_distribution_groups=maps)
 end
 
 end # module QSpaces
