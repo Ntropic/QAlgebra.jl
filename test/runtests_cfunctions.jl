@@ -55,7 +55,7 @@ VARS = ["x", "y"]
             @test_succeeds evaluate(ex, xv)      "evaluate($ex, xv) failed"
             pv = ParameterValues(ex.param_info)
             indexes = ConcreteIndexes(ex.param_info)
-            for (idx, _) in enumerate(ex.param_info.parameters)
+            for (idx, _) in enumerate(ex.param_info.params)
                 QAlgebra.CFunctions._store_value!(pv, idx, xv[(idx-1) % length(xv) + 1])
             end
             @test_succeeds evaluate(ex, pv, indexes)   "evaluate($ex, pv) failed"
@@ -87,7 +87,7 @@ end
     pv = qspace.sample_index_param_values
 
     alpha_idx = findfirst(==(Symbol(:alpha)), pinfo.inner_labels_symbols_flat)
-    gamma_idx = findfirst(p -> p.indexed_param, pinfo.parameters)
+    gamma_idx = findfirst(p -> p.indexed_param, pinfo.params)
     @test !isnothing(alpha_idx)
     @test !isnothing(gamma_idx)
     alpha_idx = alpha_idx::Int

@@ -177,7 +177,7 @@ function which_ensemble_acting!(f::CIntegral, where_non_trivial::Vector{BitVecto
 end
 function which_ensemble_acting!(f::CAtom, where_non_trivial::Vector{BitVector})::Vector{BitVector}
     vexp_inds = f.var_exponents.nzind
-    params = f.param_info.parameters
+    params = f.param_info.params
     for ind in vexp_inds
         param = params[ind]
         param.indexed_param || continue
@@ -187,7 +187,7 @@ function which_ensemble_acting!(f::CAtom, where_non_trivial::Vector{BitVector}):
 end
 function which_ensemble_acting!(f::CAtomIndexed, where_non_trivial::Vector{BitVector})::Vector{BitVector}
     vexp_inds = f.var_exponents.nzind
-    params = f.param_info.parameters
+    params = f.param_info.params
     for ind in vexp_inds
         param = params[ind]
         param.indexed_param || continue

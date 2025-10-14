@@ -3,6 +3,7 @@ module QSpaces
 using ComplexRationals
 using ..CFunctions
 import ..CFunctions: ParameterValues, AbstractIndexMode, ParameterInfo, update_t!, resolve_param!
+import ..ConcreteIndexes
 using ..StringUtils
 using ..Cumulants: ReducedCumulantList
 using ..Sampler
@@ -12,7 +13,7 @@ using Base: WeakRef, GC
 using SparseArrays
 
 export OperatorSet, operator_magnitude, max_operator_magnitude, SubSpaceDicts, AbstractOperatorDicts
-export Ensemble, SubSpace, SubSpaceDefinitions, SubSpaceInfo, SubSpaceIndex, outer, inner, expanded, Index2Symbol, Index2String, Index2Ensemble, Index2Ensemble_and_Summation, SummationIndex2SubSpaceIndex
+export Ensemble, SubSpace, SubSpaceDefinitions, SubSpaceInfo, SubSpaceIndex, EnsembleIndex, outer, inner, expanded, Index2Symbol, Index2String, Index2Ensemble, Index2Ensemble_and_Summation, SummationIndex2SubSpaceIndex, SubSpaceIndex2EnsembleIndex, pushindex!
 export AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
 export Parameter, ParameterDefinitions, set_parameter_group_definition!, map_by_subspace, map_by_tindex
@@ -328,6 +329,12 @@ function Base.show(io::IO, qspace::QSpace)
         println(io, "   - Abstract Ops:", join(op_strs, ", "))
     end
 end
+
+# ------------------------------------------------------------------
+# ConcreteIndexes convenience constructors
+@inline ConcreteIndexes(qspace::QSpace) = ConcreteIndexes(qspace.param_info)
+@inline ConcreteIndexes(qspace::QSpace, indexes::AbstractVector{<:AbstractVector{<:Integer}}) = ConcreteIndexes(qspace.param_info, indexes)
+
 
 include("QSpaceOps/QSpace_get_types.jl")
 using ..ParameterGroups: ParameterGroupStorageUnion

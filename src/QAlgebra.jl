@@ -71,7 +71,7 @@ end
 
 
 export get_default, set_flip_if_first_term_negative, set_do_braced, set_expand_cumulants,
-       FLIP_IF_FIRST_TERM_NEGATIVE , DO_BRACED, EXPAND_CUMULANTS
+       FLIP_IF_FIRST_TERM_NEGATIVE , DO_BRACED, EXPAND_CUMULANTS, pushindex!
 
 include("Helper.jl")
 include("OffsetArrays.jl")
@@ -117,7 +117,7 @@ using .QSpaces
 export OperatorSet, max_operator_magnitude
 export Ensemble, SubSpace, SubSpaceDefinitions, ConcreteIndexes, SubSpaceIndex 
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
-export Parameter, ParameterInfo, ParameterDefinitions, set_parameter_group_definition!
+export Parameter, ParameterInfo, ParameterDefinitions, set_parameter_group_definition!, SubSpaceIndex, EnsembleIndex
 export QSpace, SubSpaceDicts, AbstractOperatorDicts
 export get_parameter_group, get_parameter, get_subspace, get_subspace_index, get_ensemble, get_operator_type
 export QubitPauli, QubitPM, Ladder

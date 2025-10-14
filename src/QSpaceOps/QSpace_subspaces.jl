@@ -1,4 +1,5 @@
 import ..SubSpaceIndex
+import ..EnsembleIndex
 using ..ParameterGroups: AbstractSubSpace, AbstractEnsemble
 using ..EnsembleSamples: AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 
@@ -400,6 +401,18 @@ end
 @inline outer(is::Vector{SubSpaceIndex}) = [outer(i) for i in is]
 @inline inner(is::Vector{SubSpaceIndex}) = [inner(i) for i in is]
 @inline expanded(is::Vector{SubSpaceIndex}) = [expanded(i) for i in is]
+@inline outer(i::EnsembleIndex) = i.outer
+@inline inner(i::EnsembleIndex) = i.inner
+@inline outer(is::Vector{EnsembleIndex}) = [outer(i) for i in is]
+@inline inner(is::Vector{EnsembleIndex}) = [inner(i) for i in is]
+
+@inline function SubSpaceIndex2EnsembleIndex(info::SubSpaceInfo, idx::SubSpaceIndex)
+    ensemble = info.ensemble_index_by_outer_index[idx.outer]
+    ensemble != 0 || error("Subspace index $(idx) is not part of an ensemble.")
+    return EnsembleIndex(ensemble, idx.inner)
+end
+@inline SubSpaceIndex2EnsembleIndex(info::SubSpaceInfo, idxs::Vector{SubSpaceIndex}) =
+    EnsembleIndex[SubSpaceIndex2EnsembleIndex(info, idx) for idx in idxs]
 @inline Index2Symbol(i::SubSpaceIndex, info::SubSpaceInfo) =  info.inner_labels_symbols_flat[i.expanded]
 @inline Index2String(i::SubSpaceIndex, info::SubSpaceInfo) =  info.param_names[i.expanded]
 @inline function Index2Ensemble(i::SubSpaceIndex, info::SubSpaceInfo) 

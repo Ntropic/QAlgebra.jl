@@ -5,6 +5,12 @@ struct SubSpaceIndex
 end
 Base.copy(x::SubSpaceIndex) = SubSpaceIndex(x.outer, x.inner, x.expanded)
 
+struct EnsembleIndex
+    outer::Int
+    inner::Int
+end
+Base.copy(x::EnsembleIndex) = EnsembleIndex(x.outer, x.inner)
+
 """
     ConcreteIndexes(expected_lengths, indexes)
 
@@ -29,10 +35,41 @@ struct ConcreteIndexes
         return new(copied_expected, copied_indexes)
     end
 end
-
 ConcreteIndexes(expected_lengths::AbstractVector{<:Integer}) = begin
     lengths = Vector{Int}(expected_lengths)
     return ConcreteIndexes(lengths, [fill(0, lengths[i]) for i in eachindex(lengths)])
+end
+
+"""
+    pushindex!(ci::ConcreteIndexes, idx::EnsembleIndex, value::Int)
+    pushindex!(ci::ConcreteIndexes, updates...)
+    pushindex!(ci::ConcreteIndexes, collection)
+
+Store integer values for specific ensemble slots within `ci`. The primary form
+accepts an `EnsembleIndex` alongside the value to record. Additional overloads
+allow applying multiple updates either via tuples/pairs or any iterable of such
+pairs. Each update overwrites the targeted `(outer, inner)` entry.
+"""
+function pushindex!(ci::ConcreteIndexes, idx::EnsembleIndex, value::Integer)
+    1 ≤ idx.outer ≤ length(ci.indexes) || throw(ArgumentError("Ensemble index $(idx.outer) out of bounds (expected 1:$(length(ci.indexes)))."))
+    entries = ci.indexes[idx.outer]
+    1 ≤ idx.inner ≤ length(entries) || throw(ArgumentError("Inner index $(idx.inner) out of bounds for ensemble $(idx.outer) (expected 1:$(length(entries)))."))
+    entries[idx.inner] = Int(value)
+    return ci
+end
+@inline pushindex!(ci::ConcreteIndexes, item::Tuple{EnsembleIndex,<:Integer}) = pushindex!(ci, item[1], item[2])
+@inline pushindex!(ci::ConcreteIndexes, item::Pair{EnsembleIndex,<:Integer}) = pushindex!(ci, first(item), last(item))
+function pushindex!(ci::ConcreteIndexes, items::AbstractVector{T}) where {T}
+    for item in items
+        pushindex!(ci, item)
+    end
+    return ci
+end
+function pushindex!(ci::ConcreteIndexes, items::Vararg{Union{Tuple{EnsembleIndex,<:Integer},Pair{EnsembleIndex,<:Integer}}})
+    for item in items
+        pushindex!(ci, item)
+    end
+    return ci
 end
 
 Base.getindex(ci::ConcreteIndexes, i::Int) = ci.indexes[i]

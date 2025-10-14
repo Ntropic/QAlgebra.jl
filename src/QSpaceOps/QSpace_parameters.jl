@@ -1,6 +1,6 @@
 using Combinatorics
 using SparseArrays
-using ..CFunctions: ParameterInfo, ParameterIndexes, ParameterDicts, ParameterValues, build_parameter_dicts
+using ..CFunctions: ParameterInfo, ParameterIndexes, ParameterDicts, ParameterValues, build_parameter_dicts, AbstractParameter
 using ..StringUtils: symbol2formatted, str2sub, var_unsubstitution, var_unsubstitution, reverse_var_substitution
 using ..SparsePermutationTools: SparsePermutation, denseperm
 using ..Sampler: QDistribution, QEnsembleFunction, AbstractEnsembleSample
@@ -17,7 +17,7 @@ using ..ParameterGroups: ParameterGroupKind, ParameterGroup, ParameterGroupLike,
 Container describing a single parameter instance in the `QSpace`. Ensemble distributions
 are tracked per parameter group and materialise in `EnsembleSamples` stored on the ensembles.
 """
-mutable struct Parameter
+mutable struct Parameter <: AbstractParameter
     param_symbol::Symbol
     param_name::String
     param_str::String
@@ -33,7 +33,7 @@ mutable struct Parameter
     param_indexes::Vector{SubSpaceIndex}
     coords::Vector{Int}
     acts_on::Vector{BitVector}
-    ensemble_tuples::Vector{Tuple{Int,Int}}
+    ensemble_indexes::Vector{EnsembleIndex}
     function_refs::Union{Nothing,Vector{Int}}
     indexed_slot::Int
 end
@@ -473,7 +473,7 @@ function build_indexed_parameters!(parameters::Vector{Parameter},
             push!(parameters, Parameter(group.name, curr_var_name * t_suff, var_name_str * t_suff,
                                         curr_var_name, var_name_str, var_name_latex * t_suff_latex, symbol_comb,
                                         group.of_t, false, t_ind, group_index, true, subspace_indexes,
-                                        Int[], Vector{BitVector}(), Tuple{Int,Int}[], nothing, 0))
+                                        Int[], Vector{BitVector}(), EnsembleIndex[], nothing, 0))
             index_map_vec[t_ind + 1][inner_subspace_inds...] = length(parameters)
         end
     end
@@ -500,7 +500,7 @@ function build_scalar_parameters!(parameters::Vector{Parameter},
         push!(parameters, Parameter(group.name, param_name * t_suff, var_name_str * t_suff,
                                     param_name, var_name_str, var_name_latex * t_suff_latex, Symbol[],
                                     group.of_t, is_t, t_ind, group_index, false, SubSpaceIndex[],
-                                    Int[], Vector{BitVector}(), Tuple{Int,Int}[], nothing, 0))
+                                    Int[], Vector{BitVector}(), EnsembleIndex[], nothing, 0))
         t_index_map_vec[t_ind + 1] = length(parameters)
     end
     return t_index_map_vec
@@ -599,18 +599,18 @@ function decorate_parameters!(parameters::Vector{Parameter}, subspace_info::SubS
         coords = Vector{Int}(undef, coord_length)
         coords[1] = param.param_of_t ? param.t_index + 1 : 1
         acts = [falses(n) for n in ensemble_sizes]
-        tuples = Tuple{Int,Int}[]
+        ens_indexes = EnsembleIndex[]
         for (inner_pos, sub_idx) in enumerate(param.param_indexes)
             coords[inner_pos + 1] = sub_idx.inner
             ensemble = subspace_info.ensemble_index_by_outer_index[sub_idx.outer]
             if ensemble != 0
                 acts[ensemble][sub_idx.inner] = true
-                push!(tuples, (ensemble, sub_idx.inner))
+                push!(ens_indexes, SubSpaceIndex2EnsembleIndex(subspace_info, sub_idx))
             end
         end
         param.coords = coords
         param.acts_on = acts
-        param.ensemble_tuples = tuples
+        param.ensemble_indexes = ens_indexes
         param.function_refs = nothing
         if param.indexed_param
             slot_counter += 1
@@ -939,7 +939,7 @@ function ParameterDefinitions2Parameters(vd::ParameterDefinitions, subspace_info
 
     param_info = ParameterInfo(outer_labels_symbols, inner_labels_symbols_flat, outer_labels, outer_labels_str, outer_labels_latex,
         subspace_index_maps, t_index_transform, indexes_by_t_index, indexes_of_t, ensemble_sizes,
-        subspace_info, param_indexes, param_groups, Any[parameters...])
+        subspace_info, param_indexes, param_groups, parameters)
 
     param_dicts = build_parameter_dicts(param_info)
     sample_index_param_values = ParameterValues(param_groups)
@@ -952,7 +952,7 @@ function map_by_subspace(i_to::SubSpaceIndex, i_from::SubSpaceIndex, pinfo::Para
     @assert i_to.outer == i_from.outer "Subspace mapping requires the same outer subspace."
     M = pinfo.subspace_index_maps[i_to.outer]
     if size(M,1) == 0  # non-ensemble subspace -> identity map
-        return collect(1:length(pinfo.parameters))
+        return collect(1:length(pinfo.params))
     else
         return denseperm(M[i_to.inner, i_from.inner])
     end

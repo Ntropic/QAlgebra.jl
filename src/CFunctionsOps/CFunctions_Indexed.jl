@@ -5,7 +5,7 @@ import ..Sampler: QDistribution, QEnsembleFunction
 const _IndexLookupValue = Union{Number, AbstractVector, AbstractArray, Dict, Function}
 
 function has_indexed_parameters(a::CAtom)::Bool
-    params = a.param_info.parameters
+    params = a.param_info.params
     for ind in a.var_exponents.nzind
         params[ind].indexed_param && return true
     end
@@ -38,9 +38,11 @@ ConcreteIndexes(param_info::ParameterInfo, indexes::AbstractVector{<:AbstractVec
 ConcreteIndexes(param_info::ParameterInfo, indexes::ConcreteIndexes) =
     _validate_concrete_indexes(param_info, indexes)
 
-function _collect_index_values(indexes::ConcreteIndexes, tuples::Vector{Tuple{Int,Int}})
+function _collect_index_values(indexes::ConcreteIndexes, ens_indexes::AbstractVector)
     values = Int[]
-    for (ensemble, inner) in tuples
+    for ens_idx in ens_indexes
+        ensemble = getproperty(ens_idx, :outer)
+        inner = getproperty(ens_idx, :inner)
         ensemble <= length(indexes.indexes) ||
             error("Concrete indexes missing ensemble $(ensemble).")
         ensemble_entries = indexes.indexes[ensemble]
@@ -217,13 +219,15 @@ function _indexed(f::CFunction, indexes::AbstractVector{<:AbstractVector{<:Integ
 end
 
 function _indexed_parameter_name(atom::CAtomIndexed, idx::Int, do_latex::Bool)::String
-    param = atom.param_info.parameters[idx]
+    param = atom.param_info.params[idx]
     default = do_latex ? param.param_latex : param.param_str
-    tuples = param.ensemble_tuples
-    isempty(tuples) && return default
+    ens_indexes = param.ensemble_indexes
+    isempty(ens_indexes) && return default
     indexes = atom.indexes
     values = Int[]
-    for (ensemble, inner) in tuples
+    for ens_idx in ens_indexes
+        ensemble = ens_idx.outer
+        inner = ens_idx.inner
         ensemble ≤ length(indexes.indexes) || error("Concrete indexes missing ensemble $(ensemble).")
         entries = indexes.indexes[ensemble]
         inner ≤ length(entries) || error("Concrete indexes missing entry $(inner) in ensemble $(ensemble).")
@@ -233,11 +237,11 @@ function _indexed_parameter_name(atom::CAtomIndexed, idx::Int, do_latex::Bool)::
 end
 
 function _indexed_parameter_names(atom::CAtomIndexed, do_latex::Bool)::Vector{String}
-    params = atom.param_info.parameters
+    params = atom.param_info.params
     defaults = do_latex ? [p.param_latex for p in params] : [p.param_str for p in params]
     isempty(atom.indexes.indexes) && return defaults
     for idx in eachindex(defaults)
-        isempty(params[idx].ensemble_tuples) && continue
+        isempty(params[idx].ensemble_indexes) && continue
         defaults[idx] = _indexed_parameter_label(atom.param_info, idx, atom.indexes, do_latex)
     end
     return defaults
@@ -245,16 +249,18 @@ end
 
 
 function _indexed_parameter_label(param_info::ParameterInfo, param_index::Int, indexes::ConcreteIndexes, do_latex::Bool)
-    param = param_info.parameters[param_index]
+    param = param_info.params[param_index]
     base_str = do_latex ? param.param_latex : param.param_str
-    tuples = param.ensemble_tuples
-    isempty(tuples) && return base_str
-    return _indexed_parameter_label_from_tuples(base_str, tuples, indexes, do_latex)
+    ens_indexes = param.ensemble_indexes
+    isempty(ens_indexes) && return base_str
+    return _indexed_parameter_label_from_indexes(base_str, ens_indexes, indexes, do_latex)
 end
 
-function _indexed_parameter_label_from_tuples(base::String, tuples::Vector{Tuple{Int,Int}}, indexes::ConcreteIndexes, do_latex::Bool)
+function _indexed_parameter_label_from_indexes(base::String, ens_indexes::AbstractVector, indexes::ConcreteIndexes, do_latex::Bool)
     values = String[]
-    for (ensemble, inner) in tuples
+    for ens_idx in ens_indexes
+        ensemble = getproperty(ens_idx, :outer)
+        inner = getproperty(ens_idx, :inner)
         ensemble ≤ length(indexes.indexes) || error("Concrete indexes missing ensemble $(ensemble).")
         entries = indexes.indexes[ensemble]
         inner ≤ length(entries) || error("Concrete indexes missing entry $(inner) in ensemble $(ensemble).")
@@ -277,9 +283,9 @@ end
 function _indexed_parameter_value(param_info::ParameterInfo, param_index::Int, indexes::ConcreteIndexes, values::AbstractVector)
     length(values) == param_info.dims ||
         throw(DimensionMismatch("Expected a value vector of length $(param_info.dims), got $(length(values))."))
-    param = param_info.parameters[param_index]
-    tuples = param.ensemble_tuples
-    idxs = _collect_index_values(indexes, tuples)
+    param = param_info.params[param_index]
+    ens_indexes = param.ensemble_indexes
+    idxs = _collect_index_values(indexes, ens_indexes)
     raw_value = values[param_index]
     raw_value === nothing &&
         error("No numeric value supplied for parameter index $(param_index).")

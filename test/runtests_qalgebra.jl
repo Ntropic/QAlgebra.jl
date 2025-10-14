@@ -31,7 +31,7 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
         info = qspace.param_info
         ensemble_idx = info.subspace_info.ensemble_index_by_outer_index[outer_idx]
         ensemble_idx == 0 && return false
-        for param in info.parameters
+        for param in info.params
             param.group_index == group_idx || continue
             acts = param.acts_on
             ensemble_idx > length(acts) && continue
@@ -232,7 +232,7 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
             end
         end
 
-        indexed_param = findfirst(p -> p.indexed_param, param_info.parameters)
+        indexed_param = findfirst(p -> p.indexed_param, param_info.params)
         @test indexed_param !== nothing
         idx_val = indexed_param::Int
         tuples = param_index_tuples(param_info, idx_val)

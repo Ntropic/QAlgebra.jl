@@ -44,6 +44,7 @@ abstract type CDef end
 # =======================> Abstract CFun Definitions <===================================================================
 abstract type AbstractCAbstract <: CAtomic end   # define here as a resesrvation, to concretely define later, for circular dependencies.
 abstract type AbstractParameterInfo end
+abstract type AbstractParameter end
 """
     CAbstractDef
 
@@ -202,7 +203,7 @@ struct ParameterInfo <: AbstractParameterInfo
     subspace_info::Any
     param_indexes::ParameterIndexes
     param_groups::Vector{ParameterGroupLike}
-    parameters::Vector{Any}
+    params::Vector{AbstractParameter}
     abstract_definitions::Vector{CAbstractDefinition}
     custom_ctype::Vector{CTypeDefinition}
     integral_definitions::Vector{AnyCIntegralDefinition}
@@ -212,17 +213,18 @@ struct ParameterInfo <: AbstractParameterInfo
         outer_labels_str::Vector{String}, outer_labels_latex::Vector{String},
         subspace_index_maps::Vector{Array{SparsePermutation,2}}, t_index_transform::Array{SparsePermutation,2}, indexes_by_t_index::Vector{Vector{Int}},
         indexes_of_t::Vector{Int}, how_many_by_ensemble::Vector{Int},
-        subspace_info::Any, param_indexes::ParameterIndexes, param_groups::Vector{ParameterGroupLike}, parameters::Vector{Any})
+        subspace_info::Any, param_indexes::ParameterIndexes, param_groups::Vector{ParameterGroupLike}, params::AbstractVector{<:AbstractParameter})
         dims = length(inner_labels_symbols_flat)
+        stored_params = AbstractParameter[params...]
         new(dims, outer_labels_symbols, inner_labels_symbols_flat, outer_labels,
             outer_labels_str, outer_labels_latex,
             subspace_index_maps, t_index_transform,
             indexes_by_t_index, indexes_of_t, how_many_by_ensemble,
-            subspace_info, param_indexes, param_groups, parameters, CAbstractDefinition[], CTypeDefinition[], AnyCIntegralDefinition[])
+            subspace_info, param_indexes, param_groups, stored_params, CAbstractDefinition[], CTypeDefinition[], AnyCIntegralDefinition[])
     end
 end
 function Base.show(io::IO, info::ParameterInfo)
-    params = info.parameters
+    params = info.params
     labels = String[]
     for group_idx in 1:length(info.param_groups)
         idx = findfirst(p -> p.group_index == group_idx, params)
@@ -243,7 +245,7 @@ function build_parameter_dicts(info::ParameterInfo)::ParameterDicts
     param_name_to_indices = Dict{Symbol,Vector{Int}}()
     time_slot_to_param = Dict{Int,Int}()
 
-    for (idx, param) in enumerate(info.parameters)
+    for (idx, param) in enumerate(info.params)
         coords = param.coords
         group_idx = param.group_index
         base_symbol = String(info.outer_labels_symbols[group_idx])
@@ -268,13 +270,13 @@ end
 """
     param_index_tuples(param_info::ParameterInfo, param_index::Int)
 
-Return the cached `(ensemble, inner)` tuples describing where parameter
+Return the cached [`EnsembleIndex`] entries describing where parameter
 `param_index` acts. Non-indexed parameters yield an empty vector.
 """
 function param_index_tuples(param_info::ParameterInfo, param_index::Int)
-    1 ≤ param_index ≤ length(param_info.parameters) ||
+    1 ≤ param_index ≤ length(param_info.params) ||
         error("Parameter index $(param_index) out of bounds.")
-    return param_info.parameters[param_index].ensemble_tuples
+    return param_info.params[param_index].ensemble_indexes
 end
 
 """

@@ -51,7 +51,7 @@ _pow_sup_int(n::Int; do_latex::Bool=false) = do_latex ? "^{$n}" : str2sup(string
 _pow_sup_frac(p::Int, q::Int; do_latex::Bool=false) = do_latex ? "^\\{\\frac{$p}{$q}\\}" : "^(" * string(p) * "/" * string(q) * ")"
 
 @inline function get_params(a::CFunction; do_latex::Bool=false)::Vector{String}
-    params = a.param_info.parameters
+    params = a.param_info.params
     return do_latex ? [p.param_latex for p in params] : [p.param_str for p in params]
 end
 
