@@ -5,7 +5,11 @@ using Preferences
 const DEFAULT_COEFF_PREFS = Dict(
     :FLIP_IF_FIRST_TERM_NEGATIVE  => true,
     :DO_BRACED => true,
-    :EXPAND_CUMULANTS => false
+    :EXPAND_CUMULANTS => false,
+    :QUADGK_ATOL => 1e-9,
+    :QUADGK_RTOL => 1e-7,
+    :SAMPLE_ATOL => 1e-9,
+    :SAMPLE_RTOL => 1e-7,
     )
 
 """
@@ -27,6 +31,10 @@ end
 FLIP_IF_FIRST_TERM_NEGATIVE  = get_default(:FLIP_IF_FIRST_TERM_NEGATIVE )
 DO_BRACED = get_default(:DO_BRACED)
 EXPAND_CUMULANTS = get_default(:EXPAND_CUMULANTS)
+QUADGK_ATOL = get_default(:QUADGK_ATOL)
+QUADGK_RTOL = get_default(:QUADGK_RTOL)
+SAMPLE_ATOL = get_default(:SAMPLE_ATOL)
+SAMPLE_RTOL = get_default(:SAMPLE_RTOL)
 
 @inline function _update_pref!(name::Symbol, value)
     set_default(name, value)
@@ -65,10 +73,48 @@ function set_expand_cumulants(mode::Bool)
     _update_pref!(:EXPAND_CUMULANTS, mode)
 end
 
+"""
+    set_quadgk_atol(value)
+
+Persist the absolute tolerance used by default when evaluating quadrature integrals.
+"""
+function set_quadgk_atol(value)
+    _update_pref!(:QUADGK_ATOL, Float64(value))
+end
+
+"""
+    set_quadgk_rtol(value)
+
+Persist the relative tolerance used by default when evaluating quadrature integrals.
+"""
+function set_quadgk_rtol(value)
+    _update_pref!(:QUADGK_RTOL, Float64(value))
+end
+
+"""
+    set_sample_atol(value)
+
+Persist the absolute tolerance used by default when generating ensemble samples.
+"""
+function set_sample_atol(value)
+    _update_pref!(:SAMPLE_ATOL, Float64(value))
+end
+
+"""
+    set_sample_rtol(value)
+
+Persist the relative tolerance used by default when generating ensemble samples.
+"""
+function set_sample_rtol(value)
+    _update_pref!(:SAMPLE_RTOL, Float64(value))
+end
+
 
 
 export get_default, set_flip_if_first_term_negative, set_do_braced, set_expand_cumulants,
-       FLIP_IF_FIRST_TERM_NEGATIVE , DO_BRACED, EXPAND_CUMULANTS, pushindex!
+       set_quadgk_atol, set_quadgk_rtol, set_sample_atol, set_sample_rtol,
+       FLIP_IF_FIRST_TERM_NEGATIVE , DO_BRACED, EXPAND_CUMULANTS,
+       QUADGK_ATOL, QUADGK_RTOL, SAMPLE_ATOL, SAMPLE_RTOL, pushindex!
 
 include("Helper.jl")
 include("OffsetArrays.jl")
@@ -123,6 +169,7 @@ export DiscreteSamples, ContinuousSamples
 include("Plotting.jl")
 
 include("QExpressions.jl")
+include("CFunctions_updates.jl")
 using .QExpressions
 using .QExpressions: diffQEqOrdered
 export QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QCumulant, QAtomProduct, permutation, AbstractQSum, QSum, QIntegral, QInt, ∑, ∫, integral, QCompositeProduct, diffQEq, d_dt

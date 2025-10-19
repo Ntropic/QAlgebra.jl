@@ -2,6 +2,7 @@ import ..SubSpaceIndex
 import ..EnsembleIndex
 using ..ParameterGroups: AbstractSubSpace, AbstractEnsemble
 using ..EnsembleSamples: AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
+using ..QAlgebra: SAMPLE_ATOL, SAMPLE_RTOL
 
 """
     Ensemble(num_operator_indexes, num_sum_indexes, operator_set; kwargs...)
@@ -24,8 +25,8 @@ Create an `Ensemble`: a container for ensemble–subspace metadata.
     Continuum sampling accepts `:chebychev`, `:uniform`, `:leja`, or `:fekete` (also `:chebyshev` alias).
 
 - `sample_num_nodes::Int = 25`: Number of interpolation nodes used for CDF approximations.
-- `sample_atol::Float64 = 1e-9` Absolute tolerance reused by sampling helpers.
-- `sample_rtol::Float64 = 1e-7`: Relative tolerance reused by sampling helpers.
+- `sample_atol::Float64 = SAMPLE_ATOL` Absolute tolerance reused by sampling helpers (preference-backed).
+- `sample_rtol::Float64 = SAMPLE_RTOL`: Relative tolerance reused by sampling helpers (preference-backed).
 - `sample_max_iter::Int = 128`: Maximum refinement iterations for inverse-CDF halving-steps.
 """
 mutable struct Ensemble <: AbstractEnsemble
@@ -54,8 +55,8 @@ mutable struct Ensemble <: AbstractEnsemble
                       ensemble_function_group_indices::Vector{Int}=Int[],
                       sample_method::Symbol=:default,
                       sample_num_nodes::Int=25,
-                      sample_atol::Float64=1e-9,
-                      sample_rtol::Float64=1e-7,
+                      sample_atol::Float64=SAMPLE_ATOL,
+                      sample_rtol::Float64=SAMPLE_RTOL,
                       sample_max_iter::Int=128,
                       sampler::Union{Nothing,AbstractEnsembleSample}=nothing,
                       qspace_ref::Union{Nothing,WeakRef}=nothing)
@@ -64,7 +65,7 @@ mutable struct Ensemble <: AbstractEnsemble
                    copy(ensemble_function_group_indices), sample_method, sample_num_nodes,
                    sample_atol, sample_rtol, sample_max_iter, sampler, qspace_ref)
     end
-    function Ensemble(num_operator_indexes::Int, operator_set::OperatorSet; kwargs...)
+function Ensemble(num_operator_indexes::Int, operator_set::OperatorSet; kwargs...)
         return Ensemble(num_operator_indexes, 0, operator_set; kwargs...)
     end
     function Ensemble(; num_operator_indexes::Int, num_sum_indexes::Int=0, operator_set::OperatorSet, kwargs...)

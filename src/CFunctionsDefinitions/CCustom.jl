@@ -38,7 +38,7 @@ function define_ctype(param_info::ParameterInfo, name::Union{Symbol,String}, fun
     plain, latex = symbol2formatted(String(base))
 
     index   = length(param_info.custom_ctype) + 1
-    sortkey = index + 10^6
+    sortkey = index + SORTKEY_BASE_CTYPE
 
     abstract_parameters = abstract_from_abstractdef.(contains_which_abstracts(fun))                # defined below
     abstract_indexes    = [c.index for c in abstract_parameters]
@@ -86,4 +86,3 @@ end
 var_exponents(a::CCustomType) = spzeros(Int, a.param_info.dims)
 coeff(f::CCustomType) = [f.coeff]
 length(f::CCustomType) = 1
-

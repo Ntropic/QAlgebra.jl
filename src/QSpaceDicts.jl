@@ -66,3 +66,41 @@ function build_parameter_dicts(info::ParameterInfo)::ParameterDicts
 
     return ParameterDicts(group_name_to_index, param_name_to_indices, time_slot_to_param)
 end
+
+struct SubSpaceDicts
+    by_outer::Dict{Symbol,Int}
+    by_inner::Dict{Symbol,Tuple{Int,Int}}
+end
+
+struct AbstractOperatorDicts
+    by_name::Dict{Symbol,Int}
+end
+
+function build_subspace_dicts(subspaces::Vector{SubSpace})::SubSpaceDicts
+    outer_map = Dict{Symbol,Int}()
+    inner_map = Dict{Symbol,Tuple{Int,Int}}()
+    for (idx, ss) in enumerate(subspaces)
+        if haskey(outer_map, ss.key_symbol)
+            error("Duplicate outer subspace key $(ss.key_symbol) detected while building QSpace.")
+        end
+        outer_map[ss.key_symbol] = idx
+        for (inner_idx, sym) in enumerate(ss.keys_symbols)
+            if haskey(inner_map, sym)
+                error("Duplicate inner subspace key $(sym) detected while building QSpace.")
+            end
+            inner_map[sym] = (idx, inner_idx)
+        end
+    end
+    return SubSpaceDicts(outer_map, inner_map)
+end
+
+function build_operator_dicts(operatortypes::Vector{OperatorType})::AbstractOperatorDicts
+    map = Dict{Symbol,Int}()
+    for (idx, optype) in enumerate(operatortypes)
+        if haskey(map, optype.name_sym)
+            error("Duplicate operator type symbol $(optype.name_sym) detected while building QSpace.")
+        end
+        map[optype.name_sym] = idx
+    end
+    return AbstractOperatorDicts(map)
+end

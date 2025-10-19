@@ -2,10 +2,11 @@ module Sampler
 
 using Random
 using Base: CartesianIndices
+using ..QAlgebra: SAMPLE_ATOL, SAMPLE_RTOL
 
 include("../SampleHelpers/Interpolators.jl")
-include("../SampleHelpers/Integrators.jl")
 include("../SampleHelpers/Distributions.jl")
+include("../SampleHelpers/Integrators.jl")
 include("../SampleHelpers/SampleHelpers.jl")
 
 module EnsembleSamples
@@ -95,8 +96,8 @@ function _build_discrete_matrix(method::Symbol,
                                 dists::AbstractVector{<:QDistribution};
                                 rng::AbstractRNG=Random.default_rng(),
                                 num_nodes::Int=25,
-                                atol::Float64=1e-9,
-                                rtol::Float64=1e-7,
+                                atol::Float64=SAMPLE_ATOL,
+                                rtol::Float64=SAMPLE_RTOL,
                                 max_iter::Int=128)
     isempty(dists) && return zeros(Float64, 0, 0)
     n = _ensure_consistent_sample_count(dists)

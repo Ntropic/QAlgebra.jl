@@ -253,14 +253,14 @@ function _expand(q::QComposite, ::Val{M}, ::Val{T}, order::Int, args...) where {
     q_work = q
     coeff_changed = false
     if hasproperty(q, :coeff_fun) && hasmethod(modify_coeff, Tuple{typeof(q), CFunction})
-        coeff = getproperty(q, :coeff_fun)
+        coeff = q.coeff_fun
         new_coeff = _expand_coeff_fun(coeff, M, T, order)
         if new_coeff !== coeff
             q_work = modify_coeff(q_work, new_coeff)
             coeff_changed = true
         end
     end
-    inner, changed = _expand(getproperty(q_work, :expr), Val(M), Val(T), order, args...)
+    inner, changed = _expand(q_work.expr, Val(M), Val(T), order, args...)
     if changed
         return only(modify_expr(q_work, inner)), true
     elseif coeff_changed

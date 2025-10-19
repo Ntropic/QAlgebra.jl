@@ -1,4 +1,5 @@
 using QuadGK
+using ..QAlgebra: QUADGK_ATOL, QUADGK_RTOL
 
 export QInterpolator, build_interpolation_nodes, eval_interpolation, nodes, basis_values, basis_values!
 export QIntegrator, integrate_node_funs, normalization_constant, eval_integration
@@ -7,8 +8,8 @@ export pdf2cdf, cdf2inverse
 
 function _pdf2cdf_core(pdf_fn::Function, a::Float64, b::Float64;
                        num_nodes::Int=25,
-                       atol::Float64=1e-9,
-                       rtol::Float64=1e-7)
+                       atol::Float64=QUADGK_ATOL,
+                       rtol::Float64=QUADGK_RTOL)
     n = max(num_nodes, 2)
     params = [(n, a, b)]
     bounds, nodes_per_dim = build_interpolation_nodes(:chebychev, params;
@@ -50,12 +51,12 @@ the normalised CDF.
 
 Keyword arguments:
 - `num_nodes::Int = 25`: number of Chebyshev interpolation nodes spanning the support.
-- `atol::Float64 = 1e-9` / `rtol::Float64 = 1e-7`: absolute/relative tolerances for `QuadGK`.
+- `atol::Float64 = QUADGK_ATOL` / `rtol::Float64 = QUADGK_RTOL`: absolute/relative tolerances for `QuadGK`.
 """
 function pdf2cdf(dist::QDistribution;
                  num_nodes::Int=25,
-                 atol::Float64=1e-9,
-                 rtol::Float64=1e-7)
+                 atol::Float64=QUADGK_ATOL,
+                 rtol::Float64=QUADGK_RTOL)
     return _pdf2cdf_core(x -> pdf(dist, x), dist.minimum, dist.maximum;
                          num_nodes=num_nodes,
                          atol=atol,
@@ -71,8 +72,8 @@ returning the new `QInterpolator`.
 """
 function pdf2cdf(pdf_inter::QInterpolator;
                  num_nodes::Int=25,
-                 atol::Float64=1e-9,
-                 rtol::Float64=1e-7)
+                 atol::Float64=QUADGK_ATOL,
+                 rtol::Float64=QUADGK_RTOL)
     pdf_inter.dims == 1 || error("pdf2cdf currently supports only 1D pdf interpolators.")
     values = pdf_inter.default_values
     values === nothing && error("pdf2cdf(pdf_inter) requires the interpolator to store pdf samples.")
@@ -92,13 +93,13 @@ density nodes.
 
 Keyword arguments:
 - `num_nodes::Int = 25`: number of Chebyshev probability nodes spanning `[0, 1]`.
-- `atol::Float64 = 1e-9` / `rtol::Float64 = 1e-7`: tolerances for refinement of the inverse search.
+- `atol::Float64 = QUADGK_ATOL` / `rtol::Float64 = QUADGK_RTOL`: tolerances for refinement of the inverse search.
 - `max_iter::Int = 128`: maximum bisection iterations used per probability value.
 """
 function cdf2inverse(cdf_inter::QInterpolator;
                      num_nodes::Int=25,
-                     atol::Float64=1e-9,
-                     rtol::Float64=1e-7,
+                     atol::Float64=QUADGK_ATOL,
+                     rtol::Float64=QUADGK_RTOL,
                      max_iter::Int=128)
     cdf_inter.dims == 1 || error("cdf2inverse currently supports only 1D CDFs.")
     values = cdf_inter.default_values

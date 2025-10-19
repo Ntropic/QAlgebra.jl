@@ -161,8 +161,6 @@ function merge_blocks(blocks_a::Vector{ConstrainedIndexBlock}, blocks_b::Vector{
     return merged
 end
 
-
-
 # Helpers for print functions !!!
 # ================================================>  Some final helpers <==================================================================================
 

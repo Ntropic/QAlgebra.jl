@@ -1,6 +1,7 @@
 export QDistribution, pdf, QNormal, QUniform, QEnsembleFunction
 
 using ..StringUtils: underscore_separate
+using ..QAlgebra: QUADGK_ATOL, QUADGK_RTOL
 
 const PDF_BOUND_ATOL = 1e-10
 const PDF_BOUND_RTOL = 1e-8
@@ -180,8 +181,8 @@ function integrate_node_funs(inter::QInterpolator,
                              distributions::Vector{QDistribution};
                              f::Union{Nothing,Function}=nothing,
                              constant::Float64=1.0,
-                             atol::Float64=1e-9,
-                             rtol::Float64=1e-7)
+                             atol::Float64=QUADGK_ATOL,
+                             rtol::Float64=QUADGK_RTOL)
     pdfs, scale = _pdfs_and_scaling(inter, distributions)
     total_constant = constant * scale
     return integrate_node_funs(inter, pdfs;
@@ -191,7 +192,7 @@ function integrate_node_funs(inter::QInterpolator,
                                rtol=rtol)
 end
 
-function Integrator(inter::QInterpolator, distributions::Vector{QDistribution}; f::Union{Nothing,Function}=nothing, atol::Float64=1e-9, rtol::Float64=1e-7)
+function Integrator(inter::QInterpolator, distributions::Vector{QDistribution}; f::Union{Nothing,Function}=nothing, atol::Float64=QUADGK_ATOL, rtol::Float64=QUADGK_RTOL)
     pdfs, scale = _pdfs_and_scaling(inter, distributions)
     return QIntegrator(inter, pdfs;  f=f, constant=scale, atol=atol, rtol=rtol)
 end

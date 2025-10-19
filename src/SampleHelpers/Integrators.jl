@@ -1,14 +1,12 @@
 import QuadGK
+using ..QAlgebra: QUADGK_ATOL, QUADGK_RTOL
 
 export normalization_constant, integrate_node_funs, QIntegrator, eval_integration
-
-const _PDF_BOUND_ATOL = 1e-10
-const _PDF_BOUND_RTOL = 1e-8
 
 @inline _unity_function(::Any) = 1.0
 
 function normalization_constant(pdfs::AbstractVector{<:Function}, inter::QInterpolator;
-                                atol::Float64=1e-9, rtol::Float64=1e-7)::Float64
+                                atol::Float64=QUADGK_ATOL, rtol::Float64=QUADGK_RTOL)::Float64
     d = inter.dims
     length(pdfs) == d || error("normalization_constant requires one pdf per interpolation dimension (got $(length(pdfs)), expected $d).")
 
@@ -27,8 +25,8 @@ function _integrate_node_funs(inter::QInterpolator,
                               pdfs::Vector{<:Function},
                               f::Function;
                               constant::Float64=1.0,
-                              atol::Float64=1e-9,
-                              rtol::Float64=1e-7)
+                              atol::Float64=QUADGK_ATOL,
+                              rtol::Float64=QUADGK_RTOL)
     d = inter.dims
     length(pdfs) == d || error("Expected one pdf per interpolation dimension (got $(length(pdfs)), expected $d).")
 
@@ -72,20 +70,20 @@ end
                         pdfs;
                         f::Union{Nothing,Function}=nothing,
                         constant::Float64=1.0,
-                        atol::Float64=1e-9,
-                        rtol::Float64=1e-7)
+                        atol::Float64=QUADGK_ATOL,
+                        rtol::Float64=QUADGK_RTOL)
 
 Compute `W[j...] = ∫ ρ(x) f(x) L_j(x) dx` over the interpolation domain.
 `pdfs` must be a `Vector{<:Function}` containing one density per dimension.
 When `f` is omitted it defaults to the constant-one function, yielding
-integration weights only.
+integration weights only. Defaults read from `QUADGK_ATOL`/`QUADGK_RTOL`.
 """
 function integrate_node_funs(inter::QInterpolator,
                              pdfs::Vector{<:Function};
                              f::Union{Nothing,Function}=nothing,
                              constant::Float64=1.0,
-                             atol::Float64=1e-9,
-                             rtol::Float64=1e-7)
+                             atol::Float64=QUADGK_ATOL,
+                             rtol::Float64=QUADGK_RTOL)
     integrand = f === nothing ? _unity_function : f
     return _integrate_node_funs(inter, pdfs, integrand;
                                 constant=constant, atol=atol, rtol=rtol)
@@ -145,8 +143,8 @@ function QIntegrator(inter::QInterpolator,
                     pdfs::Vector{<:Function};
                     f::Union{Nothing,Function}=nothing,
                     constant::Float64=1.0,
-                    atol::Float64=1e-9,
-                    rtol::Float64=1e-7)
+                    atol::Float64=QUADGK_ATOL,
+                    rtol::Float64=QUADGK_RTOL)
     weights = integrate_node_funs(inter, pdfs;
                                   constant=constant,
                                   atol=atol,
@@ -157,20 +155,21 @@ end
 
 """
     QIntegrator(inter::QInterpolator,
-                distributions::Vector;
+                distributions::Vector{<:QDistribution};
                 f::Union{Nothing,Function}=nothing,
-                atol::Float64=1e-9,
-                rtol::Float64=1e-7)
+                atol::Float64=QUADGK_ATOL,
+                rtol::Float64=QUADGK_RTOL)
 
 Accepts a vector of distribution-like objects (e.g. `Vector{QDistribution}`).
 Each entry must supply `:pdf` and `:normalization_constant` properties. Their
-normalization constants are multiplied into the resulting weights.
+normalization constants are multiplied into the resulting weights. Quadrature
+tolerances default to the preference-backed `QUADGK_ATOL`/`QUADGK_RTOL`.
 """
 function QIntegrator(inter::QInterpolator,
-                    distributions::Vector;
+                    distributions::Vector{<:QDistribution};
                     f::Union{Nothing,Function}=nothing,
-                    atol::Float64=1e-9,
-                    rtol::Float64=1e-7)
+                    atol::Float64=QUADGK_ATOL,
+                    rtol::Float64=QUADGK_RTOL)
     isempty(distributions) && error("distributions vector must contain at least one entry.")
 
     pdfs = Vector{Function}(undef, length(distributions))
@@ -179,8 +178,8 @@ function QIntegrator(inter::QInterpolator,
         dist = distributions[i]
         hasproperty(dist, :pdf) && hasproperty(dist, :normalization_constant) ||
             error("Each distribution must provide :pdf and :normalization_constant properties.")
-        pdfs[i] = getproperty(dist, :pdf)
-        scale *= Float64(getproperty(dist, :normalization_constant))
+        pdfs[i] = dist.pdf
+        scale *= Float64(dist.normalization_constant)
     end
 
     return QIntegrator(inter, pdfs;

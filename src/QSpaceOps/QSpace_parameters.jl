@@ -1,6 +1,6 @@
 using Combinatorics
 using SparseArrays
-using ..CFunctions: ParameterInfo, ParameterIndexes, ParameterDicts, ParameterValues, build_parameter_dicts, AbstractParameter
+using ..CFunctions: ParameterInfo, ParameterIndexes, ParameterValues, AbstractParameter
 using ..StringUtils: symbol2formatted, str2sub, var_unsubstitution, var_unsubstitution, reverse_var_substitution
 using ..SparsePermutationTools: SparsePermutation, denseperm
 using ..Sampler: QDistribution, QEnsembleFunction, AbstractEnsembleSample
@@ -157,18 +157,6 @@ struct ParameterDefinitions
 
         return new(groups)
     end
-end
-
-function Base.getproperty(defs::ParameterDefinitions, sym::Symbol)
-    if sym === :var_param
-        return getfield(defs, :groups)
-    end
-    return getfield(defs, sym)
-end
-
-function Base.propertynames(::ParameterDefinitions, private::Bool=false)
-    names = (:groups,)
-    return private ? (names..., :var_param) : names
 end
 
 function _finalize_group_dependencies!(groups::Vector{ParameterGroupLike})
@@ -623,13 +611,13 @@ end
 
 function ParameterIndexes(subspace_info::SubSpaceInfo, parameters::Vector{Parameter}, indexes_by_t_index::Vector{Vector{Int}})::ParameterIndexes
     labels::Vector{String} = []
-    label_map = Dict{Tuple{Int,Int},Int}()
+    label_slots = [zeros(Int, length(inner_labels)) for inner_labels in subspace_info.inner_labels]
     global_idx = 1
     for outer_idx in subspace_info.where_ensembles
         inner_labels = subspace_info.inner_labels[outer_idx]
         for (inner_pos, label) in enumerate(inner_labels)
             push!(labels, label)
-            label_map[(outer_idx, inner_pos)] = global_idx
+            label_slots[outer_idx][inner_pos] = global_idx
             global_idx += 1
         end
     end
@@ -638,7 +626,8 @@ function ParameterIndexes(subspace_info::SubSpaceInfo, parameters::Vector{Parame
         for sub_idx in param.param_indexes
             ensemble = subspace_info.ensemble_index_by_outer_index[sub_idx.outer]
             ensemble == 0 && continue
-            label_idx = label_map[(sub_idx.outer, sub_idx.inner)]
+            label_idx = label_slots[sub_idx.outer][sub_idx.inner]
+            label_idx != 0 || error("Missing label mapping for ensemble index ($(sub_idx.outer), $(sub_idx.inner)).")
             push!(label_parameter_indexes[label_idx], param_idx)
         end
     end
@@ -683,17 +672,23 @@ function assign_params_to_groups!(groups::Vector{ParameterGroupLike}, parameters
 end
 
 function build_time_param_lookup!(groups::Vector{ParameterGroupLike}, parameters::Vector{Parameter})
-    lookup = Dict{Int,Int}()
+    max_t_index = -1
     for (idx, param) in enumerate(parameters)
         if param.is_t
-            lookup[param.t_index] = idx
             groups[param.group_index].is_time_group = true
+            max_t_index = max(max_t_index, param.t_index)
         end
+    end
+    max_t_index < 0 && return Int[]
+    lookup = zeros(Int, max_t_index + 1)
+    for (idx, param) in enumerate(parameters)
+        param.is_t || continue
+        lookup[param.t_index + 1] = idx
     end
     return lookup
 end
 
-function resolve_function_arguments!(groups::Vector{ParameterGroupLike}, parameters::Vector{Parameter}, params_by_group::Vector{Vector{Int}}, time_param_lookup::Dict{Int,Int})
+function resolve_function_arguments!(groups::Vector{ParameterGroupLike}, parameters::Vector{Parameter}, params_by_group::Vector{Vector{Int}}, time_param_lookup::Vector{Int})
     group_count = length(groups)
 
     for g in 1:group_count
@@ -709,18 +704,21 @@ function resolve_function_arguments!(groups::Vector{ParameterGroupLike}, paramet
         for param_idx in params_by_group[g]
             param = parameters[param_idx]
             refs = Vector{Int}(undef, length(args))
-            main_index_map = Dict{String,Int}()
             required_index_tokens = Set(indexes)
             used_index_tokens = Set{String}()
-            for (name, sub_idx) in zip(indexes, param.param_indexes)
-                main_index_map[name] = sub_idx.inner
+            if length(param.param_indexes) != length(indexes)
+                error("Parameter $(param.param_name) has $(length(param.param_indexes)) index positions but group $(String(group.name)) declares $(length(indexes)).")
+            end
+            index_values = Vector{Int}(undef, length(indexes))
+            for (name_idx, sub_idx) in enumerate(param.param_indexes)
+                index_values[name_idx] = sub_idx.inner
             end
             for (arg_pos, arg_str) in enumerate(args)
                 if arg_str == "t"
                     t_key = param.coords[1] - 1
-                    ref_param_idx = get(time_param_lookup, t_key) do
+                    ref_param_idx = (t_key + 1 <= length(time_param_lookup)) ? time_param_lookup[t_key + 1] : 0
+                    ref_param_idx != 0 ||
                         error("No time parameter found for t$(t_key) when evaluating ensemble function for $(param.param_name).")
-                    end
                     refs[arg_pos] = ref_param_idx
                     if payload isa QEnsembleFunction
                         payload.argument_group_indices[arg_pos] = parameters[ref_param_idx].group_index
@@ -745,9 +743,10 @@ function resolve_function_arguments!(groups::Vector{ParameterGroupLike}, paramet
                 target_coords = Vector{Int}(undef, 1 + length(target_def.indexes))
                 target_coords[1] = target_def.of_t ? param.coords[1] : 1
                 for (tok_idx, tok) in enumerate(arg_tokens)
-                    inner_val = get(main_index_map, tok) do
+                    pos = findfirst(==(tok), indexes)
+                    pos === nothing &&
                         error("Index token $tok referenced in ensemble function for $(param.param_name) is undefined.")
-                    end
+                    inner_val = index_values[pos]
                     push!(used_index_tokens, tok)
                     target_coords[tok_idx + 1] = inner_val
                 end

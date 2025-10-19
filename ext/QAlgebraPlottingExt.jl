@@ -120,7 +120,7 @@ function Plotting.plot_ensemble_samples(qspace::QSpace,
     ax = Axis(fig[1, 1]; axis_kw...)
 
     scatter_kwargs = _as_namedtuple(kwargs)
-    legacy_plot_joint = hasproperty(scatter_kwargs, :plot_joint) ? getproperty(scatter_kwargs, :plot_joint) : nothing
+    legacy_plot_joint = hasproperty(scatter_kwargs, :plot_joint) ? scatter_kwargs.plot_joint : nothing
     if legacy_plot_joint !== nothing
         if add_joint_probability !== nothing && add_joint_probability != legacy_plot_joint
             error("Both `add_joint_probability=$(add_joint_probability)` and legacy `plot_joint=$(legacy_plot_joint)` were provided. Use only one keyword or ensure they match.")
@@ -135,7 +135,7 @@ function Plotting.plot_ensemble_samples(qspace::QSpace,
 
     joint_kw = _as_namedtuple(joint_kwargs)
     if :alpha in propertynames(joint_kw)
-        alpha_val = getproperty(joint_kw, :alpha)
+        alpha_val = joint_kw.alpha
         joint_kw = (; (p for p in pairs(joint_kw) if p.first != :alpha)..., transparency=alpha_val)
     end
     if overlay_mode === :heatmap && :levels in propertynames(joint_kw)

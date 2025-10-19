@@ -7,8 +7,8 @@ using ComplexRationals
 using SparseArrays
 using ..SparsePermutationTools: SparsePermutation
 using ..QAlgebra: get_default, FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
-using ..Sampler: QInterpolator, ContinuousSamples, integrate_node_funs
-using ..ParameterGroups: ParameterGroup, ParameterGroupLike
+using ..Sampler: QInterpolator, QIntegrator
+using ..ParameterGroups: ParameterGroup, ParameterGroupLike, ParameterGroupDistribution
 
 export CFunction, CAbstractDefinition, CTypeDefinition, CIntegralDefinition, ParameterInfo
 export define_cabstract, define_ctype, define_cintegral
@@ -29,6 +29,10 @@ import ..QAlgebra: vecvec_or, vecvec_or!, sort_unique!, variants_C
 const CR_ZERO = ComplexRational(0,0,1)
 const CR_ONE  = ComplexRational(1,0,1)
 
+const SORTKEY_BASE_CABSTRACT = 1_000_000
+const SORTKEY_BASE_CTYPE     = 2_000_000
+const SORTKEY_BASE_CINTEGRAL = 3_000_000
+
 
 """
     CFunction
@@ -46,7 +50,7 @@ abstract type AbstractCAbstract <: CAtomic end   # define here as a resesrvation
 abstract type AbstractParameterInfo end
 abstract type AbstractParameter end
 """
-    CAbstractDef
+    CAbstractDefinition
 
 Defines an abstract symbol, specifying its string and latex string, its index and referencing it to a CDefinitionsDB.
 Contains:
@@ -108,36 +112,20 @@ end
     CIntegralDefinition
 
 Container describing a coefficient integral definition stored within a
-[`ParameterInfo`](@ref). It records the defining integrand `expr` and the
-subsystem indexes integrated over.
+[`ParameterInfo`](@ref). It records the defining integrand `expr`, the
+subsystem indexes integrated over, and the ensemble parameter groups relevant
+for the integration.
 """
-struct CIntegralDefinition{N} <: CDef
+struct CIntegralDefinition <: CDef
+    param_info::AbstractParameterInfo
     index::Int
     sortkey::Int
     expr::CFunction
     indexes::Vector{Vector{SubSpaceIndex}}
-    param_info::AbstractParameterInfo
-    interpolator::QInterpolator
-    axis_lengths::Vector{Int}
-    pdfs::Vector{Function}
-    assignments::Vector{Vector{Int}}  # cached parameter index lists for assigning interpolated values
-    values::Array{ComplexF64,N}
-    function CIntegralDefinition(index::Int,
-                                 sortkey::Int,
-                                 expr::CFunction,
-                                 indexes::Vector{Vector{SubSpaceIndex}},
-                                 qspace)
-        helpers = getfield(parentmodule(@__MODULE__), :QExpressions)
-        param_info = qspace.param_info
-        interp, axis_lengths, pdfs, dim_info = helpers._build_integral_interpolator(qspace, indexes)
-        assignments = helpers._build_integral_assignments(param_info, dim_info)
-        N = length(axis_lengths)
-        N > 0 || error("CIntegralDefinition requires at least one integration dimension.")
-        vals = Array{ComplexF64}(undef, axis_lengths...)
-        return new{N}(index, sortkey, expr, indexes, param_info, interp, axis_lengths, pdfs, assignments, vals)
-    end
+    parameter_group_indexes::Vector{Vector{Int}}
+    interpolator::Union{Nothing,QInterpolator}
+    integrator::Union{Nothing,QIntegrator}
 end
-const AnyCIntegralDefinition = CIntegralDefinition{N} where N
 
 """
     ParameterInfo
@@ -166,7 +154,7 @@ struct ParameterInfo <: AbstractParameterInfo
     params::Vector{AbstractParameter}
     abstract_definitions::Vector{CAbstractDefinition}
     custom_ctype::Vector{CTypeDefinition}
-    integral_definitions::Vector{AnyCIntegralDefinition}
+    integral_definitions::Vector{CIntegralDefinition}
 
     function ParameterInfo(
         outer_labels_symbols::Vector{Symbol}, inner_labels_symbols_flat::Vector{Symbol}, outer_labels::Vector{String},
@@ -180,7 +168,7 @@ struct ParameterInfo <: AbstractParameterInfo
             outer_labels_str, outer_labels_latex,
             subspace_index_maps, t_index_transform,
             indexes_by_t_index, indexes_of_t, how_many_by_ensemble,
-            subspace_info, param_indexes, param_groups, stored_params, CAbstractDefinition[], CTypeDefinition[], AnyCIntegralDefinition[])
+            subspace_info, param_indexes, param_groups, stored_params, CAbstractDefinition[], CTypeDefinition[], CIntegralDefinition[])
     end
 end
 function Base.show(io::IO, info::ParameterInfo)
@@ -194,9 +182,6 @@ function Base.show(io::IO, info::ParameterInfo)
     end
     print(io, "ParameterInfo([", join(labels, ","), "])")
 end
-
-include("CFunctionsOps/ParameterDicts.jl")
-
 
 """
     param_index_tuples(param_info::ParameterInfo, param_index::Int)

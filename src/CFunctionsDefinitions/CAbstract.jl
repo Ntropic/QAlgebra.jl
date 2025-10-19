@@ -31,7 +31,7 @@ function define_cabstract(param_info::ParameterInfo, name::Union{Symbol, String}
         end
     end
     index = length(param_info.abstract_definitions) + 1
-    sortkey = index + 15
+    sortkey = index + SORTKEY_BASE_CABSTRACT
     c_abstract = CAbstractDefinition(Symbol(name), name_str, name_latex, index, sortkey, param_info)
     push!(param_info.abstract_definitions, c_abstract)
     return c_abstract

@@ -21,7 +21,7 @@ end
 
 function tree_iter_composite(q::T) where T<:QComposite
     hasproperty(q, :expr) || error("tree_iter_composite requires composites with an `expr` field; got $(T).")
-    return Iterators.flatten(((q,), tree_iter_composite(getproperty(q, :expr))))
+    return Iterators.flatten(((q,), tree_iter_composite(q.expr)))
 end
 
 
@@ -62,11 +62,11 @@ end
 
 function _modify_coeff_funs_tree_composite(q::T, coeffs::Vector{CFunction}, pos::Base.RefValue{Int}) where T<:QComposite
     hasproperty(q, :expr) || error("modify_coeff_funs_tree_composite requires composites with an `expr` field; got $(T).")
-    expr_field = getproperty(q, :expr)
+    expr_field = q.expr
 
     new_expr = _modify_coeff_funs_tree_composite(expr_field, coeffs, pos)
 
-    coeff = hasproperty(q, :coeff_fun) ? _next_coeff!(coeffs, pos) : getproperty(q, :coeff_fun)
+    coeff = hasproperty(q, :coeff_fun) ? _next_coeff!(coeffs, pos) : q.coeff_fun
     return modify_coeff_expr(q, coeff, new_expr)
 end
 

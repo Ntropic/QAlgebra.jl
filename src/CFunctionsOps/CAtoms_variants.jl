@@ -5,8 +5,8 @@ import Base.GC
 function _collect_index_values(indexes::ConcreteIndexes, ens_indexes::AbstractVector)
     values = Int[]
     for ens_idx in ens_indexes
-        ensemble = getproperty(ens_idx, :outer)
-        inner = getproperty(ens_idx, :inner)
+        ensemble = ens_idx.outer
+        inner = ens_idx.inner
         ensemble <= length(indexes.indexes) ||
             error("Concrete indexes missing ensemble $(ensemble).")
         ensemble_entries = indexes.indexes[ensemble]
