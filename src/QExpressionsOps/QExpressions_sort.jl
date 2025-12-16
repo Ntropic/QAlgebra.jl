@@ -92,7 +92,7 @@ end
 isless_same(a::QComposite, b::QComposite) = isless(a.expr, b.expr)
 
 # AbstractQSum: compare block metadata and inner expression
-@inline _total_indexes(q::AbstractQSum) = sum(length(block.indexes) for block in q.blocks)
+@inline _total_indices(q::AbstractQSum) = sum(length(block.indices) for block in q.blocks)
 
 function isless_same(a::AbstractQSum, b::AbstractQSum)
     ta = aggregator_type(a)
@@ -104,17 +104,17 @@ function isless_same(a::AbstractQSum, b::AbstractQSum)
     elseif ta != tb
         return String(nameof(ta)) < String(nameof(tb))
     end
-    na_idx = _total_indexes(a)
-    nb_idx = _total_indexes(b)
-    _total_indexes(a) != _total_indexes(b) && return na_idx < nb_idx
+    na_idx = _total_indices(a)
+    nb_idx = _total_indices(b)
+    _total_indices(a) != _total_indices(b) && return na_idx < nb_idx
 
     @inbounds for (blk_a, blk_b) in zip(a.blocks, b.blocks)
-        len_a = length(blk_a.indexes); len_b = length(blk_b.indexes)
+        len_a = length(blk_a.indices); len_b = length(blk_b.indices)
         if len_a != len_b
             return len_a < len_b
         end
 
-        @inbounds for (idx_a, idx_b) in zip(blk_a.indexes, blk_b.indexes)
+        @inbounds for (idx_a, idx_b) in zip(blk_a.indices, blk_b.indices)
             if idx_a != idx_b 
                 return idx_a < idx_b 
             end

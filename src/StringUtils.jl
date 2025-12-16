@@ -1,13 +1,13 @@
 module StringUtils
 
-export str2sub, str2sup, indexes2str, symbol2formatted, var_unsubstitution, t_suffix
-export brace, braket, brace_separate, underscore_separate
+export str2sub, str2sup, indices2str, symbol2formatted, var_unsubstitution, t_suffix
+export brace, braket, brace_separate, normalize_underscore_indices, format_normalized_indices, split_index
 export int_exponent2str, exponentdag2str, normalize_label, reverse_var_substitution
 
 const SUBSCRIPT_INDEXES = Dict('a' => "ₐ", 'h' => "ₕ", 'i' => "ᵢ", 'j' => "ⱼ", 'k' => "ₖ", 'l' => "ₗ", 'm' => "ₘ", 'n' => "ₙ", 
     'o' => "ₒ", 'p' => "ₚ", 'ρ' => "ᵨ", '1' => "₁", '2' => "₂", '3' => "₃", '4' => "₄", '5' => "₅", '6' => "₆", '7' => "₇", '8' => "₈", 
     '9' => "₉", '=' => "₌", '+' => "₊", '-' => "₋", '0' => "₀", 'x' => "ₓ", 'y' => "ᵧ", ',' => "ˏ", ' ' => " ", 
-    '(' => "₍", ')' => "₎")
+    '(' => "₍", ')' => "₎", 'e' => "ₑ", 'r' => "ᵣ", 's' => "ₛ", 't' => "ₜ", 'u' => "ᵤ", 'v' => "ᵥ")
 const SUPERSCRIPT_INDEXES = Dict('a' => "ᵃ", 'b' => "ᵇ", 'c' => "ᶜ", 'd' => "ᵈ", 'e' => "ᵉ", 'f' => "ᶠ",
     'g' => "ᵍ", 'h' => "ʰ", 'i' => "ⁱ", 'j' => "ʲ", 'k' => "ᵏ", 'l' => "ˡ", 'm' => "ᵐ", 'n' => "ⁿ",
     'o' => "ᵒ", 'p' => "ᵖ", 'q' => "ᵠ", 'r' => "ʳ", 's' => "ˢ", 't' => "ᵗ", 'u' => "ᵘ", 'v' => "ᵛ",
@@ -42,6 +42,8 @@ const VAR_SUBSTITUTION_LATEX = Dict(
     "Υ"=>raw"\Upsilon","Φ"=>raw"\Phi","Χ"=>raw"\Chi","Ψ"=>raw"\Psi","Ω"=>raw"\Omega")
 
 const VAR_UNSUBSTITUTION = Dict(v => k for (k, v) in VAR_SUBSTITUTION)
+const REVERSE_SUBSCRIPT = Dict(first(v) => string(k) for (k,v) in SUBSCRIPT_INDEXES)
+const SUB_CHARS = Set(keys(REVERSE_SUBSCRIPT))  # Set{String} of single-codepoint subscripts
 
 @inline function strip_underscores_and_parens(str::AbstractString)::String
     s = String(str)
@@ -115,13 +117,13 @@ function str2sup(s::String)::String
 end
 
 """
-    symbol2formatted(symbol::String; indexes::Vector{String}=String[], do_hat::Bool=false) -> Tuple
+    symbol2formatted(symbol::String; indices::Vector{String}=String[], do_hat::Bool=false) -> Tuple
 
 Returns a tuple of (`unicode_str`, `latex_str`) for the given `symbol`, using
 variable substitution rules. Falls back to the raw `symbol` if no match is found.
-Adds a hat on latex output if desired. Alternatively can also create indexes. 
+Adds a hat on latex output if desired. Alternatively can also create indices. 
 """
-function symbol2formatted(symbol::String, indexes::Vector{String}=String[]; do_hat::Bool=false)
+function symbol2formatted(symbol::String, indices::Vector{String}=String[]; do_hat::Bool=false)
     # lookup substitutions (default: keep symbol itself)
     symbol_str   = get(VAR_SUBSTITUTION, symbol, symbol)
     symbol_latex = get(VAR_SUBSTITUTION_LATEX, symbol, symbol)
@@ -131,10 +133,10 @@ function symbol2formatted(symbol::String, indexes::Vector{String}=String[]; do_h
         symbol_latex = raw"\hat{" * symbol_latex * "}"
     end
 
-    # handle indexes if provided
-    if !isempty(indexes)
-        connector = all([length(i)==1 for i in indexes]) ? "," : ""
-        index_str_raw = join(indexes, connector)
+    # handle indices if provided
+    if !isempty(indices)
+        connector = all([length(i)==1 for i in indices]) ? "," : ""
+        index_str_raw = join(indices, connector)
         symbol_str *= str2sub(index_str_raw)
         symbol_latex *= "_{" * index_str_raw * "}"
     end
@@ -153,22 +155,22 @@ function t_suffix(t_ind::Int; do_latex::Bool=false)
     end
 end
 
-function indexes2str(indexes::Vector{Symbol}; do_latex::Bool=false)::String 
-    return indexes2str(String.(indexes), do_latex=do_latex)
+function indices2str(indices::Vector{Symbol}; do_latex::Bool=false)::String 
+    return indices2str(String.(indices), do_latex=do_latex)
 end
-function indexes2str(indexes::Vector{Int}; do_latex::Bool=false)::String 
-    return indexes2str(String.(indexes), do_latex=do_latex)
+function indices2str(indices::Vector{Int}; do_latex::Bool=false)::String 
+    return indices2str(String.(indices), do_latex=do_latex)
 end
-function indexes2str(indexes::Int; do_latex::Bool=false)::String 
-    return indexes2str([String(indexes)], do_latex=do_latex)
+function indices2str(indices::Int; do_latex::Bool=false)::String 
+    return indices2str([String(indices)], do_latex=do_latex)
 end
-function indexes2str(indexes::Symbol; do_latex::Bool=false)::String 
-    return indexes2str([String.(indexes)], do_latex=do_latex)
+function indices2str(indices::Symbol; do_latex::Bool=false)::String 
+    return indices2str([String.(indices)], do_latex=do_latex)
 end
-function indexes2str(indexes::Vector{String}; do_latex::Bool=false)::String 
-    if !isempty(indexes)
-        connector = all([length(i)==1 for i in indexes]) ? "," : ""
-        index_str_raw = join(indexes, connector)
+function indices2str(indices::Vector{String}; do_latex::Bool=false)::String 
+    if !isempty(indices)
+        connector = all([length(i)==1 for i in indices]) ? "," : ""
+        index_str_raw = join(indices, connector)
         if do_latex 
             return "_{" * index_str_raw * "}"
         else
@@ -235,35 +237,6 @@ function brace_separate(s::String; braces::Tuple{String, String} = ("(",")") )::
     end
 end
 
-# Processes strings of the forms:
-#   --> "pref_{i,j,k}" and returns ("pref", ["i","j","k"]) 
-#   --> "pref_i" and returns ("pref", ["i"]) 
-#   --> "pref" and returns ("pref", [])
-function underscore_separate(s::String)
-    s = string(strip(s)) 
-    if occursin("_", s)
-        pref::String = ""
-        str_split = split(s, "_")
-        if length(str_split) != 2
-            error("Only supports a single underscore!")
-        end
-        pref = string(str_split[1])
-        sub = string(str_split[2])
-        # has {braces}? 
-        if occursin("{", str_split[2])
-            should_be_empty, indexes = brace_separate(sub, braces=("{","}")) 
-            if length(should_be_empty) != 0
-                error("If braces {} are used for multi indexing, they must follow the underscore immediately, found $(should_be_empty)!")
-            end
-            return pref, string.(indexes)
-        else
-            return pref, [sub]
-        end
-    else
-        return s, String[]
-    end
-end
-
 @inline function _split_trailing_args(base::String)
     if endswith(base, raw"\right)")
         m = match(r"^(.*?)(\\left\(.*\\right\))$", base)
@@ -326,5 +299,7 @@ function exponentdag2str(base::String, exponent::Union{Int, Rational{Int}}, dag:
         end
     end
 end                
+
+include("StringUtilsOps/StringUntils_Indexes.jl")
 
 end

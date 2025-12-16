@@ -1,8 +1,7 @@
-export is_t_var, is_t, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, contains_which_t_indexes, max_order_of_terms, which_abstracts, iter_QAtomProducts, iter_QInts
+export is_t_var, is_t, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, contains_which_t_indices, max_order_of_terms, which_abstracts, iter_QAtomProducts, iter_QInts
 export is_unitary, is_hermitian, substitution_properties_fulfilled, same_qspace, qspace_check
 import ..CFunctions: isnumeric, CFunction, CAtom, CAtomIndexed, where_acting, where_acting!
-import ..bubble_insert_unique!
-import ..QSpaces: expanded
+import ..QAlgebra: sorted_push_unique!
 """ 
     isnumeric(t::QObj) -> Bool
 
@@ -157,7 +156,7 @@ _init_abstract_positions(qspace::QSpace)::Vector{Vector{Int}} = [Int[] for _ in 
 
 Return a tuple `(present, positions)` summarising which abstract operators defined in the
 ambient `QSpace` occur inside `term`. `present[i]` is true when the `i`-th abstract appears
-anywhere in the expression, and `positions[i]` lists the expanded indexes where it occurs.
+anywhere in the expression, and `positions[i]` lists the expanded indices where it occurs.
 """
 function which_abstracts(term::T)::Vector{Vector{Int}} where T<:QObj
     positions = _init_abstract_positions(term.qspace)
@@ -197,54 +196,54 @@ function _collect_abstracts!(positions::Vector{Vector{Int}}, term::QAtomProduct)
 end
 function _record_abstract!(positions::Vector{Vector{Int}}, abstract_op::QAbstract)
     key_index, sub_index = abstract_op.key_index, abstract_op.sub_index
-    bubble_insert_unique!(positions[key_index], sub_index)
+    sorted_push_unique!(positions[key_index], sub_index)
     return positions
 end
 
-import ..CFunctions: contains_c_indexes
+import ..CFunctions: contains_c_indices
 """ 
-    contains_c_indexes(f::Union{CFunction, QObj}, indexes::Vector{Int})::Bool
+    contains_c_indices(f::Union{CFunction, QObj}, indices::Vector{Int})::Bool
 
-Checks if any of the CFunctions (in a QObj) depend on the indexes. 
+Checks if any of the CFunctions (in a QObj) depend on the indices. 
 """
-contains_c_indexes(q::QExpr, indexes::Vector{Int})::Bool = any(q -> contains_c_indexes(q, indexes), q.terms) 
-contains_c_indexes(q::QAtom, indexes::Vector{Int}) = error("Cannot be applied to QAtom")
-function contains_c_indexes(q::QAtomProduct, indexes::Vector{Int})::Bool 
-    return contains_c_indexes(q.coeff_fun, indexes) 
+contains_c_indices(q::QExpr, indices::Vector{Int})::Bool = any(q -> contains_c_indices(q, indices), q.terms) 
+contains_c_indices(q::QAtom, indices::Vector{Int}) = error("Cannot be applied to QAtom")
+function contains_c_indices(q::QAtomProduct, indices::Vector{Int})::Bool 
+    return contains_c_indices(q.coeff_fun, indices) 
 end
-function contains_c_indexes(q::T, indexes::Vector{Int})::Bool where T <: QComposite 
-    return contains_c_indexes(q.coeff_fun, indexes) || contains_c_indexes(q.expr, indexes)
+function contains_c_indices(q::T, indices::Vector{Int})::Bool where T <: QComposite 
+    return contains_c_indices(q.coeff_fun, indices) || contains_c_indices(q.expr, indices)
 end
-function contains_c_indexes(q::M, indexes::Vector{Int})::Bool where M <: QMultiComposite
-    return contains_c_indexes(q.coeff_fun) || any(t -> contains_c_indexes(x, indexes), q.expr)
+function contains_c_indices(q::M, indices::Vector{Int})::Bool where M <: QMultiComposite
+    return contains_c_indices(q.coeff_fun) || any(t -> contains_c_indices(x, indices), q.expr)
 end
-contains_c_indexes(q::AbstractQSum, indexes::Vector{Int})::Bool = any(q -> contains_c_indexes(q, indexes), q.expr) 
-contains_c_indexes(q::diffQEq, indexes::Vector{Int})::Bool = contains_c_indexes(q.expr, indexes)
+contains_c_indices(q::AbstractQSum, indices::Vector{Int})::Bool = any(q -> contains_c_indices(q, indices), q.expr) 
+contains_c_indices(q::diffQEq, indices::Vector{Int})::Bool = contains_c_indices(q.expr, indices)
 
 
-contains_t_indexes(q::QExpr, indexes::Vector{Int}, which_t::Int=-1)::Bool = any(q -> contains_t_indexes(q, indexes, which_t), q.terms) 
-contains_t_indexes(q::QAtom, indexes::Vector{Int}) = error("Cannot be applied to QAtom")
-function contains_t_indexes(q::QAtomProduct, indexes::Vector{Int}, which_t::Int=-1)::Bool 
+contains_t_indices(q::QExpr, indices::Vector{Int}, which_t::Int=-1)::Bool = any(q -> contains_t_indices(q, indices, which_t), q.terms) 
+contains_t_indices(q::QAtom, indices::Vector{Int}) = error("Cannot be applied to QAtom")
+function contains_t_indices(q::QAtomProduct, indices::Vector{Int}, which_t::Int=-1)::Bool 
     if which_t == -1
-        return contains_c_indexes(q.coeff_fun, indexes) || any(x -> x.time_index != -1, q.expr)
+        return contains_c_indices(q.coeff_fun, indices) || any(x -> x.time_index != -1, q.expr)
     else
-        return contains_c_indexes(q.coeff_fun, indexes) || any(x -> x.time_index == which_t, q.expr)
+        return contains_c_indices(q.coeff_fun, indices) || any(x -> x.time_index == which_t, q.expr)
     end
 
 end
-function contains_t_indexes(q::T, indexes::Vector{Int}, which_t::Int=-1)::Bool where T <: QComposite 
-    return contains_c_indexes(q.coeff_fun, indexes) || contains_t_indexes(q.expr, indexes, which_t)
+function contains_t_indices(q::T, indices::Vector{Int}, which_t::Int=-1)::Bool where T <: QComposite 
+    return contains_c_indices(q.coeff_fun, indices) || contains_t_indices(q.expr, indices, which_t)
 end
-function contains_t_indexes(q::M, indexes::Vector{Int}, which_t::Int=-1)::Bool where M <: QMultiComposite
-    return contains_c_indexes(q.coeff_fun) || any(t -> contains_t_indexes(x, indexes, which_t), q.expr)
+function contains_t_indices(q::M, indices::Vector{Int}, which_t::Int=-1)::Bool where M <: QMultiComposite
+    return contains_c_indices(q.coeff_fun) || any(t -> contains_t_indices(x, indices, which_t), q.expr)
 end
-contains_t_indexes(q::AbstractQSum, indexes::Vector{Int}, which_t::Int=-1)::Bool = any(q -> contains_t_indexes(q, indexes, which_t), q.expr) 
-contains_t_indexes(q::diffQEq, indexes::Vector{Int}, which_t::Int=-1)::Bool = contains_t_indexes(q.expr, indexes, which_t) || contains_t_indexes(q.left_hand_side, which_t)
-function get_t_indexes(param_info::ParameterInfo, t_ind::Int=-1)::Vector{Int} 
+contains_t_indices(q::AbstractQSum, indices::Vector{Int}, which_t::Int=-1)::Bool = any(q -> contains_t_indices(q, indices, which_t), q.expr) 
+contains_t_indices(q::diffQEq, indices::Vector{Int}, which_t::Int=-1)::Bool = contains_t_indices(q.expr, indices, which_t) || contains_t_indices(q.left_hand_side, which_t)
+function get_t_indices(param_info::ParameterInfo, t_ind::Int=-1)::Vector{Int} 
     if t_ind == -1 
-        return param_info.indexes_of_t
+        return param_info.indices_of_t
     else
-        return param_info.indexes_by_t_index[t_ind+1]
+        return param_info.indices_by_t_index[t_ind+1]
     end
 end
 
@@ -253,22 +252,22 @@ end
 
 Checks is the quantum object depends on time. Doesn't work for QAtoms!
 """
-@inline contains_time(q::T, t_ind=0) where T<:QAtom = error("Cannot get time indexes from QAtom. Try QComposites, QExpr, of diffQEq instead. ")
+@inline contains_time(q::T, t_ind=0) where T<:QAtom = error("Cannot get time indices from QAtom. Try QComposites, QExpr, of diffQEq instead. ")
 
 @inline function contains_time(q::T, t_ind=0)::Bool where T <: QObj
-    indexes = get_t_indexes(q.qspace.param_info, t_ind)
-    return contains_t_indexes(q, indexes)
+    indices = get_t_indices(q.qspace.param_info, t_ind)
+    return contains_t_indices(q, indices)
 end
 """ 
-    contains_which_t_indexes(q::QObj) -> BitVector 
+    contains_which_t_indices(q::QObj) -> BitVector 
 
 Returns a Boolean Vector of whether each time index is present in the QObj, 
-with time indexes starting at `t_index=0` and ending at `t_index=max_t_ind`  
+with time indices starting at `t_index=0` and ending at `t_index=max_t_ind`  
 """
-contains_which_t_indexes(q::T) where T<:QAtom = error("Cannot get time indexes from QAtom. Try QComposites, QExpr, of diffQEq instead. ")
-function contains_which_t_indexes(q::T)::BitVector where T <: QObj
+contains_which_t_indices(q::T) where T<:QAtom = error("Cannot get time indices from QAtom. Try QComposites, QExpr, of diffQEq instead. ")
+function contains_which_t_indices(q::T)::BitVector where T <: QObj
     max_t_index = q.qspace.max_t_ind
-    return [contains_t_indexes(q, get_t_indexes(q.qspace.param_info, t_ind), t_ind) for t_ind in 0:max_t_index] 
+    return [contains_t_indices(q, get_t_indices(q.qspace.param_info, t_ind), t_ind) for t_ind in 0:max_t_index] 
 end
 
 @inline function max_order_of_terms(q::QAtomProduct)::Int
@@ -332,7 +331,7 @@ iszero(q::T) where T<:QMultiComposite = iszero(q.coeff_fun) || any(iszero, q.exp
     where_acting(q::QObj)
 
 Return a `BitVector` marking the operator slots of the expanded SubSpace elements where the
-object acts non-trivially (expanded meaning we distinguish between different ensemble indexes=). 
+object acts non-trivially (expanded meaning we distinguish between different ensemble indices=). 
 The mask is always expressed in the operator basis of `q.qspace`, 
 so coefficient functions are intentionally ignored — their
 
@@ -355,7 +354,7 @@ function where_acting!(q::QTerm, qspace::QSpace, out::BitVector)::BitVector
     return where_acting(q.op_indices, qspace.I_op, out)
 end
 function where_acting!(q::QAbstract, qspace::QSpace, out::BitVector)::BitVector
-    return out .|= !q.operator_type.expanded_ss_acting  # should never be modified! copy would be safer, but slower
+    return out .|= !q.operator_type.ss_acting  # should never be modified! copy would be safer, but slower
 end
 function where_acting!(q::QAtomProduct, out::BitVector)::BitVector
     # combine the action of all of its constituents via OR
@@ -383,8 +382,8 @@ function where_acting!(q::T, out::BitVector)::BitVector where T <: QMultiComposi
 end
 function where_acting!(q::AbstractQSum, out::BitVector)::BitVector
     where_acting!(q.expr, out)
-    @inbounds for ind in iter_all_indexes(q)
-        out[expanded(ind)] = true
+    @inbounds for ind in iter_all_indices(q)
+        out[ind.expanded] = true
     end
     return out
 end
@@ -514,7 +513,7 @@ end
 function ==(a::AbstractQSum, b::AbstractQSum)
     aggregator_type(a) == aggregator_type(b) || return false
     a.qspace == b.qspace || return false
-    a.eq_indexes == b.eq_indexes     || return false
+    a.eq_indices == b.eq_indices     || return false
     a.neq_blocks == b.neq_blocks || return false
     return a.expr == b.expr
 end
@@ -551,15 +550,15 @@ function substitution_properties_fulfilled(a::QAbstract, q::QExpr)::Bool
     of_time = op_type.of_time
     hermitian = op_type.hermitian 
     unitary = op_type.unitary
-    expanded_ss_acting = op_type.expanded_ss_acting
+    ss_acting = op_type.ss_acting
     # check each of these:
     if !of_time && contains_time(q)
         error("Abstract operator is't time dependent but QExpr $q is. ")
     end
     acting = where_acting(q) 
-    # check if any true element of acting is not true in expanded_ss_acting
-    if any(acting .& .!expanded_ss_acting)
-        error("Abstract operator is defined on expanded subspaces: $expanded_ss_acting, but QExpr acts on $acting.")
+    # check if any true element of acting is not true in ss_acting
+    if any(acting .& .!ss_acting)
+        error("Abstract operator is defined on expanded subspaces: $ss_acting, but QExpr acts on $acting.")
     end
     if hermitian && !is_hermitian(q) 
         error("Abstract operator expected to be hermitian, but QExpr is not: $q ≠ $(q').")

@@ -1,46 +1,46 @@
-"""
-    base_operators(qspace::QSpace, name::String; do_fun::Bool=false, by_ensemble::Bool=false)
+@inline function _identity_expr(qspace::QSpace)
+    atom = CAtom(qspace.param_info, spzeros(Int, length(qspace.params)))
+    return QExpr(qspace, QAtomProduct(qspace, atom, QTerm[]))
+end
 
-Returns variables and/or operators in the state space `qspace`.
+@inline function _qexpr_for_var(qspace::QSpace, index::Int)
+    exponents = spzeros(Int, length(qspace.params))
+    exponents[index] += 1
+    atom = CAtom(qspace.param_info, exponents)
+    return QExpr(qspace, QAtomProduct(qspace, atom, QTerm[]))
+end
 
-Time handling:
-- If an operator (subspace or abstract) is not time-dependent (`.of_time == false`), its `time_index` defaults to `-1`.
-- If it is time-dependent, `time_index` defaults to `0`, unless `name` ends with `_tN` (e.g. `"A_t3"`), in which case `time_index = N`.
-- For QExprLookup results of subspace operators, the time argument is optional: you can query with or without a `:tN` key; both map to the same expression.
-"""
-function base_operators(qspace::QSpace, name::String; do_fun::Bool=false, by_ensemble::Bool=false)
-    # -------------------- helpers --------------------
-    _I_expr() = QExpr(qspace, QAtomProduct(qspace, CAtom(qspace.param_info, spzeros(Int, length(qspace.params))), QTerm[]))
+function _parse_time_suffix(name::String)
+    m = match(r"^(.*)_t(-?\d+)$", name)
+    return m === nothing ? (name, nothing) : (String(m.captures[1]), parse(Int, m.captures[2]))
+end
 
-    _qexpr_for_var(i::Int) = begin
-        vexp = spzeros(Int, length(qspace.params))
-        vexp[i] += 1
-        QExpr(qspace, QAtomProduct(qspace, CAtom(qspace.param_info, vexp), QTerm[]))
+@inline _default_time_index(of_time::Bool, t_spec::Union{Nothing,Int}) =
+    of_time ? (t_spec === nothing ? 0 : t_spec) : -1
+
+@inline function _check_t_bounds(t::Int, max_t::Int)
+    (t < 0 || t > max_t) && error("time_index=$t out of range 0:$max_t")
+end
+
+function _finalize_lookup_result(ops_vec::Vector{QExpr}, ops_comb::Vector{Vector{Symbol}}, do_fun::Bool)
+    isempty(ops_vec) && return nothing
+    if do_fun
+        return QExprLookup(ops_comb, ops_vec)
+    else
+        return length(ops_vec) == 1 ? ops_vec[1] : (ops_vec...,)
     end
+end
 
-    # parse "x_tN" once and reuse
-    function _parse_time_suffix(s::String)
-        m = match(r"^(.*)_t(-?\d+)$", s)
-        m === nothing ? (s, nothing) : (String(m.captures[1]), parse(Int, m.captures[2]))
-    end
-
-    _default_time_index(of_time::Bool, t_spec::Union{Nothing, Int}) =
-        of_time ? (t_spec === nothing ? 0 : t_spec) : -1
-
-    _check_t_bounds(t::Int, max_t::Int) = (t < 0 || t > max_t) && error("time_index=$t out of range 0:$max_t")
-
-    # -------------------- identity --------------------
-    name_base, t_spec = _parse_time_suffix(name)
-    if name_base == "I"
-        return _I_expr()
-    end
-
-    # ==================> Variables / Parameters <===============================
+function get_parameter(qspace::QSpace, name::String;
+                       do_fun::Bool=false,
+                       name_base::String=name,
+                       t_spec::Union{Nothing,Int}=nothing,
+                       error_if_missing::Bool=true)
     ops_comb = Vector{Vector{Symbol}}()
-    ops_vec  = QExpr[]
+    ops_vec = QExpr[]
 
     for (i, var) in enumerate(qspace.params)
-        pref     = string(var.param_symbol)
+        pref = string(var.param_symbol)
         pref_fmt = symbol2formatted(pref)
 
         if name_base == var.param_name_no_t || name_base == var.param_str_no_t ||
@@ -50,21 +50,15 @@ function base_operators(qspace::QSpace, name::String; do_fun::Bool=false, by_ens
                 comb = copy(var.index_comb_symbol)
                 push!(comb, Symbol("t$(var.t_index)"))
                 push!(ops_comb, comb)
-                push!(ops_vec, _qexpr_for_var(i))
+                push!(ops_vec, _qexpr_for_var(qspace, i))
             end
         end
     end
 
-    if !isempty(ops_vec)
-        if do_fun
-            return QExprLookup(ops_comb, ops_vec)
-        else
-            return length(ops_vec) == 1 ? ops_vec[1] : (ops_vec...,)
-        end
-    end
+    result = _finalize_lookup_result(ops_vec, ops_comb, do_fun)
+    result !== nothing && return result
 
-    # ==================> CAbstract Parameters <===============================
-    if name_base == name 
+    if name_base == name
         abstract_definitions = qspace.param_info.abstract_definitions
         for abstract_defintion in abstract_definitions
             if abstract_defintion.name == name
@@ -73,6 +67,7 @@ function base_operators(qspace::QSpace, name::String; do_fun::Bool=false, by_ens
             end
         end
     end
+
     if name == "CAbstract"
         abstract_definitions = qspace.param_info.abstract_definitions
         exprs = QExpr[]
@@ -85,7 +80,21 @@ function base_operators(qspace::QSpace, name::String; do_fun::Bool=false, by_ens
         return exprs
     end
 
-    # ===================> Subspace Operators <=================================
+    if error_if_missing
+        error("No parameter found for key='$name'.")
+    end
+    return nothing
+end
+
+function get_operator(qspace::QSpace, name::String;
+                      do_fun::Bool=false,
+                      by_ensemble::Bool=false,
+                      name_base::String=name,
+                      t_spec::Union{Nothing,Int}=nothing,
+                      error_if_missing::Bool=true)
+    if name_base == "I"
+        return _identity_expr(qspace)
+    end
     index = 1
     has_us = occursin("_", name_base)
     name_inner_key = nothing
@@ -95,20 +104,20 @@ function base_operators(qspace::QSpace, name::String; do_fun::Bool=false, by_ens
     end
 
     ops_comb = Vector{Vector{Symbol}}()
-    ops_vec  = QExpr[]
+    ops_vec = QExpr[]
 
     sub_of_time = qspace.subspace_info.of_time
     max_t = qspace.max_t_ind
-    ti = _default_time_index(sub_of_time, t_spec)  # used for non-iterating cases
+    ti = _default_time_index(sub_of_time, t_spec)
 
     for sub in qspace.subspaces
         ensemble_key = by_ensemble && sub.key == outer_name
         match_outer = sub.key == outer_name
-        for key_symbol in sub.keys_symbols
+        for (inner_idx, key_symbol) in enumerate(subspace_symbols(sub))
             key = String(key_symbol)
             do_it = ensemble_key || (key == outer_name) || (match_outer && !has_us && !by_ensemble)
             if do_it
-                base_ops  = sub.op_set.base_ops
+                base_ops = sub.op_set.base_ops
                 base_strs = sub.op_set.ops
 
                 for (inner_key, base_op) in zip(base_strs, base_ops)
@@ -117,14 +126,10 @@ function base_operators(qspace::QSpace, name::String; do_fun::Bool=false, by_ens
 
                     base_comb = by_ensemble ? [Symbol(inner_key), Symbol(key)] : [Symbol(inner_key)]
 
-                    # If an exact inner op was requested (e.g. "a_b"), special-case:
                     if has_us && inner_key == name_inner_key
                         if do_fun && sub_of_time && t_spec === nothing
-                            # Build a lookup over all times + unsuffixed->t0
-                            # unsuffixed key -> t=0
                             q0 = QExpr(qspace, QTerm(curr, 0))
                             push!(ops_comb, base_comb); push!(ops_vec, q0)
-                            # all explicit times 0..max_t
                             for t in 0:max_t
                                 qt = t == 0 ? q0 : QExpr(qspace, QTerm(curr, t))
                                 comb_t = copy(base_comb); push!(comb_t, Symbol("t$(t)"))
@@ -132,7 +137,6 @@ function base_operators(qspace::QSpace, name::String; do_fun::Bool=false, by_ens
                             end
                             return QExprLookup(ops_comb, ops_vec)
                         else
-                            # single QExpr path (either timeless, or time specified)
                             if sub_of_time && t_spec !== nothing
                                 _check_t_bounds(t_spec, max_t)
                             end
@@ -140,21 +144,17 @@ function base_operators(qspace::QSpace, name::String; do_fun::Bool=false, by_ens
                         end
                     end
 
-                    # General accumulation path
                     if sub_of_time
                         if t_spec === nothing
                             if do_fun
-                                # Add unsuffixed -> t0
                                 q0 = QExpr(qspace, QTerm(curr, 0))
                                 push!(ops_comb, base_comb); push!(ops_vec, q0)
-                                # Add all explicit times 0..max_t
                                 for t in 0:max_t
                                     qt = t == 0 ? q0 : QExpr(qspace, QTerm(curr, t))
                                     comb_t = copy(base_comb); push!(comb_t, Symbol("t$(t)"))
                                     push!(ops_comb, comb_t); push!(ops_vec, qt)
                                 end
                             else
-                                # no lookup requested: default to t=0
                                 push!(ops_vec, QExpr(qspace, QTerm(curr, 0)))
                             end
                         else
@@ -162,33 +162,38 @@ function base_operators(qspace::QSpace, name::String; do_fun::Bool=false, by_ens
                             if do_fun
                                 comb_t = copy(base_comb); push!(comb_t, Symbol("t$(t_spec)"))
                                 push!(ops_comb, comb_t)
-                            else
-                                # ignore combs when not returning a lookup
                             end
                             push!(ops_vec, QExpr(qspace, QTerm(curr, t_spec)))
                         end
                     else
-                        # timeless
-                        push!(ops_comb, base_comb)  # harmless if do_fun=false
+                        push!(ops_comb, base_comb)
                         push!(ops_vec, QExpr(qspace, QTerm(curr, -1)))
                     end
                 end
 
                 if !ensemble_key
-                    return do_fun ? QExprLookup(ops_comb, ops_vec) :
-                        (length(ops_vec) == 1 ? ops_vec[1] : (ops_vec...,))
+                    result = _finalize_lookup_result(ops_vec, ops_comb, do_fun)
+                    result !== nothing && return result
                 end
             end
             index += 1
         end
     end
 
-    if !isempty(ops_vec)
-        return do_fun ? QExprLookup(ops_comb, ops_vec) :
-            (length(ops_vec) == 1 ? ops_vec[1] : (ops_vec...,))
-    end
+    result = _finalize_lookup_result(ops_vec, ops_comb, do_fun)
+    result !== nothing && return result
 
-    # ===================> QAbstract Operators <=================================
+    if error_if_missing
+        error("No subspace operator found for key='$name'.")
+    end
+    return nothing
+end
+
+function get_abstract(qspace::QSpace, name::String;
+                      do_fun::Bool=false,
+                      name_base::String=name,
+                      t_spec::Union{Nothing,Int}=nothing,
+                      error_if_missing::Bool=true)
     for (key_index, operatortype) in enumerate(qspace.operatortypes)
         ti_default = _default_time_index(operatortype.of_time, t_spec)
         max_t = qspace.max_t_ind
@@ -196,19 +201,16 @@ function base_operators(qspace::QSpace, name::String; do_fun::Bool=false, by_ens
         if name_base == operatortype.name
             if do_fun
                 if operatortype.of_time
-                    # time arg present with default 0; enforce 0..max_t
                     return (subindex::Int=-1, time_index::Int=0) -> begin
                         _check_t_bounds(time_index, max_t)
                         QExpr(qspace, QAbstract(operatortype, key_index, subindex, 1, false, time_index))
                     end
                 else
-                    # no time arg when not of_time
                     return (subindex::Int=-1) -> begin
                         QExpr(qspace, QAbstract(operatortype, key_index, subindex, 1, false, -1))
                     end
                 end
             else
-                # honor optional _tN in name; if provided and of_time, also bound-check it
                 if operatortype.of_time && t_spec !== nothing
                     _check_t_bounds(t_spec, max_t)
                 end
@@ -227,6 +229,37 @@ function base_operators(qspace::QSpace, name::String; do_fun::Bool=false, by_ens
         end
     end
 
+    if error_if_missing
+        error("No abstract operator found for key='$name'.")
+    end
+    return nothing
+end
+
+"""
+    base_operators(qspace::QSpace, name::String; do_fun::Bool=false, by_ensemble::Bool=false)
+
+Returns variables and/or operators in the state space `qspace`.
+
+Time handling:
+- If an operator (subspace or abstract) is not time-dependent (`.of_time == false`), its `time_index` defaults to `-1`.
+- If it is time-dependent, `time_index` defaults to `0`, unless `name` ends with `_tN` (e.g. `"A_t3"`), in which case `time_index = N`.
+- For QExprLookup results of subspace operators, the time argument is optional: you can query with or without a `:tN` key; both map to the same expression.
+"""
+function base_operators(qspace::QSpace, name::String; do_fun::Bool=false, by_ensemble::Bool=false)
+    name_base, t_spec = _parse_time_suffix(name)
+    if name_base == "I"
+        return _identity_expr(qspace)
+    end
+
+    result = get_parameter(qspace, name; do_fun=do_fun, name_base=name_base, t_spec=t_spec, error_if_missing=false)
+    result !== nothing && return result
+
+    result = get_operator(qspace, name; do_fun=do_fun, by_ensemble=by_ensemble, name_base=name_base, t_spec=t_spec, error_if_missing=false)
+    result !== nothing && return result
+
+    result = get_abstract(qspace, name; do_fun=do_fun, name_base=name_base, t_spec=t_spec, error_if_missing=false)
+    result !== nothing && return result
+
     error("No variable, subspace component or abstract operator found for key='$name'.")
 end
 
@@ -236,7 +269,31 @@ end
 
 function base_operators(qspace::QSpace, names::Vector{String}; do_fun::Bool=false, by_ensemble::Bool=false)
     return [base_operators(qspace, name; do_fun=do_fun, by_ensemble=by_ensemble) for name in names]
-end 
+end
+
 function base_operators(qspace::QSpace, names::Vector{Symbol}; do_fun::Bool=false, by_ensemble::Bool=false)
     return [base_operators(qspace, name; do_fun=do_fun, by_ensemble=by_ensemble) for name in names]
-end 
+end
+
+function Base.getindex(qspace::QSpace, key::Union{String,Symbol})
+    name = key isa Symbol ? String(key) : key
+    name_base, t_spec = _parse_time_suffix(name)
+    if name_base == "I"
+        return _identity_expr(qspace)
+    end
+
+    result = get_parameter(qspace, name; name_base=name_base, t_spec=t_spec, error_if_missing=false)
+    result !== nothing && return result
+
+    result = get_operator(qspace, name; name_base=name_base, t_spec=t_spec, error_if_missing=false)
+    result !== nothing && return result
+
+    result = get_abstract(qspace, name; name_base=name_base, t_spec=t_spec, error_if_missing=false)
+    result !== nothing && return result
+
+    error("No variable, subspace component or abstract operator found for key='$name'.")
+end
+
+function Base.getindex(qspace::QSpace, keys::AbstractVector{<:Union{String,Symbol}})
+    return [qspace[key] for key in keys]
+end

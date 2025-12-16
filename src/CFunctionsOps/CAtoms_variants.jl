@@ -2,16 +2,16 @@ import ..ConcreteIndexes
 import Base: LinearIndices, pointer, pointer_from_objref, fieldoffset, unsafe_load
 import Base.GC
 
-function _collect_index_values(indexes::ConcreteIndexes, ens_indexes::AbstractVector)
+function _collect_index_values(indices::ConcreteIndexes, ens_indices::AbstractVector)
     values = Int[]
-    for ens_idx in ens_indexes
+    for ens_idx in ens_indices
         ensemble = ens_idx.outer
         inner = ens_idx.inner
-        ensemble <= length(indexes.indexes) ||
-            error("Concrete indexes missing ensemble $(ensemble).")
-        ensemble_entries = indexes.indexes[ensemble]
+        ensemble <= length(indices.indices) ||
+            error("Concrete indices missing ensemble $(ensemble).")
+        ensemble_entries = indices.indices[ensemble]
         inner <= length(ensemble_entries) ||
-            error("Concrete indexes missing entry $(inner) in ensemble $(ensemble).")
+            error("Concrete indices missing entry $(inner) in ensemble $(ensemble).")
         idx = ensemble_entries[inner]
         idx > 0 || error("Concrete index for ensemble $(ensemble) inner $(inner) not set.")
         push!(values, idx)
@@ -20,25 +20,25 @@ function _collect_index_values(indexes::ConcreteIndexes, ens_indexes::AbstractVe
 end
 
 """
-    CAtomIndexed(param_info, coeff, var_exponents, indexes)
+    CAtomIndexed(param_info, coeff, var_exponents, indices)
 
-Coefficient atom that keeps concrete ensemble indexes next to its sparse
-exponent vector. `indexes` may be a [`ConcreteIndexes`](@ref) instance or any
+Coefficient atom that keeps concrete ensemble indices next to its sparse
+exponent vector. `indices` may be a [`ConcreteIndexes`](@ref) instance or any
 vector of integer vectors aligned with the ensemble layout of `param_info`.
 """
 struct CAtomIndexed <: CAtomic
     param_info::ParameterInfo
     coeff::ComplexRational
     var_exponents::SparseVector{Int,Int}
-    indexes::ConcreteIndexes
+    indices::ConcreteIndexes
 end
 
-function CAtomIndexed(atom::CAtom, indexes::ConcreteIndexes)
-    return CAtomIndexed(atom.param_info, atom.coeff, atom.var_exponents, indexes)
+function CAtomIndexed(atom::CAtom, indices::ConcreteIndexes)
+    return CAtomIndexed(atom.param_info, atom.coeff, atom.var_exponents, indices)
 end
 
-function CAtomIndexed(atom::CAtom, indexes::AbstractVector{<:AbstractVector{<:Integer}})
-    concrete = ConcreteIndexes(atom.param_info, indexes)
+function CAtomIndexed(atom::CAtom, indices::AbstractVector{<:AbstractVector{<:Integer}})
+    concrete = ConcreteIndexes(atom.param_info, indices)
     return CAtomIndexed(atom, concrete)
 end
 var_exponents(a::CAtomIndexed) = a.var_exponents
@@ -111,7 +111,7 @@ function _push_factor!(::Type{Mode}, pv::ParameterValues{Mode}, atom::CAtomIndex
     group_index = param.group_index
     group = pv.groups[group_index]
     group.of_t && error("CAtomReferenced does not support time-dependent parameter groups.")
-    sample_indices = _collect_index_values(atom.indexes, param.ensemble_indexes)
+    sample_indices = _collect_index_values(atom.indices, param.ensemble_indices)
     gv = pv.group_values[group_index]
     storage = gv.value
     anchor, ptr = _factor_anchor_pointer(gv, sample_indices)
@@ -140,12 +140,12 @@ function CAtomReferenced(pv::ParameterValues{Mode}, atom::CAtomIndexed) where {M
     return CAtomReferenced{Mode}(atom.param_info, atom.coeff, ptrs, anchors, param_indices, exponents, pv)
 end
 
-function CAtomReferenced(pv::ParameterValues{Mode}, atom::CAtom, indexes::ConcreteIndexes) where {Mode<:ParameterValuesMode}
-    return CAtomReferenced(pv, CAtomIndexed(atom, indexes))
+function CAtomReferenced(pv::ParameterValues{Mode}, atom::CAtom, indices::ConcreteIndexes) where {Mode<:ParameterValuesMode}
+    return CAtomReferenced(pv, CAtomIndexed(atom, indices))
 end
 
-function CAtomReferenced(pv::ParameterValues{Mode}, atom::CAtom, indexes::AbstractVector{<:AbstractVector{<:Integer}}) where {Mode<:ParameterValuesMode}
-    return CAtomReferenced(pv, CAtomIndexed(atom, indexes))
+function CAtomReferenced(pv::ParameterValues{Mode}, atom::CAtom, indices::AbstractVector{<:AbstractVector{<:Integer}}) where {Mode<:ParameterValuesMode}
+    return CAtomReferenced(pv, CAtomIndexed(atom, indices))
 end
 
 var_exponents(a::CAtomReferenced) = begin

@@ -12,7 +12,7 @@ Decompose a full operator index vector into subspace blocks.
   - For ensemble subspaces: contains only non-neutral operators, sorted by operator type.
   - For non-ensemble subspaces: contains the single operator as a 1-element vector.
 
-- `ensemble_indexes`:
+- `ensemble_indices`:
   - One entry per ensemble subspace (in order).
   - Each entry is a vector of vectors of positions, grouped by operator identity.
   - Example: for `[X, I, Y, X]` with neutral `I`, result is `[[1,4],[3]]`.
@@ -20,7 +20,7 @@ Decompose a full operator index vector into subspace blocks.
 function decompose_sorted_blocks(op_indices::Vector{Is}, qspace::QSpace)::Tuple{Vector{Vector{Is}}, Vector{Vector{Vector{Int}}}}
     nsub::Int = length(qspace.subspaces)
     blocks::Vector{Vector{Is}} = Vector{Vector{Is}}(undef, nsub)
-    ensemble_indexes::Vector{Vector{Vector{Int}}} = Vector{Vector{Vector{Int}}}()
+    ensemble_indices::Vector{Vector{Vector{Int}}} = Vector{Vector{Vector{Int}}}()
 
     index::Int = 1
     @inbounds for (sidx, subspace) in enumerate(qspace.subspaces)
@@ -53,7 +53,7 @@ function decompose_sorted_blocks(op_indices::Vector{Is}, qspace::QSpace)::Tuple{
                     push!(grouped_pos[end], pos)
                 end
             end
-            push!(ensemble_indexes, grouped_pos)
+            push!(ensemble_indices, grouped_pos)
 
             index += ensemble_size
         else
@@ -62,11 +62,11 @@ function decompose_sorted_blocks(op_indices::Vector{Is}, qspace::QSpace)::Tuple{
         end
     end
 
-    return blocks, ensemble_indexes
+    return blocks, ensemble_indices
 end
 """
     recompose_op_indices(blocks::Vector{Vector{Is}}, 
-                         ensemble_indexes::Vector{Vector{Vector{Int}}}, 
+                         ensemble_indices::Vector{Vector{Vector{Int}}}, 
                          qspace::QSpace) -> Vector{Is}
 
 Rebuild the original `op_indices` vector from its block decomposition.
@@ -75,7 +75,7 @@ Rebuild the original `op_indices` vector from its block decomposition.
   then restores non-trivial operators at the recorded positions.
 - Non-ensemble subspaces are copied directly.
 """
-function recompose_op_indices(blocks::Vector{Vector{Is}}, ensemble_indexes::Vector{Vector{Vector{Int}}}, qspace::QSpace)::Vector{Is}
+function recompose_op_indices(blocks::Vector{Vector{Is}}, ensemble_indices::Vector{Vector{Vector{Int}}}, qspace::QSpace)::Vector{Is}
     op_indices::Vector{Is} = Is[]
     ens_counter::Int = 1
 
@@ -87,7 +87,7 @@ function recompose_op_indices(blocks::Vector{Vector{Is}}, ensemble_indexes::Vect
             curr_ops::Vector{Is} = fill(neutral, ensemble_size)
 
             flat_ops::Vector{Is} = blocks[sidx]
-            grouped_pos::Vector{Vector{Int}} = ensemble_indexes[ens_counter]
+            grouped_pos::Vector{Vector{Int}} = ensemble_indices[ens_counter]
 
             pos_counter::Int = 1
             for group in grouped_pos
@@ -115,7 +115,7 @@ struct QAtomOrdered <: QComposite
     qspace::QSpace
     coeff_fun::CFunction
     op_indices::Vector{Vector{Is}}
-    ensemble_indexes::Vector{Vector{Int}}
+    ensemble_indices::Vector{Vector{Int}}
     time_index::Int
 end
 struct QNeutral <: QComposite 
@@ -176,14 +176,14 @@ function OrderbyOperator(q::QAtomProduct)
     if n == 0
         return QNeutral(q.qspace, q.coeff_fun, q.time_index)
     elseif n == 1
-        blocks, ensemble_indexes = decompose_sorted_blocks(q.expr[1].op_indices, )
-        return QAtomOrdered(q.qspace, q.coeff_fun, blocks, ensemble_indexes, q.expr[1].time_index)
+        blocks, ensemble_indices = decompose_sorted_blocks(q.expr[1].op_indices, )
+        return QAtomOrdered(q.qspace, q.coeff_fun, blocks, ensemble_indices, q.expr[1].time_index)
     end
     # shouldn'T be needed, but whatever
     ordered_atoms = Vector{QAtomOrdered}(undef, n)
     @inbounds for i in 1:n
-        blocks, ensemble_indexes = decompose_sorted_blocks(q.expr[1].op_indices, )
-        ordered_atoms[i] =  QAtomOrdered(q.qspace, q.coeff_fun, blocks, ensemble_indexes, q.expr[1].time_index)
+        blocks, ensemble_indices = decompose_sorted_blocks(q.expr[1].op_indices, )
+        ordered_atoms[i] =  QAtomOrdered(q.qspace, q.coeff_fun, blocks, ensemble_indices, q.expr[1].time_index)
     end
     return QCompositeProduct(q.qspace, q.coeff_fun, ordered_atoms)
 end

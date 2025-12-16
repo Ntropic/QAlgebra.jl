@@ -16,24 +16,24 @@ end
 
 ctimes(c::ComplexRational, d::T) where T <: Number = (c.a + im*c.b) / c.c * d
 
-@inline function _sample_indices(param, indexes::ConcreteIndexes)
-    ens_indexes = param.ensemble_indexes
-    count = length(ens_indexes)
+@inline function _sample_indices(param, indices::ConcreteIndexes)
+    ens_indices = param.ensemble_indices
+    count = length(ens_indices)
     count == 0 && return ()
     return ntuple(pos -> begin
-        ens_idx = ens_indexes[pos]
-        return indexes.indexes[ens_idx.outer][ens_idx.inner]
+        ens_idx = ens_indices[pos]
+        return indices.indices[ens_idx.outer][ens_idx.inner]
     end, count)
 end
 
 @inline function _parameter_value(pinfo::ParameterInfo,
                                   pv::ParameterValues{SampleIndexMode},
                                   idx::Int,
-                                  indexes::ConcreteIndexes)
+                                  indices::ConcreteIndexes)
     param = @inbounds pinfo.params[idx]
     group_idx = param.group_index
     time_idx = param.coords[1] - 1
-    sample_indices = _sample_indices(param, indexes)
+    sample_indices = _sample_indices(param, indices)
     return pv[group_idx, time_idx, sample_indices...]
 end
 
@@ -54,11 +54,11 @@ end
 @inline function _atom_product(pinfo::ParameterInfo,
                                pv::ParameterValues{SampleIndexMode},
                                exps,
-                               indexes::ConcreteIndexes)
+                               indices::ConcreteIndexes)
     prod_val = 1.0
     first_term = true
     @inbounds for idx in exps.nzind
-        val = _parameter_value(pinfo, pv, idx, indexes)
+        val = _parameter_value(pinfo, pv, idx, indices)
         exp = exps[idx]
         term = exp == 1 ? val : val ^ exp
         if first_term
@@ -94,12 +94,12 @@ end
 
 @inline function _evaluate_atom(a::CAtom,
                                 pv::ParameterValues{SampleIndexMode},
-                                indexes::ConcreteIndexes)
-    return ctimes(a.coeff, _atom_product(a.param_info, pv, a.var_exponents, indexes))
+                                indices::ConcreteIndexes)
+    return ctimes(a.coeff, _atom_product(a.param_info, pv, a.var_exponents, indices))
 end
 
 @inline function _evaluate_atom(a::CAtomIndexed, pv::ParameterValues{SampleIndexMode})
-    return ctimes(a.coeff, _atom_product(a.param_info, pv, a.var_exponents, a.indexes))
+    return ctimes(a.coeff, _atom_product(a.param_info, pv, a.var_exponents, a.indices))
 end
 
 @inline function _atom_product(a::CAtomReferenced{Mode}) where {Mode<:ParameterValuesMode}
@@ -124,8 +124,8 @@ end
 
 @inline function _evaluate(f::CAtom,
                            pv::ParameterValues{SampleIndexMode},
-                           indexes::ConcreteIndexes)
-    return _evaluate_atom(f, pv, indexes)
+                           indices::ConcreteIndexes)
+    return _evaluate_atom(f, pv, indices)
 end
 
 @inline function _evaluate(f::CAtomIndexed,
@@ -157,44 +157,44 @@ end
 
 @inline function _evaluate(f::CSum,
                            pv::ParameterValues{SampleIndexMode},
-                           indexes::ConcreteIndexes)
-    return sum(_evaluate(term, pv, indexes) for term in f.expr)
+                           indices::ConcreteIndexes)
+    return sum(_evaluate(term, pv, indices) for term in f.expr)
 end
 
 @inline function _evaluate(f::CProd,
                            pv::ParameterValues{SampleIndexMode},
-                           indexes::ConcreteIndexes)
-    return ctimes(f.coeff, prod(_evaluate(term, pv, indexes) for term in f.expr))
+                           indices::ConcreteIndexes)
+    return ctimes(f.coeff, prod(_evaluate(term, pv, indices) for term in f.expr))
 end
 
 @inline function _evaluate(f::CRational,
                            pv::ParameterValues{SampleIndexMode},
-                           indexes::ConcreteIndexes)
-    return _evaluate(f.numer, pv, indexes) / _evaluate(f.denom, pv, indexes)
+                           indices::ConcreteIndexes)
+    return _evaluate(f.numer, pv, indices) / _evaluate(f.denom, pv, indices)
 end
 
 @inline function _evaluate(f::CExp,
                            pv::ParameterValues{SampleIndexMode},
-                           indexes::ConcreteIndexes)
-    return ctimes(f.coeff, exp(_evaluate(f.expr, pv, indexes)))
+                           indices::ConcreteIndexes)
+    return ctimes(f.coeff, exp(_evaluate(f.expr, pv, indices)))
 end
 
 @inline function _evaluate(f::CLog,
                            pv::ParameterValues{SampleIndexMode},
-                           indexes::ConcreteIndexes)
-    return ctimes(f.coeff, log(_evaluate(f.expr, pv, indexes)))
+                           indices::ConcreteIndexes)
+    return ctimes(f.coeff, log(_evaluate(f.expr, pv, indices)))
 end
 
 @inline function _evaluate(f::CPower,
                            pv::ParameterValues{SampleIndexMode},
-                           indexes::ConcreteIndexes)
-    return ctimes(f.coeff, _pow_r(_evaluate(f.expr, pv, indexes), f.exponent))
+                           indices::ConcreteIndexes)
+    return ctimes(f.coeff, _pow_r(_evaluate(f.expr, pv, indices), f.exponent))
 end
 
 @inline function _evaluate(f::CVector,
                            pv::ParameterValues{SampleIndexMode},
-                           indexes::ConcreteIndexes)
-    entries = [ctimes(f.coeff, _evaluate(term, pv, indexes)) for term in f.expr]
+                           indices::ConcreteIndexes)
+    entries = [ctimes(f.coeff, _evaluate(term, pv, indices)) for term in f.expr]
     if f.row
         n = length(entries)
         return reshape(entries, 1, n)
@@ -204,24 +204,24 @@ end
 
 @inline function _evaluate(f::CMatrix,
                            pv::ParameterValues{SampleIndexMode},
-                           indexes::ConcreteIndexes)
+                           indices::ConcreteIndexes)
     m, n = size(f.expr)
-    data = [ctimes(f.coeff, _evaluate(term, pv, indexes)) for term in f.expr]
+    data = [ctimes(f.coeff, _evaluate(term, pv, indices)) for term in f.expr]
     return reshape(data, m, n)
 end
 
 @inline function _evaluate(f::CCustomType,
                            pv::ParameterValues{SampleIndexMode},
-                           indexes::ConcreteIndexes)
-    arg_values = [_evaluate(term, pv, indexes) for term in f.expr]
+                           indices::ConcreteIndexes)
+    arg_values = [_evaluate(term, pv, indices) for term in f.expr]
     val = evaluate(f.ctype_def.fun, arg_values, f.ctype_def.index_map)
     return ctimes(f.coeff, val)
 end
 
 @inline function _evaluate(f::CCustomTypeIndexed,
                            pv::ParameterValues{SampleIndexMode},
-                           indexes::ConcreteIndexes)
-    arg_values = [_evaluate(term, pv, indexes) for term in f.expr]
+                           indices::ConcreteIndexes)
+    arg_values = [_evaluate(term, pv, indices) for term in f.expr]
     val = evaluate(f.ctype_def.fun, arg_values, f.ctype_def.index_map)
     return ctimes(f.coeff, val)
 end
@@ -304,21 +304,21 @@ end
 end
 
 """
-    evaluate(f::CFunction, pv::ParameterValues{SampleIndexMode}, indexes::ConcreteIndexes)
+    evaluate(f::CFunction, pv::ParameterValues{SampleIndexMode}, indices::ConcreteIndexes)
 
 Evaluate the concrete function `f` using sample-index parameter values stored in `pv`
-and the concrete ensemble indexes provided via `indexes`. The caller is responsible
-for supplying fully resolved indexes that match the ensemble layout.
+and the concrete ensemble indices provided via `indices`. The caller is responsible
+for supplying fully resolved indices that match the ensemble layout.
 """
-function evaluate(f::CFunction, pv::ParameterValues{SampleIndexMode}, indexes::ConcreteIndexes)
-    return _evaluate(f, pv, indexes)
+function evaluate(f::CFunction, pv::ParameterValues{SampleIndexMode}, indices::ConcreteIndexes)
+    return _evaluate(f, pv, indices)
 end
 
 """
     abstract_evaluate(f::CFunction, pv::ParameterValues{AbstractIndexMode})
 
 Evaluate the concrete function `f` against abstract-index parameter values stored in `pv`.
-Unlike `evaluate`, no concrete ensemble indexes are required because the parameter values
+Unlike `evaluate`, no concrete ensemble indices are required because the parameter values
 already encode the abstract index coordinates.
 """
 function abstract_evaluate(f::CFunction, pv::ParameterValues{AbstractIndexMode})

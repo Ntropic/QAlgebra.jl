@@ -41,18 +41,18 @@ function define_ctype(param_info::ParameterInfo, name::Union{Symbol,String}, fun
     sortkey = index + SORTKEY_BASE_CTYPE
 
     abstract_parameters = abstract_from_abstractdef.(contains_which_abstracts(fun))                # defined below
-    abstract_indexes    = [c.index for c in abstract_parameters]
-    index_map = isempty(abstract_indexes) ? Int[] : begin
-        m = maximum(abstract_indexes)
+    abstract_indices    = [c.index for c in abstract_parameters]
+    index_map = isempty(abstract_indices) ? Int[] : begin
+        m = maximum(abstract_indices)
         im = zeros(Int, m)
-        for (j, ind) in enumerate(abstract_indexes)
+        for (j, ind) in enumerate(abstract_indices)
             im[ind] = j
         end
         im
     end
     has_abstract  = !isempty(abstract_parameters)
-    if has_abstract && has_indexes(fun)
-        error("CCustomType functions either require no arguments (i.e. are deifned free of CAbstracts) or have no indexes or time dependences in their definition.")
+    if has_abstract && has_indices(fun)
+        error("CCustomType functions either require no arguments (i.e. are deifned free of CAbstracts) or have no indices or time dependences in their definition.")
     end
     type_symbols  = (Symbol(CName), Symbol(Name), Symbol(base), :Any, :any)
     c_type_def = CTypeDefinition(name_sym, type_symbols, plain, latex, index, sortkey, fun, has_abstract, abstract_parameters, index_map, param_info)

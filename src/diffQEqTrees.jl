@@ -1,7 +1,7 @@
 module EqTrees
 
 using Base: OneTo, LinearIndices, CartesianIndices
-using ..QExpressions: diffQEq, QAbstract, diffQEqOrdered, QCumulantOrdered, OrderbyOperator, QAtomProduct, QExpr, QTerm, contains_which_t_indexes, max_order_of_terms, which_abstracts
+using ..QExpressions: diffQEq, QAbstract, diffQEqOrdered, QCumulantOrdered, OrderbyOperator, QAtomProduct, QExpr, QTerm, contains_which_t_indices, max_order_of_terms, which_abstracts
 using ..QSpaces: QSpace, SubSpace
 using ..OffsetArrays: OffsetArray
 
@@ -129,9 +129,9 @@ function gen_diffQEqSet(diff_qeq::diffQEq, initial_operators::Vector{QAtomProduc
     end
 
     qspace = diff_qeq.qspace
-    time_indexes = contains_which_t_indexes(diff_qeq)
-    @assert sum(time_indexes) <= 1 "Differential equation contains too many time indexes, found time indexes: $(findall(time_indexes) .- 1)."
-    first_time = findfirst(time_indexes)
+    time_indices = contains_which_t_indices(diff_qeq)
+    @assert sum(time_indices) <= 1 "Differential equation contains too many time indices, found time indices: $(findall(time_indices) .- 1)."
+    first_time = findfirst(time_indices)
     curr_time_index = isnothing(first_time) ? -1 : first_time - 1
 
     isempty(initial_operators) || @assert maximum(max_order_of_terms.(initial_operators)) <= max_order "initial_operators contain QTerms that exceed max_order"

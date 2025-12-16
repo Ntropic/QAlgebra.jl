@@ -10,8 +10,8 @@ The following are currently exposed functions and constants
 symbol2formatted
 str2sub
 str2sup
-QAlgebra.StringUtils.superscript_indexes
-QAlgebra.StringUtils.subscript_indexes
+QAlgebra.StringUtils.superscript_indices
+QAlgebra.StringUtils.subscript_indices
 QAlgebra.StringUtils.brace
 QAlgebra.StringUtils.braket
 ```

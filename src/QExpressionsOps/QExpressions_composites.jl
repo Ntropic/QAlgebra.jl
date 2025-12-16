@@ -62,7 +62,7 @@ struct IntegralAggregator <: AbstractQAggregator end
     AbstractQSum
 
 Concrete representation of a quantum sum-like aggregator. Each instance stores one
-`ConstrainedIndexBlock` per ensemble of the ambient `QSpace`, so all bound indexes
+`ConstrainedIndexBlock` per ensemble of the ambient `QSpace`, so all bound indices
 and their constraint matrices live inside `blocks`. The aggregator type parameter
 `A` decides how the object renders (e.g. sum vs integral) while keeping algebraic
 behaviour shared.
@@ -92,7 +92,7 @@ _QInt_(qspace::QSpace, expr::QExpr, blocks::Vector{ConstrainedIndexBlock}) = Abs
 @inline QSum_like(q::AbstractQSum{A}, expr::QExpr) where {A<:AbstractQAggregator} = QSum_like(q, expr, q.blocks)
 
 function _QSum(::Type{A}, qspace::QSpace, expr::QExpr, blocks::Vector{ConstrainedIndexBlock})::Vector{QComposite} where {A<:AbstractQAggregator}
-    if isempty(blocks) || all(isempty(block.indexes) for block in blocks)
+    if isempty(blocks) || all(isempty(block.indices) for block in blocks)
         return QComposite[expr]
     end
     qsum = AbstractQSum{A}(qspace, expr, blocks)
@@ -113,59 +113,59 @@ function multiply_coeff(q::AbstractQSum{A}, coeff::CFunction) where {A<:Abstract
 end
 get_coeff(q::AbstractQSum) = q.qspace.c_one
 
-all_indexes(q::AbstractQSum)::Vector{SubSpaceIndex} = _flatten_indexes(q.blocks)
-iter_all_indexes(q::AbstractQSum) = Base.Iterators.flatten((block.indexes for block in q.blocks))
+all_indices(q::AbstractQSum)::Vector{SubSpaceIndex} = _flatten_indices(q.blocks)
+iter_all_indices(q::AbstractQSum) = Base.Iterators.flatten((block.indices for block in q.blocks))
 
 _to_subspace_index(qspace::QSpace, idx::SubSpaceIndex) = idx
 _to_subspace_index(qspace::QSpace, idx::Union{Symbol,String}) = SubSpaceIndex(idx, qspace.subspace_info)
 
-indexes2subspaceindexes(qspace::QSpace, idx::SumIndexInput)::Vector{SubSpaceIndex} = SubSpaceIndex[_to_subspace_index(qspace, idx)]
-indexes2subspaceindexes(qspace::QSpace, idxs::AbstractVector{<:SumIndexInput})::Vector{SubSpaceIndex} = SubSpaceIndex[_to_subspace_index(qspace, idx) for idx in idxs]
+indices2subspaceindices(qspace::QSpace, idx::SumIndexInput)::Vector{SubSpaceIndex} = SubSpaceIndex[_to_subspace_index(qspace, idx)]
+indices2subspaceindices(qspace::QSpace, idxs::AbstractVector{<:SumIndexInput})::Vector{SubSpaceIndex} = SubSpaceIndex[_to_subspace_index(qspace, idx) for idx in idxs]
 
 # extens definition in ConstrainedIndexes.jl
 function are_all_neq(q::AbstractQSum{A}, where_acting_blocks::Vector{BitVector})::Bool where {A}
     return are_all_neq(q.blocks, where_acting_blocks, q.qspace.subspace_info )
 end
 
-function _make_qsum_expr(::Type{A}, qspace::QSpace, raw_indexes::Union{SumIndexInput, AbstractVector{<:SumIndexInput}}, expr::QExpr, constraints::Vararg{NeqConstraint}; neq::Bool=false) where {A<:AbstractQAggregator}
-    indexes = indexes2subspaceindexes(qspace, raw_indexes)
-    isempty(indexes) && return expr
+function _make_qsum_expr(::Type{A}, qspace::QSpace, raw_indices::Union{SumIndexInput, AbstractVector{<:SumIndexInput}}, expr::QExpr, constraints::Vararg{NeqConstraint}; neq::Bool=false) where {A<:AbstractQAggregator}
+    indices = indices2subspaceindices(qspace, raw_indices)
+    isempty(indices) && return expr
     normed_constraints::Vector{NeqConstraint{SubSpaceIndex}} = neqconstraint_of_SubSpaceIndex.(Ref(qspace), collect(constraints))
-    blocks = sort_indexes_and_constraints_into_ensemble_blocks(qspace, indexes, neq, normed_constraints)
+    blocks = sort_indices_and_constraints_into_ensemble_blocks(qspace, indices, neq, normed_constraints)
     comps = _QSum(A, qspace, expr, blocks)
     return QExpr(qspace, comps)
 end
 _make_qsum_expr(args...; kwargs...) = _make_qsum_expr(SumAggregator, args...; kwargs...)
 
 """
-    ∑(indexes, expr, constraints...; neq=false)
-    Base.sum(indexes, expr, constraints...; neq=false)
+    ∑(indices, expr, constraints...; neq=false)
+    Base.sum(indices, expr, constraints...; neq=false)
 
-Construct an `AbstractQSum` (with the standard summation aggregator) by binding indexes in `expr`. Indexes may be
+Construct an `AbstractQSum` (with the standard summation aggregator) by binding indices in `expr`. Indexes may be
 supplied as a single entry or vector, where each entry is a `String`, `Symbol`,
 or `SubSpaceIndex`. Additional `NeqConstraint`s restrict coinciding ensemble
-slots, while `neq=true` forces all tracked summation indexes within each
+slots, while `neq=true` forces all tracked summation indices within each
 ensemble to be distinct. Constraints are supplied positionally as extra
-arguments (e.g. `∑(:i, expr, neq(:i, :j))`). All provided summation indexes
+arguments (e.g. `∑(:i, expr, neq(:i, :j))`). All provided summation indices
 must be unique members of the given `qspace`.
 """
 ∑(index::SumIndexInput, expr::QExpr, constraints::NeqConstraint...; neq::Bool=false) = _make_qsum_expr(expr.qspace, index, expr, constraints...; neq=neq)
-∑(indexes::AbstractVector{<:SumIndexInput}, expr::QExpr, constraints::NeqConstraint...; neq::Bool=false) = _make_qsum_expr(expr.qspace, indexes, expr, constraints...; neq=neq)
+∑(indices::AbstractVector{<:SumIndexInput}, expr::QExpr, constraints::NeqConstraint...; neq::Bool=false) = _make_qsum_expr(expr.qspace, indices, expr, constraints...; neq=neq)
 
 """
-    ∫(indexes, expr, constraints...; neq=false)
+    ∫(indices, expr, constraints...; neq=false)
 
-Construct a `QIntegral` (`AbstractQSum` with an integral aggregator) by binding indexes in `expr`
+Construct a `QIntegral` (`AbstractQSum` with an integral aggregator) by binding indices in `expr`
 while printing with integral symbols. Behaviour mirrors `∑`, including constraint handling and decollision.
 """
 ∫(index::SumIndexInput, expr::QExpr, constraints::NeqConstraint...; neq::Bool=false) = _make_qsum_expr(IntegralAggregator, expr.qspace, index, expr, constraints...; neq=neq)
-∫(indexes::AbstractVector{<:SumIndexInput}, expr::QExpr, constraints::NeqConstraint...; neq::Bool=false) = _make_qsum_expr(IntegralAggregator, expr.qspace, indexes, expr, constraints...; neq=neq)
+∫(indices::AbstractVector{<:SumIndexInput}, expr::QExpr, constraints::NeqConstraint...; neq::Bool=false) = _make_qsum_expr(IntegralAggregator, expr.qspace, indices, expr, constraints...; neq=neq)
 
 integral(index::SumIndexInput, expr::QExpr, constraints::NeqConstraint...; neq::Bool=false) = ∫(index, expr, constraints...; neq=neq)
-integral(indexes::AbstractVector{<:SumIndexInput}, expr::QExpr, constraints::NeqConstraint...; neq::Bool=false) = ∫(indexes, expr, constraints...; neq=neq)
+integral(indices::AbstractVector{<:SumIndexInput}, expr::QExpr, constraints::NeqConstraint...; neq::Bool=false) = ∫(indices, expr, constraints...; neq=neq)
 
 Base.sum(index::SumIndexInput, expr::QExpr, constraints::NeqConstraint...; neq::Bool=false) = _make_qsum_expr(expr.qspace, index, expr, constraints...; neq=neq)
-Base.sum(indexes::AbstractVector{<:SumIndexInput}, expr::QExpr, constraints::NeqConstraint...; neq::Bool=false) = _make_qsum_expr(expr.qspace, indexes, expr, constraints...; neq=neq)
+Base.sum(indices::AbstractVector{<:SumIndexInput}, expr::QExpr, constraints::NeqConstraint...; neq::Bool=false) = _make_qsum_expr(expr.qspace, indices, expr, constraints...; neq=neq)
 
 
 

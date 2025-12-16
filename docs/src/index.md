@@ -34,14 +34,14 @@ var_def = ParameterDefinitions( "alpha",
                                 "beta(t)" => t->t^2, 
                                 "delta_i" => QUniform(0,1,10), 
                                 "gamma_{i,j}(t,delta_i,delta_j)" => (t,gi,gj)->t*(gi-gj)) 
-qspace = QSpace(subspace_def, op_def, var_def, max_t_ind=2)
+qspace = QSpace(subspace_def, op_def, var_def)
 ```
 
 ```@setup qalgebra
 alpha, beta, gamma, delta = base_operators(qspace, ["alpha", "beta", "gamma", "delta"], do_fun=true)
 t0, t1 = base_operators(qspace, :t)
 ph, mh, zh = base_operators(qspace, "h")
-sigma = base_operators(qspace, "i", by_ensemble=true, do_fun=true)  # general constructor for all ensemble indexes
+sigma = base_operators(qspace, "i", by_ensemble=true, do_fun=true)  # general constructor for all ensemble indices
 xi,yi,zi = base_operators(qspace, "i")
 xj, yj, zj = base_operators(qspace, "j")
 xk, yk, zk = base_operators(qspace, "k")
@@ -68,7 +68,7 @@ xi, yi, zi, ph, mh, zh
 ### Ensemble Configuration
 
 When defining ensemble subsystems use [`Ensemble`](@ref) to collect the relevant metadata. The positional
-arguments specify how many operator indexes and summation indexes are reserved alongside the `OperatorSet`.
+arguments specify how many operator indices and summation indices are reserved alongside the `OperatorSet`.
 Additional keyword arguments can be supplied, for instance to record the number of physically realised modes or to
 pre-register sample points that span the ensemble parameter space:
 
@@ -126,7 +126,7 @@ qs = ∑(:l, alpha * xl)
 diff_eq = d_dt(zi, alpha * qs + qs)
 diff_eq
 ```
-`d_dt` automatically normalises time indexes: if the equation only references a
+`d_dt` automatically normalises time indices: if the equation only references a
 single time slot `t_k`, it is internally substituted to `t_0` so subsequent
 manipulations operate on a canonical representation.
 

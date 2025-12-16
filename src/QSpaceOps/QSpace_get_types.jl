@@ -1,16 +1,19 @@
 
 export get_parameter_group, get_subspace, get_subspace_index, get_ensemble, get_operator_type
+using ..ParameterGroups: ParameterGroupLike
+using ..StringUtils: var_unsubstitution, symbol2formatted
 
 # ==================> HELPERS <==========================================
 @inline function _normalize_parameter_lookup(name::Union{Symbol,String})::Tuple{Symbol, String, String}
-    normalized = var_unsubstitution(name)
+    raw = String(name)
+    normalized = var_unsubstitution(raw)
     sym = isempty(normalized) ? Symbol(raw) : Symbol(normalized)
-    return sym, String(name), normalized
+    return sym, raw, normalized
 end
 
-@inline function _group_label(group::ParameterGroup{T}) where {T}
-    formatted, _ = symbol2formatted(String(group.name))
-    plain = String(group.name)
+@inline function _group_label(group::ParameterGroupLike)
+    formatted = group.param_str
+    plain = group.param_raw
     return "$(formatted) ($(plain))"
 end
 function _parameter_group_options(qspace::QSpace)
@@ -20,9 +23,10 @@ end
 function _match_parameter_group_strings(qspace::QSpace, raw::String, normalized::String)
     matches = Int[]
     for (idx, group) in enumerate(qspace.param_info.param_groups)
-        if raw == group.display_signature || raw == string(group.name)
+        signature_plain = default_group_signature(group, qspace.subspace_info)
+        if raw == signature_plain || raw == group.param_raw || raw == string(group.param_symbol)
             push!(matches, idx)
-        elseif !isempty(normalized) && normalized == var_unsubstitution(group.display_signature)
+        elseif !isempty(normalized) && normalized == var_unsubstitution(signature_plain)
             push!(matches, idx)
         end
     end

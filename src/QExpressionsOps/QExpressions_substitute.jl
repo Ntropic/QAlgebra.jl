@@ -109,7 +109,7 @@ function _parse_time_token(token::AbstractString)::Int
     return parse(Int, m.captures[1])
 end
 @inline function _parse_time_token(token::Int)::Int
-    token < 0 && error("Time indexes must be non-negative, got $token.")
+    token < 0 && error("Time indices must be non-negative, got $token.")
     return Int(token)
     return _ResolvedIndexSubstitution(from, to)
 end
@@ -142,7 +142,7 @@ end
 
 @inline function _reindex_coeff(coeff::CFunctions.CFunction, pairs::Vector{Tuple{Int,Int}})
     isempty(pairs) && return (false, coeff)
-    return CFunctions.term_equal_indexes(coeff, pairs)
+    return CFunctions.term_equal_indices(coeff, pairs)
 end
 
 @inline function _time_index_from_coeff(coeff::CFunctions.CFunction, ::QSpace)
@@ -217,7 +217,7 @@ function qAtom_index_flip(q::QAtom, index_map::Vector{Tuple{SubSpaceIndex,SubSpa
         new_qs::Vector{QAtom} = []    
         new_cs::Vector{ComplexRational} = []
         for (qi, ci) in zip(qs, cs)
-            _, new_terms, new_coeffs = term_equal_indexes( qi, index1.expanded, index2.expanded, qspace.subspaces[index1.inner])
+            _, new_terms, new_coeffs = term_equal_indices( qi, index1.expanded, index2.expanded, qspace.subspaces[index1.inner])
             append!(new_qs, new_terms)
             append!(new_cs, new_coeffs*ci)
         end
@@ -340,7 +340,7 @@ struct TimeSubContext <: AbstractSubContext
     coeff_pairs::Vector{Tuple{Int,Int}}
 end
 
-# Cache for one substitution over ensemble indexes, including expanded slots.
+# Cache for one substitution over ensemble indices, including expanded slots.
 struct IndexSubContext <: AbstractSubContext
     qspace::QSpace
     from::SubSpaceIndex
@@ -516,13 +516,13 @@ function _substitute(target::AbstractQSum, ctx::IndexSubContext)::AbstractQSum
     new_expr = _substitute(target.expr, ctx)
     qspace = target.qspace
     info = qspace.subspace_info
-    ensemble = info.ensemble_index_by_outer_index[ctx.from.outer]
+    ensemble = info.ensemble_index_by_subspace_index[ctx.from.outer]
     # ensemble != 0 || error("Index $(Index2String(ctx.from, info)) does not belong to an ensemble subspace.")
     target_block = target.blocks[ensemble]
-    positions = findall(idx -> idx.expanded == ctx.from_exp, target_block.indexes)
+    positions = findall(idx -> idx.expanded == ctx.from_exp, target_block.indices)
     isempty(positions) && return QSum_like(target, new_expr, target.blocks)
 
-    info.ensemble_index_by_outer_index[ctx.to.outer] == ensemble || error("Cannot substitute index $(Index2String(ctx.from, info)) with $(Index2String(ctx.to, info)): different ensemble blocks.")
+    info.ensemble_index_by_subspace_index[ctx.to.outer] == ensemble || error("Cannot substitute index $(Index2String(ctx.from, info)) with $(Index2String(ctx.to, info)): different ensemble blocks.")
 
     blocks = copy.(target.blocks)
     block = blocks[ensemble]
@@ -535,16 +535,16 @@ function _substitute(target::AbstractQSum, ctx::IndexSubContext)::AbstractQSum
     end
 
     for pos in positions
-        block.indexes[pos] = ctx.to
+        block.indices[pos] = ctx.to
         row = block.constraints[pos]
         row[new_inner] = true
     end
 
-    perm = sortperm(block.indexes; by=expanded)
+    perm = sortperm(block.indices; by=expanded)
     if !isempty(perm)
-        sorted_indexes = block.indexes[perm]
+        sorted_indices = block.indices[perm]
         sorted_constraints = block.constraints[perm]
-        block.indexes[:] = sorted_indexes
+        block.indices[:] = sorted_indices
         block.constraints[:] = sorted_constraints
     end
 

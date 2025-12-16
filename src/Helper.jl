@@ -12,27 +12,27 @@ end
 Base.copy(x::EnsembleIndex) = EnsembleIndex(x.outer, x.inner)
 
 """
-    ConcreteIndexes(expected_lengths, indexes)
+    ConcreteIndexes(expected_lengths, indices)
 
-Container that stores concrete ensemble indexes for ordered atoms.
+Container that stores concrete ensemble indices for ordered atoms.
 `expected_lengths` must match the number of tracked ensemble subspaces, and each
-entry in `indexes` must have the corresponding length.
+entry in `indices` must have the corresponding length.
 """
 struct ConcreteIndexes
     expected_lengths::Vector{Int}
-    indexes::Vector{Vector{Int}}
-    function ConcreteIndexes(expected_lengths::Vector{Int}, indexes::Vector{Vector{Int}})
-        length(expected_lengths) == length(indexes) ||
-            error("ConcreteIndexes: expected $(length(expected_lengths)) ensemble entries, got $(length(indexes)).")
+    indices::Vector{Vector{Int}}
+    function ConcreteIndexes(expected_lengths::Vector{Int}, indices::Vector{Vector{Int}})
+        length(expected_lengths) == length(indices) ||
+            error("ConcreteIndexes: expected $(length(expected_lengths)) ensemble entries, got $(length(indices)).")
         copied_expected = copy(expected_lengths)
-        copied_indexes = Vector{Vector{Int}}(undef, length(indexes))
-        @inbounds for i in eachindex(indexes)
-            curr = copy(indexes[i])
+        copied_indices = Vector{Vector{Int}}(undef, length(indices))
+        @inbounds for i in eachindex(indices)
+            curr = copy(indices[i])
             length(curr) == copied_expected[i] ||
                 error("ConcreteIndexes: ensemble $(i) expects $(copied_expected[i]) entries, got $(length(curr)).")
-            copied_indexes[i] = curr
+            copied_indices[i] = curr
         end
-        return new(copied_expected, copied_indexes)
+        return new(copied_expected, copied_indices)
     end
 end
 ConcreteIndexes(expected_lengths::AbstractVector{<:Integer}) = begin
@@ -51,8 +51,8 @@ allow applying multiple updates either via tuples/pairs or any iterable of such
 pairs. Each update overwrites the targeted `(outer, inner)` entry.
 """
 function pushindex!(ci::ConcreteIndexes, idx::EnsembleIndex, value::Integer)
-    1 ≤ idx.outer ≤ length(ci.indexes) || throw(ArgumentError("Ensemble index $(idx.outer) out of bounds (expected 1:$(length(ci.indexes)))."))
-    entries = ci.indexes[idx.outer]
+    1 ≤ idx.outer ≤ length(ci.indices) || throw(ArgumentError("Ensemble index $(idx.outer) out of bounds (expected 1:$(length(ci.indices)))."))
+    entries = ci.indices[idx.outer]
     1 ≤ idx.inner ≤ length(entries) || throw(ArgumentError("Inner index $(idx.inner) out of bounds for ensemble $(idx.outer) (expected 1:$(length(entries)))."))
     entries[idx.inner] = Int(value)
     return ci
@@ -72,10 +72,10 @@ function pushindex!(ci::ConcreteIndexes, items::Vararg{Union{Tuple{EnsembleIndex
     return ci
 end
 
-Base.getindex(ci::ConcreteIndexes, i::Int) = ci.indexes[i]
-Base.length(ci::ConcreteIndexes) = length(ci.indexes)
-Base.iterate(ci::ConcreteIndexes) = iterate(ci.indexes)
-Base.iterate(ci::ConcreteIndexes, state) = iterate(ci.indexes, state)
+Base.getindex(ci::ConcreteIndexes, i::Int) = ci.indices[i]
+Base.length(ci::ConcreteIndexes) = length(ci.indices)
+Base.iterate(ci::ConcreteIndexes) = iterate(ci.indices)
+Base.iterate(ci::ConcreteIndexes, state) = iterate(ci.indices, state)
 
 
 function vecvec_or(A::AbstractVector{<:AbstractVector{Bool}}, B::AbstractVector{<:AbstractVector{Bool}})
@@ -154,29 +154,6 @@ function findfirstfreeafterbefore(x::BitVector, start_index::Int)::Union{Int, No
     end
     return nothing
 end
-
-function sorted_unique_push!(arr::Vector{T}, x::T) where T
-    # Find insertion index with binary search
-    i = searchsortedfirst(arr, x)
-    # Only insert if element is not already there
-    if i > length(arr) || arr[i] != x
-        insert!(arr, i, x)
-    end
-    return arr
-end
-
-function bubble_insert_unique!(arr::Vector{T}, value::T) where T
-    insert_at = 1
-    while insert_at <= length(arr) && arr[insert_at] < value
-        insert_at += 1
-    end
-    if insert_at <= length(arr) && arr[insert_at] == value
-        return arr
-    end
-    insert!(arr, insert_at, value)
-    return arr
-end
-
 
 module SparsePermutationTools
 using SparseArrays

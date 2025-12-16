@@ -67,7 +67,7 @@ function simplify_CPower(param_info::ParameterInfo, coeff::ComplexRational, x::C
         if _isint(q)
             n = Int(q)
             new_coeff = coeff * (x.coeff^n)
-            return CAtomIndexed(x.param_info, new_coeff, x.var_exponents .* n, x.indexes)
+            return CAtomIndexed(x.param_info, new_coeff, x.var_exponents .* n, x.indices)
         else
             return CPower(param_info, coeff, x, q, Val(:nosimp))
         end

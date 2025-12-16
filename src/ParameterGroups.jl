@@ -3,7 +3,7 @@ module ParameterGroups
 export ParameterGroupKind, ParameterGroup, ParameterGroupLike, ParameterGroupScalar, ParameterGroupTimeScalar, ParameterGroupTimeFunction,
        ParameterGroupDistribution, ParameterGroupEnsembleFunction, ParameterGroupEnsembleTimeFunction,
        ParameterGroupStorageUnion, parameter_group_input_type, parameter_group_storage_type, parameter_group_storage_target_type, parameter_group_value_type, parameter_group_kind_name, 
-       WhereWhichParamGroup, AbstractEnsemble
+       WhereWhichParamGroup, AbstractEnsemble, AbstractSubSpaceInfo
 
 using ..Sampler: QDistribution, QEnsembleFunction
 
@@ -74,6 +74,7 @@ const PARAMETER_GROUP_KIND_NAMES = (
 
 abstract type AbstractSubSpace end
 abstract type AbstractEnsemble end
+abstract type AbstractSubSpaceInfo end
 
 const ParameterGroupStorageUnion = Union{PARAMETER_GROUP_PAYLOAD_TYPES...}
 
@@ -96,65 +97,61 @@ updated after `QSpace` construction via `resolve_param!`.  The type parameter
 scalar groups or `Union{Nothing,QEnsembleFunction}` for ensemble functions),
 allowing the compiler to reason precisely about group contents.
 
-Fields capture the group's declarative signature (`name`, `indexes`,
+Fields capture the group's declarative signature (`name`, `indices`,
 `function_args`), dependency tracking (`dependency_names`/`dependency_indices`),
-ensemble affiliation (`ensemble_outer_indices`, `ensemble_presence`), the list
-of concrete parameters created for the group (`parameter_indices`), and derived
-shape information (`time_count`, `index_sizes`).
+ensemble affiliation (`ensemble_indices`), and derived shape information
+(`index_sizes`).
 """
 mutable struct ParameterGroup{T}
-    name::Symbol
-    display_signature::String
+    param_symbol::Symbol
+    param_raw::String
+    param_str::String
+    param_latex::String
     kind::ParameterGroupKind
     of_t::Bool
-    indexes::Vector{String}
+    indices::Vector{String}
     function_args::Vector{String}
     dependency_names::Vector{String}
     dependency_indices::Vector{Int}
-    ensemble_outer_indices::Vector{Int}   # the group indices of the ensembles it belongs to 
-    index_outer_subspaces::Vector{Int}
-    ensemble_presence::BitVector
-    parameter_indices::Vector{Int}
-    ensemble_subspaces::Vector{AbstractSubSpace}
-    time_count::Int
+    ensemble_indices::Vector{Int}
+    unique_ensemble_indices::Vector{Int}
+    subspace_indices::Vector{Int}
     index_sizes::Vector{Int}
     sample_sizes::Vector{Int}
     is_time_group::Bool
     payload::T
-    function ParameterGroup(name::Symbol,
-                            display_signature::String,
+    function ParameterGroup(param_symbol::Symbol,
+                            param_raw::String,
+                            param_str::String,
+                            param_latex::String,
                             kind::ParameterGroupKind,
                             of_t::Bool,
-                            indexes::Vector{String},
+                            indices::Vector{String},
                             function_args::Vector{String},
                             dependency_names::Vector{String},
                             dependency_indices::Vector{Int},
-                            ensemble_outer_indices::Vector{Int},
-                            index_outer_subspaces::Vector{Int},
-                            ensemble_presence::BitVector,
-                            parameter_indices::Vector{Int},
-                            ensemble_subspaces::Vector{AbstractSubSpace},
-                            time_count::Int,
+                            ensemble_indices::Vector{Int},
+                            unique_ensemble_indices::Vector{Int},
+                            subspace_indices::Vector{Int},
                             index_sizes::Vector{Int},
                             sample_sizes::Vector{Int},
                             is_time_group::Bool,
                             payload)
         storage_type = parameter_group_storage_type(kind)
         payload isa storage_type || throw(ArgumentError("Payload for $(kind) must be of type $(storage_type), got $(typeof(payload))."))
-        return new{storage_type}(name,
-                                 display_signature,
+        return new{storage_type}(param_symbol,
+                                 param_raw,
+                                 param_str,
+                                 param_latex,
                                  kind,
                                  of_t,
-                                 indexes,
+                                 indices,
                                  function_args,
                                  dependency_names,
                                  dependency_indices,
-                                 ensemble_outer_indices,
-                                 index_outer_subspaces,
-                                 ensemble_presence,
-                                 parameter_indices,
-                                 ensemble_subspaces,
-                                 time_count,
+                                 ensemble_indices,
+                                 unique_ensemble_indices,
+                                 subspace_indices,
                                  index_sizes,
                                  sample_sizes,
                                  is_time_group,
@@ -162,7 +159,8 @@ mutable struct ParameterGroup{T}
     end
 end
 
-const ParameterGroupLike = ParameterGroup{T} where {T <: ParameterGroupStorageUnion}
+const _PARAMETER_GROUP_TYPES = ntuple(i -> ParameterGroup{PARAMETER_GROUP_PAYLOAD_TYPES[i]}, length(PARAMETER_GROUP_PAYLOAD_TYPES))
+const ParameterGroupLike = Union{_PARAMETER_GROUP_TYPES...}
 
 struct WhereWhichParamGroup
     scalar_groups::Vector{Int}
@@ -173,7 +171,7 @@ struct WhereWhichParamGroup
     first_qensemble_group::Int
 end
 
-function WhereWhichParamGroup(groups::AbstractVector{ParameterGroupLike})
+function WhereWhichParamGroup(groups::Vector{ParameterGroupLike})
     scalar_groups = Int[]
     time_function_groups = Int[]
     distribution_groups = Int[]

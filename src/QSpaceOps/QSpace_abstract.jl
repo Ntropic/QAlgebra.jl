@@ -11,8 +11,7 @@ struct OperatorType
     hermitian::Bool 
     unitary::Bool 
     of_time::Bool
-    acting_ss::BitVector   # formerly acting_ss
-    expanded_ss_acting::BitVector # indices of non-trivial components in the op_indices picture for bath subsystems
+    acting_ss::BitVector   
 end
 
 struct OperatorDefinitions
@@ -131,20 +130,12 @@ function SingleOpDefinition2OperatorType(op_str::String, operator_index::Int, co
     acting_ss::BitVector = [negation for _ in subspace_definitions.subspaces]
 
     for (i, key_symbol) in enumerate(key_symbols)  
-        if key_symbol in reduced_conditions_sym 
+        if key_symbol in reduced_conditions_sym
             acting_ss[i] = !acting_ss[i]
         end
     end
-    expanded_ss_acting::BitVector = fill(false, length(subspace_definitions.I_op))
-    for (s_bool, subspace) in zip(acting_ss, subspace_definitions.subspaces)
-        if s_bool == true
-            for ind in subspace.ss_inner_ind
-                expanded_ss_acting[ind] = true
-            end
-        end
-    end
     union!(subspace_definitions.used_symbols, [op_sym])
-    return OperatorType(op_str, op_sym, operator_index, hermitian, unitary, of_time, acting_ss, expanded_ss_acting)
+    return OperatorType(op_str, op_sym, operator_index, hermitian, unitary, of_time, acting_ss)
 end
 
 function operator_type2string(p::OperatorType, time_index::Int=0)
@@ -196,7 +187,7 @@ function accepts_n_args(f, n::Int)
     return hasmethod(f, sig)
 end
 
-# Generates function that takes Operator indexes and returns commutations
+# Generates function that takes Operator indices and returns commutations
 function gen_commutes_function(optypes::Vector{OperatorType}, fun::Union{Function, Nothing} = nothing, check_n::Int=1)::Tuple{Matrix{Bool}, Function}
     commutation_matrix = operatortypes2commutator_matrix(optypes) # if sth commutes for commutation matrix it must also commute for fun
     # but if sth doesn't commute in commutation matrix it might still commute for fun!
@@ -237,7 +228,7 @@ function gen_commutes_function(optypes::Vector{OperatorType}, fun::Union{Functio
                         if !fun(i, sub_i, j, sub_j) # must output bool
                             op_A_str = operator_type2string(optypes[i])
                             op_B_str = operator_type2string(optypes[j])  
-                            error("For [$op_A_str, $op_B_str] the provided commutation function (fun) must return true for arguments ($i, sub index 1, $j, sub index 2) with arbitrary sub indexes, because the operators are acting on non overlapping subspaces! Returned false for sub indexes ($sub_i, $sub_j). ")
+                            error("For [$op_A_str, $op_B_str] the provided commutation function (fun) must return true for arguments ($i, sub index 1, $j, sub index 2) with arbitrary sub indices, because the operators are acting on non overlapping subspaces! Returned false for sub indices ($sub_i, $sub_j). ")
                         end
                     end
                 end

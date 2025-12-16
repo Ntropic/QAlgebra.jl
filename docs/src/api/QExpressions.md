@@ -58,7 +58,7 @@ QExpr
 diffQEq
 ```
 
-Construction normalises time indexes automatically: equations carrying a single
+Construction normalises time indices automatically: equations carrying a single
 explicit index `t_k` are rewritten to `t_0`, ensuring downstream substitutions
 and reorderings operate on a consistent baseline.
 
@@ -107,7 +107,7 @@ is_local
 contains_time
 contains_non_simple
 contains_non_simple_QObj
-contains_which_t_indexes
+contains_which_t_indices
 ```
 
 ### Aggregators and Advanced Utilities
@@ -133,7 +133,7 @@ The following scripts perform basic checks on the quantum expressions
 ```@docs
 contains_abstract
 which_ensemble_acting
-are_indexes_defined
+are_indices_defined
 ```
 
 ##  Printing and Output Formatting

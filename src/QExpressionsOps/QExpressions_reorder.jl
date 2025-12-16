@@ -6,7 +6,7 @@ export reorder, reorder_full, reorder_time
 """
     reorder(obj::QObj; kwargs...) -> QObj
 
-Reorder subsystem indexes of `obj` into a canonical layout. Concrete methods
+Reorder subsystem indices of `obj` into a canonical layout. Concrete methods
 dispatch on the expression type and optional modes.
 """
 function reorder end
@@ -14,7 +14,7 @@ function reorder end
 """
     reorder_full(eq::diffQEq) -> diffQEq
 
-Legacy variant that also permutes summation indexes outside their ensemble
+Legacy variant that also permutes summation indices outside their ensemble
 blocks. Only defined for differential equations.
 """
 function reorder_full end
@@ -22,7 +22,7 @@ function reorder_full end
 """
     reorder_time(obj::QObj) -> QObj
 
-Pack time indexes so that active slots start at `t₀`, mirroring coefficient
+Pack time indices so that active slots start at `t₀`, mirroring coefficient
 remapping performed by substitutions.
 """
 function reorder_time end
@@ -43,7 +43,7 @@ struct ReorderOrders
     full::IndexOrder
 end
 
-@inline function _ensemble_outer_indices(param_info::ParameterInfo)::Vector{Int}
+@inline function _ensemble_indices(param_info::ParameterInfo)::Vector{Int}
     outers = Int[]
     for (outer_idx, mat) in enumerate(param_info.subspace_index_maps)
         size(mat, 1) == 0 && continue
@@ -106,11 +106,11 @@ function where_defined_to_index_order_full(qspace::QSpace, where_defined::Vector
     op_inds = collect(1:n_ops)
     var_inds = collect(1:n_vars)
 
-    ensemble_indexes = subspace_info.ensemble_indexes
+    ensemble_indices = subspace_info.ensemble_indices
     where_ensembles = subspace_info.where_ensembles
     w_orders = Vector{Vector{Int}}(undef, length(where_defined))
 
-    for (idx, (outer, w, c)) in enumerate(zip(where_ensembles, where_defined, ensemble_indexes))
+    for (idx, (outer, w, c)) in enumerate(zip(where_ensembles, where_defined, ensemble_indices))
         w_order = sortperm(w, rev=true)
         w_orders[idx] = w_order
         op_inds[c] = op_inds[c][w_order]
@@ -136,13 +136,13 @@ function where_defined_to_index_order(qspace::QSpace, where_defined::Vector{BitV
     op_inds = collect(1:n_ops)
     var_inds = collect(1:n_vars)
 
-    ensemble_indexes = subspace_info.ensemble_indexes
+    ensemble_indices = subspace_info.ensemble_indices
     where_ensembles = subspace_info.where_ensembles
     non_sum_counts = subspace_info.how_many_non_sum_by_ensemble
     sum_counts = subspace_info.how_many_sum_by_ensemble
     w_orders = Vector{Vector{Int}}(undef, length(where_defined))
 
-    for (ensemble_idx, (outer, w, c)) in enumerate(zip(where_ensembles, where_defined, ensemble_indexes))
+    for (ensemble_idx, (outer, w, c)) in enumerate(zip(where_ensembles, where_defined, ensemble_indices))
         non_count = non_sum_counts[ensemble_idx]
         sum_count = sum_counts[ensemble_idx]
         total = non_count + sum_count
@@ -251,11 +251,11 @@ function reorder(q::AbstractQSum, mode::Val{M}, where_defined::Vector{BitVector}
     end
 
     new_where_defined = copy.(where_defined)
-    for index in iter_all_indexes(q)
+    for index in iter_all_indices(q)
         ensemble = Index2Ensemble(index, info)
         if new_where_defined[ensemble][index.inner]
             index_str = Index2String(index, info)
-            error("Summation index $index_str already defined, cannot sum over defined indexes!")
+            error("Summation index $index_str already defined, cannot sum over defined indices!")
         end
         new_where_defined[ensemble][index.inner] = true
     end
@@ -265,20 +265,20 @@ function reorder(q::AbstractQSum, mode::Val{M}, where_defined::Vector{BitVector}
 
     inner = reorder(q.expr, mode, new_where_defined, new_orders; add_at_sum=true)
 
-    new_indexes = SubSpaceIndex[]
+    new_indices = SubSpaceIndex[]
     new_constraints = BitVector[]
     for (ensemble_idx, block) in enumerate(q.blocks)
         perm = new_order.w_orders[ensemble_idx]
-        for (i, index) in enumerate(block.indexes)
+        for (i, index) in enumerate(block.indices)
             remapped = remap_subspace_index(index, info, new_order)
-            push!(new_indexes, remapped)
+            push!(new_indices, remapped)
             row = block.constraints[i]
             @assert length(row) == length(perm) "Constraint row length mismatch during AbstractQSum reordering."
             push!(new_constraints, BitVector(row[perm]))
         end
     end
 
-    blocks = _build_blocks(q.qspace, new_indexes, new_constraints)
+    blocks = _build_blocks(q.qspace, new_indices, new_constraints)
     return only(_QSum(aggregator_type(q), q.qspace, inner, blocks))
 end
 
@@ -304,8 +304,8 @@ end
 
 """
     reorder(eq::QObj) -> QObj
-Reorder the ensemble indexes of `eq` so that already-defined (non-summation) indexes
-stay on the left and remaining summation indexes are packed next to them. 
+Reorder the ensemble indices of `eq` so that already-defined (non-summation) indices
+stay on the left and remaining summation indices are packed next to them. 
 """
 function reorder(q::diffQEq)::diffQEq
     return reorder(q, Val(:base))
@@ -321,7 +321,7 @@ end
 """
     reorder_full(eq::diffQEq) -> diffQEq
 
-Apply the legacy full reordering, which also shifts summation indexes out of
+Apply the legacy full reordering, which also shifts summation indices out of
 their dedicated block. This mirrors the original behaviour of `repartition` and
 is only exposed for differential equations.
 """
@@ -404,12 +404,12 @@ end
 """
     reorder_time(expr::QExpr) -> QExpr
 
-Reorder the time indexes in `expr` so that used indexes are packed starting at 0,
+Reorder the time indices in `expr` so that used indices are packed starting at 0,
 mirroring the coefficient remapping performed by time substitutions.
 """
 function reorder_time(q::QExpr)::QExpr
     qspace = q.qspace
-    time_priority = Int.(contains_which_t_indexes(q))
+    time_priority = Int.(contains_which_t_indices(q))
     ctx = _build_time_context(qspace, time_priority)
     ctx === nothing && return q
     return _reorder_time(q, ctx)
@@ -418,14 +418,14 @@ end
 """
     reorder_time(eq::diffQEq) -> diffQEq
 
-Reorder the time indexes in a differential equation, prioritising indexes already
-present on the left-hand side before packing remaining indexes on the right-hand side.
+Reorder the time indices in a differential equation, prioritising indices already
+present on the left-hand side before packing remaining indices on the right-hand side.
 The structure of the equation is preserved.
 """
 function reorder_time(q::diffQEq)::diffQEq
     qspace = q.qspace
-    lhs_usage = contains_which_t_indexes(q.left_hand_side)
-    rhs_usage = contains_which_t_indexes(q.expr)
+    lhs_usage = contains_which_t_indices(q.left_hand_side)
+    rhs_usage = contains_which_t_indices(q.expr)
     time_priority = Vector{Int}(undef, length(lhs_usage)) # elements on both sides are prioritized
     @inbounds for i in eachindex(lhs_usage)
         lhs_val = lhs_usage[i] ? 2 : 0

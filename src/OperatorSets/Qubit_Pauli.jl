@@ -37,7 +37,7 @@ function QubitPauli(symbol::String="")::OperatorSet
         return [(ComplexRational(1,0,1), op)]
     end
     function pauli2str(inds::Vector{Int}, sym::String=""; formatted::Bool=true)::String
-        # create underscored string representation of sym using subscript_indexes
+        # create underscored string representation of sym using subscript_indices
         ind = inds[1]
         if do_symbol
             if formatted
@@ -54,7 +54,7 @@ function QubitPauli(symbol::String="")::OperatorSet
         end
     end
     function pauli2latex(inds::Vector{Int}, sym::String)::String
-        # create underscored string representation of sym using subscript_indexes
+        # create underscored string representation of sym using subscript_indices
         ind = inds[1]
         curr_str::String = raw""
         if do_symbol

@@ -17,13 +17,13 @@ end
     error("No aggregator symbol defined for " * string(nameof(A)))
 end
 
-@inline aggregator_symbol(term::AbstractQSum, indexes::Vector{SubSpaceIndex}; do_latex::Bool=false) =
-    aggregator_symbol(aggregator_type(term), length(indexes); do_latex=do_latex)
+@inline aggregator_symbol(term::AbstractQSum, indices::Vector{SubSpaceIndex}; do_latex::Bool=false) =
+    aggregator_symbol(aggregator_type(term), length(indices); do_latex=do_latex)
 
-function _sum_index_subscript(term::AbstractQSum, indexes::Vector{SubSpaceIndex}, info::SubSpaceInfo; do_latex::Bool=false)
-    base = aggregator_symbol(term, indexes; do_latex=do_latex)
-    isempty(indexes) && return base
-    labels = Index2String.(indexes, Ref(info))
+function _sum_index_subscript(term::AbstractQSum, indices::Vector{SubSpaceIndex}, info::SubSpaceInfo; do_latex::Bool=false)
+    base = aggregator_symbol(term, indices; do_latex=do_latex)
+    isempty(indices) && return base
+    labels = Index2String.(indices, Ref(info))
     is_integral = aggregator_type(term) === IntegralAggregator
     if do_latex
         body = join(labels, ",")
@@ -46,11 +46,11 @@ function _sum_index_subscript(term::AbstractQSum, indexes::Vector{SubSpaceIndex}
     end
 end
 
-function _integral_measure(term::AbstractQSum, indexes::Vector{SubSpaceIndex}, info::SubSpaceInfo; do_latex::Bool=false)
+function _integral_measure(term::AbstractQSum, indices::Vector{SubSpaceIndex}, info::SubSpaceInfo; do_latex::Bool=false)
     aggregator_type(term) === IntegralAggregator || return ""
-    isempty(indexes) && return ""
+    isempty(indices) && return ""
     pieces = String[]
-    for idx in indexes
+    for idx in indices
         label = Index2String(idx, info)
         if do_latex
             push!(pieces, raw"\,\mathrm{d}" * label)
@@ -82,9 +82,9 @@ end
 
 function sum_symbol_str(term::AbstractQSum, where_acting::Vector{BitVector}; do_latex::Bool=false)
     subspace_info = term.qspace.subspace_info
-    indexes = all_indexes(term)
-    base = _sum_index_subscript(term, indexes, subspace_info; do_latex=do_latex)
-    eq_counter, neq_constraints = eq_counter_and_neq_indexes(term.blocks, where_acting, subspace_info) 
+    indices = all_indices(term)
+    base = _sum_index_subscript(term, indices, subspace_info; do_latex=do_latex)
+    eq_counter, neq_constraints = eq_counter_and_neq_indices(term.blocks, where_acting, subspace_info) 
     sup = ""
     # three cases eq_counter == 0 => all neq 
     if length(neq_constraints) == 0  # all eq 
@@ -97,5 +97,5 @@ function sum_symbol_str(term::AbstractQSum, where_acting::Vector{BitVector}; do_
         neq_condition_strs = _format_neq_condition.(neq_constraints, Ref(subspace_info), do_latex=do_latex)
         sup = _format_superscript(join(neq_condition_strs, ","), do_latex=do_latex)
     end
-    return base * sup, _integral_measure(term, indexes, subspace_info; do_latex=do_latex)
+    return base * sup, _integral_measure(term, indices, subspace_info; do_latex=do_latex)
 end

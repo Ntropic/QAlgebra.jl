@@ -29,7 +29,7 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
 
     function _group_acts_on_subspace(qspace::QSpace, group_idx::Int, outer_idx::Int)
         info = qspace.param_info
-        ensemble_idx = info.subspace_info.ensemble_index_by_outer_index[outer_idx]
+        ensemble_idx = info.subspace_info.ensemble_index_by_subspace_index[outer_idx]
         ensemble_idx == 0 && return false
         for param in info.params
             param.group_index == group_idx || continue
@@ -51,7 +51,7 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
         @test ensemble_cfg.qspace_ref !== nothing
         @test ensemble_cfg.qspace_ref.value === qspace
 
-        param_syms = qspace.param_info.outer_labels_symbols
+        param_syms = qspace.param_info.params_symbols
         alpha_idx = findfirst(==(Symbol("alpha")), param_syms)
         beta_idx = findfirst(==(Symbol("beta")), param_syms)
         gamma_idx = findfirst(==(Symbol("gamma")), param_syms)
@@ -109,7 +109,7 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
         @test qspace.param_info.param_groups[gamma_idx::Int].payload === gamma_dist2
         @test qspace.ensembles[1].sampler !== nothing
         resolve_param!(qspace, :alpha, 3.5)
-        alpha_group_idx = findfirst(==(Symbol("alpha")), info.outer_labels_symbols)::Int
+        alpha_group_idx = findfirst(==(Symbol("alpha")), info.params_symbols)::Int
         @test value(qspace.sample_index_param_values, alpha_group_idx, -1, Int[]) ≈ 3.5
     end
 
@@ -124,15 +124,15 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
                                          "eta_i" => QNormal(0.0, 1.0, 2.0, 8),
                                          "gamma_{i,j}(t, delta_i, delta_j)" => ((t, di, dj) -> t * di + dj),
                                          "t" => 1.0)
-        q_tmp = QSpace(subspace_def, op_def, param_def; max_t_ind=2)
+        q_tmp = QSpace(subspace_def, op_def, param_def)
         info = q_tmp.param_info
         pv = q_tmp.sample_index_param_values
-        idx_alpha = findfirst(==(Symbol("alpha")), info.outer_labels_symbols)::Int
-        idx_beta = findfirst(==(Symbol("beta")), info.outer_labels_symbols)::Int
-        idx_delta = findfirst(==(Symbol("delta")), info.outer_labels_symbols)::Int
-        idx_eta = findfirst(==(Symbol("eta")), info.outer_labels_symbols)::Int
-        idx_gamma = findfirst(==(Symbol("gamma")), info.outer_labels_symbols)::Int
-        idx_t = findfirst(==(Symbol("t")), info.outer_labels_symbols)::Int
+        idx_alpha = findfirst(==(Symbol("alpha")), info.params_symbols)::Int
+        idx_beta = findfirst(==(Symbol("beta")), info.params_symbols)::Int
+        idx_delta = findfirst(==(Symbol("delta")), info.params_symbols)::Int
+        idx_eta = findfirst(==(Symbol("eta")), info.params_symbols)::Int
+        idx_gamma = findfirst(==(Symbol("gamma")), info.params_symbols)::Int
+        idx_t = findfirst(==(Symbol("t")), info.params_symbols)::Int
 
         @test pv.group_definition_initialized[idx_delta] == false
         @test pv.group_initialized[idx_alpha] == true
@@ -216,7 +216,7 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
         @test ordered_atom.qspace === qspace
         @test ordered_atom.coeff_fun == xi_prod.coeff_fun
         @test ordered_atom.op_indices == blocks
-        @test ordered_atom.ensemble_indexes == ensemble_positions
+        @test ordered_atom.ensemble_indices == ensemble_positions
 
         expr = QExpr(qspace, QComposite[xi_prod], Val(:nosimp))
         reordered = reorder(expr)
@@ -228,7 +228,7 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
         concrete = ConcreteIndexes(param_info)
         for (ensemble_idx, len) in enumerate(lengths)
             for inner in 1:len
-                concrete.indexes[ensemble_idx][inner] = inner
+                concrete.indices[ensemble_idx][inner] = inner
             end
         end
 
@@ -239,7 +239,7 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
         @test !isempty(tuples)
         @test all(t -> 1 ≤ t[1] ≤ length(lengths), tuples)
         for (ensemble, inner) in tuples
-            @test concrete.indexes[ensemble][inner] == inner
+            @test concrete.indices[ensemble][inner] == inner
         end
 
         exponents = zeros(Int, param_info.dims)
@@ -247,7 +247,7 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
         coeff_atom = CAtom(param_info, exponents)
         indexed_atom = Indexed(coeff_atom, concrete)
         @test indexed_atom isa CAtomIndexed
-        @test indexed_atom.indexes.indexes == concrete.indexes
+        @test indexed_atom.indices.indices == concrete.indices
 
         base_atoms = base_operators(qspace, "i", by_ensemble=false)
         xi_prod = base_atoms[1].terms[1]
@@ -257,8 +257,8 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
         ordered = QAtomOrdered(qspace, xi_prod.coeff_fun, blocks, ensemble_positions, xi_term.time_index)
         indexed_qatom = QAtomIndexed(ordered, concrete)
         @test indexed_qatom isa QAtomIndexed
-        @test indexed_qatom.concrete_indexes.indexes == concrete.indexes
-        @test indexed_qatom.ensemble_indexes == ordered.ensemble_indexes
+        @test indexed_qatom.concrete_indices.indices == concrete.indices
+        @test indexed_qatom.ensemble_indices == ordered.ensemble_indices
 
         @test_throws ErrorException ConcreteIndexes(param_info, [[1]])
     end
@@ -288,9 +288,9 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
 
         qsum = sum_direct.terms[1]
         block = qsum.blocks[1]
-        @test length(block.indexes) == 2
-        lhs_inner = block.indexes[1].inner
-        rhs_inner = block.indexes[2].inner
+        @test length(block.indices) == 2
+        lhs_inner = block.indices[1].inner
+        rhs_inner = block.indices[2].inner
         @test block.constraints[1][lhs_inner]
         @test block.constraints[2][rhs_inner]
         @test !block.constraints[1][rhs_inner]
@@ -336,7 +336,7 @@ using QAlgebra: ParameterGroupEnsembleFunction, ParameterGroupTimeFunction
             "gamma_{i,j}(t, alpha_i, beta_j)" => gamma_fun,
         )
         q_fun = QSpace(sub_def, op_def, param_def)
-        param_syms_fun = q_fun.param_info.outer_labels_symbols
+        param_syms_fun = q_fun.param_info.params_symbols
         gamma_idx_fun = findfirst(==(Symbol("gamma")), param_syms_fun)::Int
         alpha_idx_fun = findfirst(==(Symbol("alpha")), param_syms_fun)::Int
         beta_idx_fun = findfirst(==(Symbol("beta")), param_syms_fun)::Int

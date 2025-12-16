@@ -21,8 +21,8 @@ function same_term_type(t1::QAtomProduct, t2::QAtomProduct)::Bool  # different c
 end
 
 @inline function _same_block(a::ConstrainedIndexBlock, b::ConstrainedIndexBlock)::Bool
-    length(a.indexes) == length(b.indexes) || return false
-    @inbounds for (idx_a, idx_b) in zip(a.indexes, b.indexes)
+    length(a.indices) == length(b.indices) || return false
+    @inbounds for (idx_a, idx_b) in zip(a.indices, b.indices)
         idx_a.expanded == idx_b.expanded || return false
     end
     length(a.constraints) == length(b.constraints) || return false

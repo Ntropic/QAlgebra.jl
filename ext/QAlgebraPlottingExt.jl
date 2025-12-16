@@ -41,7 +41,7 @@ end
 
 @inline function _latex_label(qspace::QSpace, sym::Symbol)
     group_idx = get_parameter_group(qspace, sym)
-    label = qspace.param_info.outer_labels_latex[group_idx]
+    label = qspace.param_info.params_latex[group_idx]
     return LaTeXString(label)
 end
 

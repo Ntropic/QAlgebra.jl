@@ -138,13 +138,13 @@ end
 
 function QComposite2string(q::QAtomIndexed, where_acting::Vector{BitVector}; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)
     coeff_sign, coeff_str = to_stringer(q.coeff_fun; braced=true, do_frac=do_frac, has_op=true, do_latex=do_latex)
-    full_indices = recompose_op_indices(q.op_indices, q.ensemble_indexes, q.qspace)
+    full_indices = recompose_op_indices(q.op_indices, q.ensemble_indices, q.qspace)
     term = QTerm(full_indices, q.time_index)
     operator_str = qAtom2string(term, q.qspace; do_latex=do_latex)
 
-    flat_indexes = [string(idx) for ensemble in q.concrete_indexes.indexes for idx in ensemble]
-    if !isempty(flat_indexes)
-        operator_str *= indexes2str(flat_indexes; do_latex=do_latex)
+    flat_indices = [string(idx) for ensemble in q.concrete_indices.indices for idx in ensemble]
+    if !isempty(flat_indices)
+        operator_str *= indices2str(flat_indices; do_latex=do_latex)
     end
 
     connector = do_latex ? raw" " : ""
@@ -282,16 +282,16 @@ end
 import ..CFunctions: how_to_combine_Fs
 function group_qAtomProducts(qs::Vector{QAtomProduct})::Vector{Union{QAtomProduct, Tuple{Union{CAtom, CSum}, Vector{QAtomProduct}}}}
     coeffs_funs::Vector{CFunction} = [q.coeff_fun for q in qs]
-    coeff_groups, indexes = how_to_combine_Fs(coeffs_funs)
+    coeff_groups, indices = how_to_combine_Fs(coeffs_funs)
     new_qs = []
-    for (coeffs, indexes) in zip(coeff_groups, indexes)
+    for (coeffs, indices) in zip(coeff_groups, indices)
         if !( coeffs isa Tuple )
-            push!(new_qs, qs[indexes[1]])
+            push!(new_qs, qs[indices[1]])
         else
             pre_F = coeffs[1]
             post_F = coeffs[2]
             post_q = QAtomProduct[]
-            for (F, i) in zip(post_F, indexes) 
+            for (F, i) in zip(post_F, indices) 
                 push!(post_q, modify_coeff(qs[i], F)) 
             end
             push!(new_qs, (pre_F, post_q)) 

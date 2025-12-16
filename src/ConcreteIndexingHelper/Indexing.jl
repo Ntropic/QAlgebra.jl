@@ -152,7 +152,7 @@ function MultiEnsembleWorkspace(max_ns::Vector{Int}, as_continuum::Union{Nothing
 end
 
 
-##### Finding indexes ################################################################################
+##### Finding indices ################################################################################
 @inline function _combination_with_repetition!(ws::EnsembleRankWorkspace, n::Int, k::Int)::Int
     k == 0 && return 1
     n <= 0 && return 0
@@ -177,12 +177,12 @@ function index_number_for_ensemble(block_sizes::Vector{Int}, bin_cache::Binomial
         return 1 
     else
         curr_n = bin_cache.max_n
-        total_indexes = bin_cache(curr_n, block_sizes[1])
+        total_indices = bin_cache(curr_n, block_sizes[1])
         for i in 2:length(block_sizes)
             curr_n -= block_sizes[i-1]
-            total_indexes *= bin_cache(curr_n, block_sizes[i])
+            total_indices *= bin_cache(curr_n, block_sizes[i])
         end
-        return total_indexes 
+        return total_indices 
     end
 end
 
@@ -221,15 +221,15 @@ end
     end
 end
 
-@inline function index_rank_by_block_continuum!(blocked_indexes::Vector{Int}, ensemble_work_space::EnsembleRankWorkspace)::Int
+@inline function index_rank_by_block_continuum!(blocked_indices::Vector{Int}, ensemble_work_space::EnsembleRankWorkspace)::Int
     n = ensemble_work_space.bin_cache.max_n
-    return _rank_non_decreasing_block(blocked_indexes, n, ensemble_work_space)
+    return _rank_non_decreasing_block(blocked_indices, n, ensemble_work_space)
 end
 
-@inline function index_rank_by_block!(blocked_indexes::Vector{Int}, ensemble_work_space::EnsembleRankWorkspace)::Int
+@inline function index_rank_by_block!(blocked_indices::Vector{Int}, ensemble_work_space::EnsembleRankWorkspace)::Int
     bc = ensemble_work_space.bin_cache
     ub = ensemble_work_space.used
-    remaining_in_block   = length(blocked_indexes)
+    remaining_in_block   = length(blocked_indices)
     total_index::Int     = 0
     prev_index::Int      = 0
     curr_index::Int      = 1
@@ -240,7 +240,7 @@ end
         up_prev += 1
     end
 
-    @inbounds for idx in blocked_indexes  # sorted ascending
+    @inbounds for idx in blocked_indices  # sorted ascending
         # r = how many remain to pick after this position
         r = remaining_in_block - 1
 
@@ -277,15 +277,15 @@ end
     return total_index
 end
 
-@inline function index_rank_for_ensemble_continuum!(blocked_indexes::Vector{Vector{Int}}, ensemble_work_space::EnsembleRankWorkspace)::Int
-    nb = length(blocked_indexes)
+@inline function index_rank_for_ensemble_continuum!(blocked_indices::Vector{Vector{Int}}, ensemble_work_space::EnsembleRankWorkspace)::Int
+    nb = length(blocked_indices)
     nb == 0 && return 1
 
     bc = ensemble_work_space.bin_cache
     n = bc.max_n
     @inbounds for i in 1:nb
-        ensemble_work_space.block_sizes[i] = length(blocked_indexes[i])
-        ensemble_work_space.ranks_by_blk[i] = index_rank_by_block_continuum!(blocked_indexes[i], ensemble_work_space)
+        ensemble_work_space.block_sizes[i] = length(blocked_indices[i])
+        ensemble_work_space.ranks_by_blk[i] = index_rank_by_block_continuum!(blocked_indices[i], ensemble_work_space)
     end
 
     total_rank::Int = 0
@@ -300,19 +300,19 @@ end
     return total_rank + 1
 end
 
-@inline function index_rank_for_ensemble!(blocked_indexes::Vector{Vector{Int}}, ensemble_work_space::EnsembleRankWorkspace)::Int
+@inline function index_rank_for_ensemble!(blocked_indices::Vector{Vector{Int}}, ensemble_work_space::EnsembleRankWorkspace)::Int
     bc = ensemble_work_space.bin_cache
-    if isempty(blocked_indexes); return 1; end
+    if isempty(blocked_indices); return 1; end
 
-    nb = length(blocked_indexes)
+    nb = length(blocked_indices)
     ensemble_work_space.used.len = 0
 
     @inbounds for i in 1:nb
-        ensemble_work_space.block_sizes[i] = length(blocked_indexes[i])
+        ensemble_work_space.block_sizes[i] = length(blocked_indices[i])
     end
 
     @inbounds for i in 1:nb
-        ensemble_work_space.ranks_by_blk[i] = index_rank_by_block!(blocked_indexes[i], ensemble_work_space)
+        ensemble_work_space.ranks_by_blk[i] = index_rank_by_block!(blocked_indices[i], ensemble_work_space)
     end
 
     curr_max::Int       = bc.max_n
@@ -333,43 +333,43 @@ end
     return total_rank + 1
 end
 
-@inline function index_number_for_ensemble_continuum(blocked_indexes::Vector{Vector{Int}}, ensemble_work_space::EnsembleRankWorkspace)::Int
-    if isempty(blocked_indexes)
+@inline function index_number_for_ensemble_continuum(blocked_indices::Vector{Vector{Int}}, ensemble_work_space::EnsembleRankWorkspace)::Int
+    if isempty(blocked_indices)
         return 1
     end
     n = ensemble_work_space.bin_cache.max_n
     total::Int = 1
-    @inbounds for block in blocked_indexes
+    @inbounds for block in blocked_indices
         total *= _combination_with_repetition!(ensemble_work_space, n, length(block))
     end
     return total
 end
 
-@inline function index_number_for_ensemble_continuum(blocked_indexes::Vector{Vector{Int}}, bin_cache::BinomialCache)::Int
-    return index_number_for_ensemble_continuum(blocked_indexes, EnsembleRankWorkspace(bin_cache))
+@inline function index_number_for_ensemble_continuum(blocked_indices::Vector{Vector{Int}}, bin_cache::BinomialCache)::Int
+    return index_number_for_ensemble_continuum(blocked_indices, EnsembleRankWorkspace(bin_cache))
 end
 
 """
-    index_number_for_ensemble(blocked_indexes::Vector{Vector{Int}}, bin_cache::BinomialCache) -> Int
+    index_number_for_ensemble(blocked_indices::Vector{Vector{Int}}, bin_cache::BinomialCache) -> Int
 
 Return the total number of possible configurations for an ensemble
-described by `blocked_indexes`, using `bin_cache`.
+described by `blocked_indices`, using `bin_cache`.
 """
-@inline function index_number_for_ensemble(blocked_indexes::Vector{Vector{Int}}, bin_cache::BinomialCache)::Int
-    nb = length(blocked_indexes)
+@inline function index_number_for_ensemble(blocked_indices::Vector{Vector{Int}}, bin_cache::BinomialCache)::Int
+    nb = length(blocked_indices)
     if nb == 0
         return 1
     end
 
     curr_n        = bin_cache.max_n
-    total_indexes = bin_cache(curr_n, length(blocked_indexes[1]))
+    total_indices = bin_cache(curr_n, length(blocked_indices[1]))
 
     @inbounds for i in 2:nb
-        curr_n       -= length(blocked_indexes[i-1])
-        total_indexes *= bin_cache(curr_n, length(blocked_indexes[i]))
+        curr_n       -= length(blocked_indices[i-1])
+        total_indices *= bin_cache(curr_n, length(blocked_indices[i]))
     end
 
-    return total_indexes
+    return total_indices
 end
 
 """

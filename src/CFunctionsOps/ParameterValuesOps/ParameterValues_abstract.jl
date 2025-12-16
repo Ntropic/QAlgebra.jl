@@ -1,22 +1,22 @@
 using Base: @propagate_inbounds
 import ..SubSpaceIndex
-using ..ParameterGroups: ParameterGroup, ParameterGroupLike, ParameterGroupScalar, ParameterGroupTimeScalar, ParameterGroupTimeFunction,
-                          ParameterGroupDistribution, ParameterGroupEnsembleFunction,
+using ..ParameterGroups: ParameterGroup, ParameterGroupScalar, ParameterGroupTimeScalar, ParameterGroupTimeFunction,
+                          ParameterGroupDistribution, ParameterGroupEnsembleFunction, ParameterGroupLike,
                           ParameterGroupEnsembleTimeFunction
 
 struct AbstractIndexMode <: ParameterValuesMode end
 
-array_scaling(::Type{AbstractIndexMode}, group::ParameterGroup)::Vector{Int} =
-    group.of_t ? vcat(group.time_count, copy(group.index_sizes)) : copy(group.index_sizes)
+array_scaling(::Type{AbstractIndexMode}, group::ParameterGroup, time_len::Int)::Vector{Int} =
+    _needs_time_axis(group) ? vcat(time_len, copy(group.index_sizes)) : copy(group.index_sizes)
 
-function construct_emtpy_arrays(::Type{AbstractIndexMode}, group::ParameterGroup{T}) where {T}
-    dims = array_scaling(AbstractIndexMode, group)
+function construct_emtpy_arrays(::Type{AbstractIndexMode}, group::ParameterGroup, time_len::Int)
+    dims = array_scaling(AbstractIndexMode, group, time_len)
     correct_type = parameter_group_value_type(group.kind)
     if correct_type <: Vector{Float64}
-        @assert length(dims) == 1 "Vector type (as used by $(parameter_group_kind_name(group.kind)) - $(group.name)) requires exactly one dimension, got $(length(dims))"
+        @assert length(dims) == 1 "Vector type (as used by $(parameter_group_kind_name(group.kind)) - $(group.param_symbol)) requires exactly one dimension, got $(length(dims))"
         return fill(NaN, dims[1])
     elseif correct_type == Array{Float64}
-        @assert !isempty(dims) "Parameter group $(group.name) of kind $(parameter_group_kind_name(group.kind)) requires arguments, either time or other parameters."
+        @assert !isempty(dims) "Parameter group $(group.param_symbol) of kind $(parameter_group_kind_name(group.kind)) requires arguments, either time or other parameters."
         return fill(NaN, Tuple(dims)...)  # Cartesian product of dims
     elseif correct_type == Float64
         return NaN
@@ -25,7 +25,7 @@ function construct_emtpy_arrays(::Type{AbstractIndexMode}, group::ParameterGroup
     end
 end
 
-function _compute_update_order(::Type{AbstractIndexMode}, groups::AbstractVector{ParameterGroupLike}, time_group::Int)
+function _compute_update_order(::Type{AbstractIndexMode}, groups::Vector{ParameterGroupLike}, time_group::Int)
     function_groups = Int[]
     @inbounds for (idx, group) in enumerate(groups)
         idx == time_group && continue

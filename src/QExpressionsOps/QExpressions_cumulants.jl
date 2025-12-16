@@ -27,10 +27,10 @@ each_term(q::QCumulant) = q.expr.terms
 each_coeff(q::QCumulant)::Vector{CFunction} = [q.coeff_fun; each_coeff(q.expr)]
 get_coeff(q::QCumulant) = q.coeff_fun
 
-function replace_indexes(I_op::Vector{Vector{Int}}, curr_op_indexes::Vector{Vector{Int}}, indexes::Vector{Int})
+function replace_indices(I_op::Vector{Vector{Int}}, curr_op_indices::Vector{Vector{Int}}, indices::Vector{Int})
     new_op = copy(I_op)
-    for ind in indexes
-        new_op[ind] = copy(curr_op_indexes[ind])
+    for ind in indices
+        new_op[ind] = copy(curr_op_indices[ind])
     end
     return new_op
 end
@@ -38,11 +38,11 @@ end
 copy_qterm(term::QTerm) = QTerm(term.op_indices, term.time_index)
 
 function _build_approximation(atom::QTerm, qspace::QSpace, where_acting::Vector{Int}, red_cum::ReducedIndexedCumulant)
-    curr_op_indexes = atom.op_indices
+    curr_op_indices = atom.op_indices
     I_op = qspace.I_op
     approx = QComposite[]
     for app in red_cum.approximation
-        curr_atoms = QTerm[QTerm(replace_indexes(I_op, curr_op_indexes, where_acting[ind]), atom.time_index) for ind in app.indices]
+        curr_atoms = QTerm[QTerm(replace_indices(I_op, curr_op_indices, where_acting[ind]), atom.time_index) for ind in app.indices]
         term_coeff = qspace.c_one * app.coeff
         prod = QAtomProduct(qspace, term_coeff, curr_atoms, true)
         push!(approx, prod)

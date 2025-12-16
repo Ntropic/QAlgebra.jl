@@ -117,12 +117,17 @@ export get_default, set_flip_if_first_term_negative, set_do_braced, set_expand_c
        QUADGK_ATOL, QUADGK_RTOL, SAMPLE_ATOL, SAMPLE_RTOL, pushindex!
 
 include("Helper.jl")
+include("QSort.jl")
 include("OffsetArrays.jl")
 export OffsetArray
 
+include("QIndexes.jl")
+using .QIndexes
+export QIndex, AbstractIndex, TimeIndex, SampleIndex
+
 include("StringUtils.jl")
 using .StringUtils
-export symbol2formatted, str2sub, str2sup, brace, braket, indexes2str
+export symbol2formatted, str2sub, str2sup, brace, braket, indices2str
 export int_exponent2str, exponentdag2str
 
 include("QSpaceOps/Sampler.jl")
@@ -140,15 +145,15 @@ export ParameterGroupKind, ParameterGroup, ParameterGroupScalar, ParameterGroupT
 
 include("CFunctions.jl")
 using .CFunctions
-CFunction, CAbstract, CIntegral, CCustomType, CCustomTypeIndexed, CAtom, CSum, CRational, CProd, CExp, CLog
+export CFunction, CAbstract, CIntegral, CCustomType, CCustomTypeIndexed, CParticle, CAtom, CSum, CRational, CProd, CExp, CLog
+export CMatrix, CVector, CPower, CAtomIndexed, CCustomTypeIndexed
 export define_cabstract, define_ctype, define_cintegral
-export CFunction, CAtom, CMatrix, CVector, CPower, CAtomIndexed, CCustomTypeIndexed
 export reorder, evaluate, stringer, to_stringer, to_string, sort_key
 export coeff, var_exponents, expand, substitute
 export contains_non_simple_CFunction, Indexed
 export list_cabstracts, list_ctypes, list_cintegrals
 export where_acting, where_acting!, which_ensemble_acting, which_ensemble_acting!
-export which_params_acting, which_params_acting!, separate_by_cond, param_index_tuples
+export which_params_acting, which_params_acting!, separate_by_cond
 export ParameterValues, update_t!, resolve_param!, resolve_ensemble_values!, refresh_ensemble_values!
 export WhereWhichParamGroup, AbstractIndexParameters
 
@@ -169,20 +174,20 @@ export DiscreteSamples, ContinuousSamples
 include("Plotting.jl")
 
 include("QExpressions.jl")
-include("CFunctions_updates.jl")
+#include("CFunctions_updates.jl")
 using .QExpressions
 using .QExpressions: diffQEqOrdered
 export QObj, QAtom, QComposite, QCompositeN, QMultiComposite, QAbstract, QTerm, QExpr, QCumulant, QAtomProduct, permutation, AbstractQSum, QSum, QIntegral, QInt, ∑, ∫, integral, QCompositeProduct, diffQEq, d_dt
 export QCommutator, QExp, QLog, QPower, power, QRoot, root, Expectation
 export Dag, Commutator, same_qspace
-export is_t_var, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, max_order_of_terms, contains_which_t_indexes, iter_QAtomProducts, iter_QInts
+export is_t_var, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, max_order_of_terms, contains_which_t_indices, iter_QAtomProducts, iter_QInts
 export is_unitary, is_hermitian, substitution_properties_fulfilled
-export base_operators, QExprLookup 
+export base_operators, get_parameter, get_operator, get_abstract, QExprLookup 
 export string, latex_string
 export term
 export @define, @define_basics, QExpr2CFunction, Cumulant, cumulant_string
 
-export contains_abstract, are_indexes_defined, which_summations_acting, which_summations_to_root, are_all_neq
+export contains_abstract, are_indices_defined, which_summations_acting, which_summations_to_root, are_all_neq
 export Substitution, --> 
 export reorder, reorder_full, reorder_time, neq, flatsums, complexsums , Sum2Int
 # Preindexing

@@ -1,6 +1,7 @@
 module CFunctions
 
 using ..StringUtils
+using ..QIndexes: QIndex, AbstractIndex, TimeIndex
 import ..SubSpaceIndex
 import ..ConcreteIndexes
 using ComplexRationals
@@ -8,16 +9,16 @@ using SparseArrays
 using ..SparsePermutationTools: SparsePermutation
 using ..QAlgebra: get_default, FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED
 using ..Sampler: QInterpolator, QIntegrator
-using ..ParameterGroups: ParameterGroup, ParameterGroupLike, ParameterGroupDistribution
+using ..ParameterGroups: ParameterGroup, ParameterGroupDistribution, ParameterGroupStorageUnion, ParameterGroupLike, AbstractSubSpaceInfo
 
 export CFunction, CAbstractDefinition, CTypeDefinition, CIntegralDefinition, ParameterInfo
 export define_cabstract, define_ctype, define_cintegral
-export CAbstract, CIntegral, CCustomType, CCustomTypeIndexed, CAtom, CAtomIndexed, CAtomReferenced, CEval, CSum, CRational, CProd, CExp, CLog, CPower, CVector, CMatrix
+export CAbstract, CIntegral, CCustomType, CCustomTypeIndexed, CParticle, CAtom, CAtomIndexed, CAtomReferenced, CEval, CSum, CRational, CProd, CExp, CLog, CPower, CVector, CMatrix
 export CMatrix, CVector, CPower
 export coeff, var_exponents, unique_first_terms
 export contains_non_simple_CFunction, Indexed
 export list_cabstracts, list_ctypes, list_cintegrals
-export where_acting, where_acting!, which_params_acting, which_params_acting!, param_index_tuples
+export where_acting, where_acting!, which_params_acting, which_params_acting!
 export which_ensemble_acting, which_ensemble_acting!, substitute, separate_by_cond
 export ParameterValues, update_t!, resolve_param!, resolve_ensemble_values!, refresh_ensemble_values!
 export compute_integral_weights!
@@ -47,8 +48,6 @@ abstract type CDef end
 
 # =======================> Abstract CFun Definitions <===================================================================
 abstract type AbstractCAbstract <: CAtomic end   # define here as a resesrvation, to concretely define later, for circular dependencies.
-abstract type AbstractParameterInfo end
-abstract type AbstractParameter end
 """
     CAbstractDefinition
 
@@ -66,7 +65,7 @@ struct CAbstractDefinition <: CDef
     latex::String  # e.g. "A_{1}"
     index::Int     # index in param_info
     sortkey::Int
-    param_info::AbstractParameterInfo
+    param_info::Any
 end
 
 """
@@ -90,39 +89,25 @@ struct CTypeDefinition <: CDef
     has_abstract::Bool
     abstract_parameters::Vector{AbstractCAbstract}
     index_map::Vector{Int} # maps the Cabstract.index to our abstractvector
-    param_info::AbstractParameterInfo
+    param_info::Any
 end
 
-struct ParameterIndexes # Helps find the indexes (ensemble and time indexes) associated with the parameters 
-    labels::Vector{String}
-
-    t_labels::Vector{String}
-    t_labels_latex::Vector{String}
-    label_parameter_indexes::Vector{Vector{Int}}
-    label_parameter_t_indexes::Vector{Vector{Int}}
-
-    all_indexes::Vector{Int}   # for has_indexes -> all parameters that would lead to an index being present 
-
-    function ParameterIndexes(labels::Vector{String}, t_labels::Vector{String}, t_labels_latex::Vector{String}, label_parameter_indexes::Vector{Vector{Int}}, label_parameter_t_indexes::Vector{Vector{Int}})
-        all_indexes = sort_unique!(vcat(vcat(label_parameter_indexes...),vcat(label_parameter_t_indexes...)))
-        new(labels, t_labels, t_labels_latex, label_parameter_indexes, label_parameter_t_indexes, all_indexes)
-    end
-end
+struct ParameterIndexes end
 """
     CIntegralDefinition
 
 Container describing a coefficient integral definition stored within a
 [`ParameterInfo`](@ref). It records the defining integrand `expr`, the
-subsystem indexes integrated over, and the ensemble parameter groups relevant
+subsystem indices integrated over, and the ensemble parameter groups relevant
 for the integration.
 """
 struct CIntegralDefinition <: CDef
-    param_info::AbstractParameterInfo
+    param_info::Any
     index::Int
     sortkey::Int
     expr::CFunction
-    indexes::Vector{Vector{SubSpaceIndex}}
-    parameter_group_indexes::Vector{Vector{Int}}
+    indices::Vector{Vector{SubSpaceIndex}}
+    parameter_group_indices::Vector{Vector{Int}}
     interpolator::Union{Nothing,QInterpolator}
     integrator::Union{Nothing,QIntegrator}
 end
@@ -132,68 +117,32 @@ end
 
 Holds both clusters and the dimension of the polynomial variable space.
 """
-struct ParameterInfo <: AbstractParameterInfo
-    dims::Int
-    outer_labels_symbols::Vector{Symbol}
-    inner_labels_symbols_flat::Vector{Symbol}
+struct ParameterInfo
+    params_symbols::Vector{Symbol}
+    params_raw::Vector{String}
+    params_str::Vector{String}
+    params_latex::Vector{String}
 
-    outer_labels::Vector{String}
-    outer_labels_str::Vector{String}
-    outer_labels_latex::Vector{String}
-
-    subspace_index_maps::Vector{Array{SparsePermutation,2}}
-    t_index_transform::Array{SparsePermutation,2}
-    indexes_by_t_index::Vector{Vector{Int}}
-    indexes_of_t::Vector{Int}
-
-    how_many_by_ensemble::Vector{Int}
-
-    subspace_info::Any
-    param_indexes::ParameterIndexes
+    subspace_info::AbstractSubSpaceInfo
     param_groups::Vector{ParameterGroupLike}
-    params::Vector{AbstractParameter}
+
     abstract_definitions::Vector{CAbstractDefinition}
     custom_ctype::Vector{CTypeDefinition}
     integral_definitions::Vector{CIntegralDefinition}
 
     function ParameterInfo(
-        outer_labels_symbols::Vector{Symbol}, inner_labels_symbols_flat::Vector{Symbol}, outer_labels::Vector{String},
-        outer_labels_str::Vector{String}, outer_labels_latex::Vector{String},
-        subspace_index_maps::Vector{Array{SparsePermutation,2}}, t_index_transform::Array{SparsePermutation,2}, indexes_by_t_index::Vector{Vector{Int}},
-        indexes_of_t::Vector{Int}, how_many_by_ensemble::Vector{Int},
-        subspace_info::Any, param_indexes::ParameterIndexes, param_groups::Vector{ParameterGroupLike}, params::AbstractVector{<:AbstractParameter})
-        dims = length(inner_labels_symbols_flat)
-        stored_params = AbstractParameter[params...]
-        new(dims, outer_labels_symbols, inner_labels_symbols_flat, outer_labels,
-            outer_labels_str, outer_labels_latex,
-            subspace_index_maps, t_index_transform,
-            indexes_by_t_index, indexes_of_t, how_many_by_ensemble,
-            subspace_info, param_indexes, param_groups, stored_params, CAbstractDefinition[], CTypeDefinition[], CIntegralDefinition[])
+        params_symbols::Vector{Symbol},
+        params_raw::Vector{String},
+        params_str::Vector{String},
+        params_latex::Vector{String},
+        subspace_info::AbstractSubSpaceInfo,
+        param_groups::Vector{ParameterGroupLike})
+        new(params_symbols, params_raw, params_str, params_latex,
+            subspace_info, param_groups,
+            CAbstractDefinition[], CTypeDefinition[], CIntegralDefinition[])
     end
 end
-function Base.show(io::IO, info::ParameterInfo)
-    params = info.params
-    labels = String[]
-    for group_idx in 1:length(info.param_groups)
-        idx = findfirst(p -> p.group_index == group_idx, params)
-        idx === nothing && continue
-        param = params[idx]
-        push!(labels, param.param_str)
-    end
-    print(io, "ParameterInfo([", join(labels, ","), "])")
-end
 
-"""
-    param_index_tuples(param_info::ParameterInfo, param_index::Int)
-
-Return the cached [`EnsembleIndex`] entries describing where parameter
-`param_index` acts. Non-indexed parameters yield an empty vector.
-"""
-function param_index_tuples(param_info::ParameterInfo, param_index::Int)
-    1 ≤ param_index ≤ length(param_info.params) ||
-        error("Parameter index $(param_index) out of bounds.")
-    return param_info.params[param_index].ensemble_indexes
-end
 
 """
     coeff(f::CFunction) -> Vector{ComplexRational}
@@ -217,74 +166,83 @@ include("CFunctionsDefinitions/CIntegral.jl")
 include("CFunctionsDefinitions/CAbstract.jl")
 include("CFunctionsDefinitions/CCustom.jl")
 
-# ===================> MAIN TYPES <==========================================================================================
+# ===================> MAIN TYPES <=========================================================================================
+
 function modify_expr(f::CFunction, new_expr::Vector{CFunction})
     error("modify_expr not implemented for type $(typeof(f)).")
 end
 
-@inline function _sparse_exponents(param_info::ParameterInfo, exps)::SparseVector{Int}
-    exps isa AbstractVector || return _sparse_exponents(param_info, collect(exps))
-    length(exps) == param_info.dims || throw(DimensionMismatch("expected $(param_info.dims) exponents, got $(length(exps))"))
-    return SparseVector{Int}(exps)
-end
+
 """
-    CAtom(param_info::ParameterInfo, var_exponents)
-    CAtom(param_info::ParameterInfo, coeff::Number, var_exponents)
+    CParticle{T}(group_index, exponent, indices, time_index)
 
-Single polynomial atom with a complex-rational coefficient and integer exponents per
-variable. Sparse storage keeps zero exponents implicit.
+Defines a single parameter, with its exponent and indices.
+"""
+struct CParticle{T<:QIndex}
+    group_index::Int
+    exponent::Int
+    abstract_indices::Vector{T}
+    time_index::TimeIndex
+end
 
-Notes:
-- Pure exponent constructor assumes coefficient 1.
-- Numeric coefficients are promoted to `ComplexRational`.
-- `var_exponents[j]` stores the power of variable _j_ defined in `param_info`.
+include("CFunctionsOps/CParticles_helper.jl")
+
+
+"""
+    CAtom(param_info::ParameterInfo, particles)
+    CAtom(param_info::ParameterInfo, coeff::Number, particles)
+
+Single polynomial atom with a complex-rational coefficient and explicit particle
+content.
 """
 struct CAtom <: CAtomic
     param_info::ParameterInfo
     coeff::ComplexRational
-    var_exponents::SparseVector{Int,Int}
-    function CAtom(param_info::ParameterInfo, var_exponents)
-        c = ComplexRational(1, 0, 1)
-        return new(param_info, c, _sparse_exponents(param_info, var_exponents))
+    particles::Vector{CParticle{AbstractIndex}}
+    function CAtom(param_info::ParameterInfo, particles::Vector{CParticle{AbstractIndex}})
+        return new(param_info, CR_ONE, particles)
     end
-    function CAtom(param_info::ParameterInfo, coeff::Int, var_exponents)
-        c = ComplexRational(coeff, 0, 1)
-        return new(param_info, c, _sparse_exponents(param_info, var_exponents))
+    function CAtom(param_info::ParameterInfo, coeff::Int, particles::Vector{CParticle{AbstractIndex}})
+        rational_coeff = ComplexRational(coeff, 0, 1)
+        return new(param_info, rational_coeff, particles)
     end
-    function CAtom(param_info::ParameterInfo, coeff::Rational, var_exponents)
-        c = ComplexRational(numerator(coeff), 0, denominator(coeff))
-        return new(param_info, c, _sparse_exponents(param_info, var_exponents))
+    function CAtom(param_info::ParameterInfo, coeff::Rational, particles::Vector{CParticle{AbstractIndex}})
+        rational_coeff = ComplexRational(numerator(coeff), 0, denominator(coeff))
+        return new(param_info, rational_coeff, particles)
     end
-    function CAtom(param_info::ParameterInfo, coeff::Complex, var_exponents)
-        c = crationalize(coeff)
-        return new(param_info, c, _sparse_exponents(param_info, var_exponents))
+    function CAtom(param_info::ParameterInfo, coeff::Complex, particles::Vector{CParticle{AbstractIndex}})
+        rational_coeff = crationalize(coeff)
+        return new(param_info, rational_coeff, particles)
     end
-    function CAtom(param_info::ParameterInfo, coeff::ComplexRational, var_exponents)
-        return new(param_info, coeff, _sparse_exponents(param_info, var_exponents))
+    function CAtom(param_info::ParameterInfo, coeff::ComplexRational, particles::Vector{CParticle{AbstractIndex}})
+        return new(param_info, coeff, particles)
     end
-    function CAtom(param_info::ParameterInfo, coeff::Number, var_exponents)
-        c = crationalize(coeff + 0im)
-        return new(param_info, c, _sparse_exponents(param_info, var_exponents))
+    function CAtom(param_info::ParameterInfo, coeff::Number, particles::Vector{CParticle{AbstractIndex}})
+        rational_coeff = crationalize(coeff + 0im)
+        return new(param_info, rational_coeff, particles)
     end
-end
-@inline function _sparse_exponents(param_info::ParameterInfo, exps::Tuple)
-    return _sparse_exponents(param_info, collect(exps))
 end
 @inline function zero_catom(param_info::ParameterInfo)
-    return CAtom(param_info, CR_ZERO, spzeros(Int, param_info.dims))
+    return CAtom(param_info, CR_ZERO, CParticle{AbstractIndex}[])
 end
 
 coeff(a::CAtom)::Vector{ComplexRational} = [a.coeff]
-modify_coeff(a::CAtom, coeff::ComplexRational)::CAtom = CAtom(a.param_info, coeff, a.var_exponents)
-var_exponents(a::CAtom) = a.var_exponents
+modify_coeff(a::CAtom, coeff::ComplexRational)::CAtom = CAtom(a.param_info, coeff, a.particles)
+var_exponents(a::CAtom)::Vector{Int} = Int[p.exponent for p in a.particles]
 length(a::CAtom) = 1
 function repartition(f::CAtom, var_tuples::Vector{Tuple{Int, Int}})::CAtom 
-    curr_var_exponents = copy(f.var_exponents)
-    @inbounds for (i, tar) in var_tuples
-        curr_var_exponents[tar] += curr_var_exponents[i]
-        curr_var_exponents[i] = 0 
-    end 
-    CAtom(f.param_info, f.coeff, curr_var_exponents)
+    new_particles = copy(f.particles)
+    exps = Int[p.exponent for p in new_particles]
+    @inbounds for (source, target) in var_tuples
+        exps[target] += exps[source]
+        exps[source] = 0
+    end
+    for (idx, exp) in enumerate(exps)
+        part = new_particles[idx]
+        new_particles[idx] = CParticle(part.group_index, exp, part.abstract_indices, part.time_index)
+    end
+    filter!(p -> p.exponent != 0, new_particles)
+    return CAtom(f.param_info, f.coeff, new_particles)
 end
 
 """

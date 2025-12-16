@@ -1,15 +1,17 @@
 module QExpressions
 using ..QSpaces
 using ..QSpaces: SubSpaceIndex
+import ..QSpaces: subspace_symbols
+using ..QIndexes: AbstractIndex
 using ..CFunctions
 import ..CFunctions: expand
 using ..StringUtils
 using ComplexRationals
 using SparseArrays
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, /, ^, product, iszero, copy
-using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED, EXPAND_CUMULANTS, vecvec_or, vecvec_or!, findfirstfreeafterbefore, sorted_unique_push!, bubble_insert_unique!
+using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED, EXPAND_CUMULANTS, vecvec_or, vecvec_or!, findfirstfreeafterbefore, sorted_push!, sorted_push_unique!, sorted_append!, sorted_append_unique!
 using ..CFunctions: isnumeric
-export QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, QCumulant, diffQEq, diffQEqOrdered, Expectation, base_operators, d_dt
+export QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, QCumulant, diffQEq, diffQEqOrdered, Expectation, base_operators, get_parameter, get_operator, get_abstract, d_dt
 
 export @define, @define_basics, QExpr2CFunction
 
@@ -46,19 +48,26 @@ The abstract type `QCompositeN` is a subtype of `QComposite` and represents comp
 such as QPower and QRoot which have an additional element `n` with integer value.
 """
 abstract type QCompositeN <: QComposite end  # QComposite with additional argument n
-
 """ 
     QMultiComposite 
 
 Abstract type for composite expressions that contain a Vector of QExpr objects.
 """
 abstract type QMultiComposite <: QComposite end
-
 """ QParent
 
 An abstract type to store parents of other quantum types, such as `QEq`s and `diffQEq`s.
 """ 
 abstract type QParent <: QObj end 
+"""
+    QParticle(operator, index)
+
+Defines a single Operator 
+"""
+struct QParticle
+    operator::Vector{Int}
+    index::AbstractIndex
+end
 
 """
     QTerm
@@ -93,7 +102,7 @@ A purely‐symbolic abstract operator
     - exponent: The exponent of the operator.
     - dag: A boolean indicating whether the operator is daggered (default = `false`)
     - operator_type: A reference to the operator of which it is a type 
-    - index_map: Keeps track of indexes, that are equal (for neq transformations)
+    - index_map: Keeps track of indices, that are equal (for neq transformations)
 Is an instance of an OperatorType 
 """
 struct QAbstract <: QAtom
@@ -186,8 +195,8 @@ Construct a [`diffQEq`](@ref) that represents the time derivative of ⟨lhs⟩ =
 Automatically applies `neq()` to the RHS to expand sums over distinct indices.
 """
 function _normalize_diff_time(qspace::QSpace, lhs::QAtomProduct, rhs::QExpr)
-    lhs_usage = contains_which_t_indexes(lhs)
-    rhs_usage = contains_which_t_indexes(rhs)
+    lhs_usage = contains_which_t_indices(lhs)
+    rhs_usage = contains_which_t_indices(rhs)
     combined = lhs_usage .| rhs_usage
     active_positions = findall(combined)
     if length(active_positions) > 1
@@ -212,7 +221,7 @@ function diffQEq(qspace::QSpace, left_hand_side::QAtomProduct, expr::QExpr)
     left_hand_side, expr = _normalize_diff_time(qspace, left_hand_side, expr)
     left_hand_side = Expectation(left_hand_side)
     expr = Expectation(expr)
-    @assert !(contains_non_simple_QObj(expr)) "Differential requires simple AbstractQSums, i.e. no aggregators in QComposites (such as QExp, QLog...) and no nested AbstractQSums (multiple and complex indexing at the same level is possible, and immediate nesting is automatically simplified to composite indexes)."
+    @assert !(contains_non_simple_QObj(expr)) "Differential requires simple AbstractQSums, i.e. no aggregators in QComposites (such as QExp, QLog...) and no nested AbstractQSums (multiple and complex indexing at the same level is possible, and immediate nesting is automatically simplified to composite indices)."
     if !contains_abstract(left_hand_side) && !contains_abstract(expr)
         return reorder(neq(diffQEq(qspace, left_hand_side, expr, Val(:nosimp))))
     else
@@ -302,7 +311,7 @@ include("QExpressionsOps/QExpressions_reorder.jl")
 include("QExpressionsOps/QSum_decollision.jl") 
 
 include("QExpressionsOps/OrderedQExpressions.jl")
-include("QExpressions_Indexed.jl")
+include("QExpressionsOps/QExpressions_Indexed.jl")
 include("QExpressionsOps/QExpressions_print.jl")
 include("QExpressionsOps/QExpressions_iterate.jl")
 
@@ -345,9 +354,9 @@ function define_ctype(name::Union{Symbol,String}, expr::QExpr)
     define_ctype(qspace.param_info, name, cfun)
 end
 
-function define_cintegral(qspace::QSpace, expr::QExpr, indexes::Vector{Vector{SubSpaceIndex}})
+function define_cintegral(qspace::QSpace, expr::QExpr, indices::Vector{Vector{SubSpaceIndex}})
     cfun = _extract_cfunction(qspace, expr, "define_cintegral")
-    define_cintegral(qspace, cfun, indexes)
+    define_cintegral(qspace, cfun, indices)
 end
 
 function define_cintegral(qspace::QSpace, expr::QExpr)
@@ -355,10 +364,10 @@ function define_cintegral(qspace::QSpace, expr::QExpr)
     define_cintegral(qspace, cfun)
 end
 
-function define_cintegral(expr::QExpr, indexes::Vector{Vector{SubSpaceIndex}})
+function define_cintegral(expr::QExpr, indices::Vector{Vector{SubSpaceIndex}})
     qspace = expr.qspace
     cfun = _extract_cfunction(qspace, expr, "define_cintegral")
-    define_cintegral(qspace, cfun, indexes)
+    define_cintegral(qspace, cfun, indices)
 end
 
 function define_cintegral(expr::QExpr)

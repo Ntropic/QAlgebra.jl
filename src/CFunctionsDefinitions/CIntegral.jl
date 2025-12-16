@@ -14,17 +14,17 @@ function list_cintegrals(param_info::ParameterInfo)
 end
 
 """
-    define_cintegral(param_info::ParameterInfo, expr::CFunction, indexes::Vector{Vector{SubSpaceIndex}}, parameter_group_indexes::Vector{Vector{Int}}) -> CIntegralDefinition
+    define_cintegral(param_info::ParameterInfo, expr::CFunction, indices::Vector{Vector{SubSpaceIndex}}, parameter_group_indices::Vector{Vector{Int}}) -> CIntegralDefinition
     define_cintegral(qspace::QSpace, expr::CFunction, blocks::Vector{ConstrainedIndexBlock}) -> CIntegralDefinition
 
 Register `expr` as a coefficient integral and return its definition. Provide
-the bound ensemble indexes via `indexes`, with matching sampling groups in
-`parameter_group_indexes`.
+the bound ensemble indices via `indices`, with matching sampling groups in
+`parameter_group_indices`.
 """
-function define_cintegral(param_info::ParameterInfo, expr::CFunction, indexes::Vector{Vector{SubSpaceIndex}}, parameter_group_indexes::Vector{Vector{Int}})
+function define_cintegral(param_info::ParameterInfo, expr::CFunction, indices::Vector{Vector{SubSpaceIndex}}, parameter_group_indices::Vector{Vector{Int}})
     index = length(param_info.integral_definitions) + 1
     sortkey = index + SORTKEY_BASE_CINTEGRAL
-    definition = CIntegralDefinition(param_info, index, sortkey, expr, indexes, parameter_group_indexes, nothing, nothing)
+    definition = CIntegralDefinition(param_info, index, sortkey, expr, indices, parameter_group_indices, nothing, nothing)
     push!(param_info.integral_definitions, definition)
     return definition
 end
@@ -52,7 +52,7 @@ CIntegral(param_info::ParameterInfo, index::Int) = CIntegral(param_info, Complex
 CIntegral(def::CIntegralDefinition) = CIntegral(def.param_info::ParameterInfo, ComplexRational(1,0,1), def.index)
 
 @inline integral_definition(int::CIntegral) = int.definition
-@inline integral_indexes(int::CIntegral) = int.definition.indexes
+@inline integral_indices(int::CIntegral) = int.definition.indices
 @inline integral_expr(int::CIntegral) = int.definition.expr
 
 coeff(i::CIntegral) = [i.coeff]

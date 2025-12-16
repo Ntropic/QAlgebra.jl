@@ -3,7 +3,7 @@ export decollision_QSum
 
 # Repartitioning for collision free QSum indexing: in a  QSum:
 # 0th initialize empty where_defined
-# 1st create subsitutions in case of collision of current indexes with where_defined
+# 1st create subsitutions in case of collision of current indices with where_defined
 # 2nd update where_defined  -> copy where defined, op_tuples, and var_tuples everywhere
 # 3rd apply repartition to terms.
 
@@ -54,17 +54,17 @@ end
 end
 
 function _sort_block!(block::ConstrainedIndexBlock)
-    idxs = block.indexes
+    idxs = block.indices
     length(idxs) <= 1 && return block
     perm = sortperm(idxs; by=expanded)
     _apply_permutation!(idxs, perm)
     _apply_permutation!(block.constraints, perm)
-    _assert_no_duplicate_indexes(idxs)
+    _assert_no_duplicate_indices(idxs)
     return block
 end
 
 function _relocate_index!(block::ConstrainedIndexBlock, pos::Int, old_index::SubSpaceIndex, new_index::SubSpaceIndex)
-    block.indexes[pos] = new_index
+    block.indices[pos] = new_index
     old_inner = old_index.inner
     new_inner = new_index.inner
     old_inner == new_inner && return block
@@ -75,11 +75,11 @@ function _relocate_index!(block::ConstrainedIndexBlock, pos::Int, old_index::Sub
     return block
 end
 
-@inline function _assert_no_duplicate_indexes(indexes::Vector{SubSpaceIndex})
-    length(indexes) <= 1 && return
-    @inbounds for i in 2:length(indexes)
-        prev = indexes[i - 1]
-        curr = indexes[i]
+@inline function _assert_no_duplicate_indices(indices::Vector{SubSpaceIndex})
+    length(indices) <= 1 && return
+    @inbounds for i in 2:length(indices)
+        prev = indices[i - 1]
+        curr = indices[i]
         prev.expanded == curr.expanded && error("QSum decollision failed: duplicate summation index detected after relabelling.")
     end
 end
@@ -97,7 +97,7 @@ function update_QSumDecollisionInds(q::AbstractQSum, d::QSumDecollisionInds)::Tu
 
     @inbounds for (block_idx, original) in enumerate(q.blocks)
         working_block = nothing
-        for (pos, index) in enumerate(original.indexes)
+        for (pos, index) in enumerate(original.indices)
             collision, new_where, new_index = collision_find_first_free(new_where, index, subspace_info)
             if collision
                 push!(new_op_tuples, (index.expanded, new_index.expanded))
@@ -195,7 +195,7 @@ end
 """
     decollision_QSum(q::QSum) -> Vector{QComposite}
 
-Resolve collisions between summation indexes by relabelling clashing
+Resolve collisions between summation indices by relabelling clashing
 indices and repartitioning coefficients. The returned vector contains the
 collision-free terms that replace the original `QSum`.
 """

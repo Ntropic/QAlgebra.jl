@@ -38,33 +38,10 @@ end
 
 function build_parameter_dicts(info::ParameterInfo)::ParameterDicts
     group_name_to_index = Dict{Symbol,Int}()
-    for (idx, sym) in enumerate(info.outer_labels_symbols)
+    for (idx, sym) in enumerate(info.params_symbols)
         group_name_to_index[sym] = idx
     end
-
-    param_name_to_indices = Dict{Symbol,Vector{Int}}()
-    time_slot_to_param = Dict{Int,Int}()
-
-    for (idx, param) in enumerate(info.params)
-        coords = param.coords
-        group_idx = param.group_index
-        base_symbol = String(info.outer_labels_symbols[group_idx])
-        sym_str = Symbol(param.param_str)
-        sym_name = Symbol(param.param_name)
-        _register_param_key!(param_name_to_indices, sym_str, idx)
-        _register_param_key!(param_name_to_indices, sym_name, idx)
-        placeholder = _normalize_param_placeholder(param.param_name)
-        placeholder !== nothing && _register_param_key!(param_name_to_indices, placeholder, idx)
-        numeric_key = _numeric_param_key(base_symbol, coords, param.param_of_t)
-        numeric_key !== nothing && _register_param_key!(param_name_to_indices, numeric_key, idx)
-        if param.is_t
-            t_idx = coords[1] - 1
-            _register_param_key!(param_name_to_indices, Symbol("t$(t_idx)"), idx)
-            time_slot_to_param[t_idx] = idx
-        end
-    end
-
-    return ParameterDicts(group_name_to_index, param_name_to_indices, time_slot_to_param)
+    return ParameterDicts(group_name_to_index, Dict{Symbol,Vector{Int}}(), Dict{Int,Int}())
 end
 
 struct SubSpaceDicts
@@ -84,7 +61,7 @@ function build_subspace_dicts(subspaces::Vector{SubSpace})::SubSpaceDicts
             error("Duplicate outer subspace key $(ss.key_symbol) detected while building QSpace.")
         end
         outer_map[ss.key_symbol] = idx
-        for (inner_idx, sym) in enumerate(ss.keys_symbols)
+        for (inner_idx, sym) in enumerate(subspace_symbols(ss))
             if haskey(inner_map, sym)
                 error("Duplicate inner subspace key $(sym) detected while building QSpace.")
             end

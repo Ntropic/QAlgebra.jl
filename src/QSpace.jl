@@ -2,13 +2,13 @@ module QSpaces
 
 using ComplexRationals
 using ..CFunctions
-import ..CFunctions: ParameterValues, AbstractIndexMode, ParameterInfo, update_t!, resolve_param!
+import ..CFunctions: CParticle, CAtom, ParameterValues, AbstractIndexMode, ParameterInfo, update_t!, resolve_param!
 import ..ConcreteIndexes
 using ..StringUtils
 using ..Cumulants: ReducedCumulantList
 using ..Sampler
 using ..Sampler: AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
-using ..ParameterGroups: ParameterGroup, ParameterGroupLike, ParameterGroupKind, ParameterGroupDistribution, ParameterGroupEnsembleFunction, ParameterGroupEnsembleTimeFunction, WhereWhichParamGroup
+using ..ParameterGroups: ParameterGroup, ParameterGroupKind, ParameterGroupDistribution, ParameterGroupEnsembleFunction, ParameterGroupEnsembleTimeFunction, WhereWhichParamGroup
 using Base: WeakRef, GC
 using SparseArrays
 
@@ -16,11 +16,13 @@ export OperatorSet, operator_magnitude, max_operator_magnitude, SubSpaceDicts, A
 export Ensemble, SubSpace, SubSpaceDefinitions, SubSpaceInfo, SubSpaceIndex, EnsembleIndex, outer, inner, expanded, Index2Symbol, Index2String, Index2Ensemble, Index2Ensemble_and_Summation, SummationIndex2SubSpaceIndex, SubSpaceIndex2EnsembleIndex, pushindex!
 export AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
-export Parameter, ParameterDefinitions, set_parameter_group_definition!, map_by_subspace, map_by_tindex
+export Parameter, ParameterDefinitions, set_parameter_group_definition!, param2string, default_group_signature
 export QSpace
 export AbstractIndexParameters
 
 Is = Vector{Int}
+const CR_ZERO = ComplexRational(0,0,1)
+const CR_ONE  = ComplexRational(1,0,1)
 
 """
     OperatorSet(name, particle_type, len, neutral_element, base_ops, ops, op_product, op_dag, op2str, op2latex; kwargs...)
@@ -50,11 +52,11 @@ Keyword arguments:
 struct OperatorSet
     name::String
     particle_type::String   # fermion, boson, anyon...
-    len::Int                # length of indexes describing operator
+    len::Int                # length of indices describing operator
     neutral_element::Vector{Int}   # neutral element of the operator set
     base_ops::Vector{Vector{Int}}
     ops::Vector{String}     # operator symbols
-    op_product::Function    # takes operator indexes of two operators of this set and outputs a vector of tuples of coefficients and associated indexes for the resulting operators in this set
+    op_product::Function    # takes operator indices of two operators of this set and outputs a vector of tuples of coefficients and associated indices for the resulting operators in this set
     op_dag::Function        # Create Complex Transpoose Conjugate
     op2str::Function        # transforms an operator index into a string for console printing
     op2latex::Function      # transforms an operator index into a LaTeX string for formatted LaTeXStrings
@@ -151,20 +153,17 @@ include("OperatorSets/Ladder.jl")
 include("QSpaceOps/QSpace_subspaces.jl")
 include("QSpaceOps/QSpace_abstract.jl")
 include("QSpaceOps/QSpace_parameters.jl")
-include("QSpaceDicts.jl")
+include("QSpaceOps/QSpaceDicts.jl")
 using ..Sampler: build_discrete_samples, build_continuous_samples
 
 """
-    QSpace(subspace_def, op_def, param_def; max_t_ind=0)
+    QSpace(subspace_def, op_def, param_def)
 
 Create the full working space that ties together subspaces, operator definitions, and
 parameter families. A `QSpace` keeps:
 - subspace topology (`SubSpaceDefinitions`) plus the induced ensembles,
 - operator information (`OperatorDefinitions`) for constructing concrete atoms, and
 - parameter collections (`ParameterDefinitions`) together with their current values.
-
-Keyword arguments:
-- `max_t_ind::Int = 0`: Highest time index admitted when constructing time-dependent expressions.
 """
 mutable struct QSpace
     # Subspace definitions:
@@ -177,7 +176,6 @@ mutable struct QSpace
     operatortype_info::OperatorTypeInfo
 
     # Parameter fields:
-    params::Vector{Parameter}
     param_info::ParameterInfo
     where_which_param_groups::WhereWhichParamGroup
     sample_index_param_values::ParameterValues
@@ -185,41 +183,41 @@ mutable struct QSpace
     subspace_dicts::SubSpaceDicts
     operator_dicts::AbstractOperatorDicts
 
-    I_op::Vector{Is}               # Neutral Vector of all expanded subspaces
-    I_ensemble_op::Vector{Vector{Is}}      # Neutral Vector of all expanded ensemble subspaces
     c_one::CAtom                            # onelike function in CFunctions 
     c_zero::CAtom                           # zerolike function in CFunctions 
     cumulant_cache::ReducedCumulantList
-    max_t_ind::Int
 
-    function QSpace(subspace_def::SubSpaceDefinitions, op_def::OperatorDefinitions, param_def::ParameterDefinitions; max_t_ind::Int=0)
+    function QSpace(subspace_def::SubSpaceDefinitions, op_def::OperatorDefinitions, param_def::ParameterDefinitions)
+        subspace_def = deepcopy(subspace_def)
+        op_def = deepcopy(op_def)
+        param_def = deepcopy(param_def)
         # ==========> 1st Subspaces <==========
         subspaces = subspace_def.subspaces
         subspace_info = SubSpaceInfo(subspaces)
         used_symbols = subspace_def.used_symbols
-        I_op, I_ensemble_op = subspace_def.I_op, subspace_def.I_ensemble_op  # These are
+
 
         # ==========> 2nd Abstract Operators <==========
         operatortypes = OperatorDefinitions2OperatorType(op_def, subspace_def)
         operatortype_info = OperatorTypeInfo(operatortypes, commute_fun=op_def.commute_fun, check_n=op_def.check_n) 
 
         # ==========> 3rd Parameters <==========
-        params, param_info, sample_index_param_values, parameter_dicts = ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols, max_t_ind)
+        param_info, sample_index_param_values, parameter_dicts = ParameterDefinitions2Parameters(param_def, subspace_info, subspaces, used_symbols)
         where_which = WhereWhichParamGroup(param_info.param_groups)
 
         subspace_dicts = build_subspace_dicts(subspaces)
         operator_dicts = build_operator_dicts(operatortypes)
 
         # Generate the string representations
-        c_one = CAtom(param_info, spzeros(Int, length(params)))
-        c_zero = CAtom(param_info, ComplexRational(0,0, 1), spzeros(Int, length(params)))
+        c_one = CAtom(param_info, CR_ZERO, CParticle{AbstractIndex}[])
+        c_zero = CAtom(param_info, CR_ONE, CParticle{AbstractIndex}[])
         cumulant_cache = ReducedCumulantList(1)
         ensembles = Ensemble[ss.ensemble for ss in subspaces if ss.ensemble !== nothing]
 
         qss = new(subspaces, subspace_info, ensembles,                           # Subspaces 
                 operatortypes, operatortype_info,                                 # Abstract Operators 
-                params, param_info, where_which, sample_index_param_values, parameter_dicts, subspace_dicts, operator_dicts,
-                I_op, I_ensemble_op, c_one, c_zero, cumulant_cache, max_t_ind)    # Precomputed operator blueprints 
+                param_info, where_which, sample_index_param_values, parameter_dicts, subspace_dicts, operator_dicts,
+                c_one, c_zero, cumulant_cache)    # Precomputed operator blueprints 
 
         
         GC.@preserve qss begin
@@ -230,39 +228,31 @@ mutable struct QSpace
 
         return qss
     end
+
+# close mutable struct QSpace
+end
+
+function Base.getproperty(qspace::QSpace, s::Symbol)
+    if s === :max_t_ind
+        return qspace.sample_index_param_values.max_t_ind
+    else
+        return getfield(qspace, s)
+    end
 end
 
 # Define the custom show for QSpace.
 function Base.show(io::IO, qspace::QSpace)
+    groups = qspace.param_info.param_groups
+    group_labels = [_format_group_signature(group) for group in groups]
     if get(io, :compact, false)
-        param_str = if length(qspace.params) < 12
-            join((p.param_str for p in qspace.params), ",")
-        else
-            group_labels = String[]
-            for g in 1:length(qspace.param_info.param_groups)
-                idx = findfirst(p -> p.group_index == g, qspace.params)
-                idx === nothing && continue
-                push!(group_labels, qspace.params[idx].param_str)
-            end
-            join(group_labels, ",")
-        end
-        subs = [join(ss.keys[1:ss.num_operator_indexes], ",") for ss in qspace.subspaces]
+        param_str = join(group_labels, ",")
+        subs = [join(subspace_labels(ss), ",") for ss in qspace.subspaces]
         ops  = string.(qspace.operatortypes)
         print(io, "QSpace([", param_str, "], sub=", subs, ", ops=", ops, ")")
         return
     end
     # Header line
-    if length(qspace.params) < 12
-        param_str = join([p.param_str for p in qspace.params], ",")
-    else
-        group_labels = String[]
-        for g in 1:length(qspace.param_info.param_groups)
-            idx = findfirst(p -> p.group_index == g, qspace.params)
-            idx === nothing && continue
-            push!(group_labels, qspace.params[idx].param_str)
-        end
-        param_str = join(group_labels, ",")
-    end
+    param_str = join(group_labels, ",")
     println(io, "QSpace: [" * param_str * "]")
 
     # Build LHS and RHS strings for each subspace
@@ -270,11 +260,10 @@ function Base.show(io::IO, qspace::QSpace)
     rhs_list = Any[]
     for ss in qspace.subspaces
         prefix = ss.is_ensemble_ss ? "Ensemble: " : "Subspace: "
-        op_keys = ss.keys[1:ss.num_operator_indexes]
-        lhs = prefix * join(op_keys, ",")
-        if ss.num_sum_indexes > 0
-            sum_keys = ss.keys[ss.num_operator_indexes+1:end]
-            lhs *= ", ∑ " * join(sum_keys, ",")
+        labels = subspace_labels(ss)
+        lhs = prefix * labels[1]
+        if has_summation(ss)
+            lhs *= ", ∑ " * labels[2]
         end
         push!(lhs_list, lhs)
         push!(rhs_list, ss.op_set)
@@ -303,14 +292,14 @@ end
     lengths = Int[]
     for ss in qspace.subspaces
         ss.is_ensemble_ss || continue
-        push!(lengths, length(ss.keys_symbols))
+        push!(lengths, has_summation(ss) ? 2 : 1)
     end
     return lengths
 end
 @inline ConcreteIndexes(qspace::QSpace) = ConcreteIndexes(_ensemble_expected_lengths(qspace))
-@inline function ConcreteIndexes(qspace::QSpace, indexes::AbstractVector{<:AbstractVector{<:Integer}})
+@inline function ConcreteIndexes(qspace::QSpace, indices::AbstractVector{<:AbstractVector{<:Integer}})
     expected = _ensemble_expected_lengths(qspace)
-    vectors = [Vector{Int}(idx) for idx in indexes]
+    vectors = [Vector{Int}(idx) for idx in indices]
     return ConcreteIndexes(expected, vectors)
 end
 
@@ -341,9 +330,9 @@ end
     AbstractIndexParameters(qspace::QSpace)
 
 Construct `ParameterValues{AbstractIndexMode}` for the given `qspace`. 
-Allows evaluating CFunctions using specific parameter values mapped to the abstract ensemble subspace indexes.
+Allows evaluating CFunctions using specific parameter values mapped to the abstract ensemble subspace indices.
 """
-function AbstractIndexParameters(qspace::QSpace)
+function AbstractIndexParameters(qspace::QSpace)::ParameterValues
     subspaces = qspace.subspaces
     info = qspace.param_info
     maps = Vector{Vector{Int}}(undef, length(subspaces))
@@ -354,7 +343,7 @@ function AbstractIndexParameters(qspace::QSpace)
             maps[idx] = copy(ss.ensemble.distribution_group_indices)
         end
     end
-    return ParameterValues(info.param_groups; mode=AbstractIndexMode(), ensemble_distribution_groups=maps)
+    return ParameterValues(info; mode=AbstractIndexMode(), max_t_ind=qspace.sample_index_param_values.max_t_ind, ensemble_distribution_groups=maps)
 end
 
 end # module QSpaces

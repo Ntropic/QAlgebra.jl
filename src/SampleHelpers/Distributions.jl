@@ -1,6 +1,6 @@
 export QDistribution, pdf, QNormal, QUniform, QEnsembleFunction
 
-using ..StringUtils: underscore_separate
+using ..StringUtils: normalize_underscore_indices
 using ..QAlgebra: QUADGK_ATOL, QUADGK_RTOL
 
 const PDF_BOUND_ATOL = 1e-10
@@ -95,16 +95,16 @@ function QNormal(mean::Real, std::Real, how_many_stds::Real, num_samples::Int)
 end
 
 """
-    QEnsembleFunction(name, group_indexes, argument_signatures, func)
+    QEnsembleFunction(name, group_indices, argument_signatures, func)
 
 Metadata wrapper for ensemble parameter functions that depend on other parameters
 (or time) when sampling across ensembles.  Besides the callable `func`, the
-struct stores how each argument relates to the parent group's abstract indexes
+struct stores how each argument relates to the parent group's abstract indices
 and which parameter group supplies the samples.
 
 # Arguments
 - `name`: base name of the parameter group.
-- `group_indexes`: abstract index labels of the parent group (e.g. `["i","j"]`).
+- `group_indices`: abstract index labels of the parent group (e.g. `["i","j"]`).
 - `argument_signatures`: ordered argument signatures (e.g. `["t", "delta_i"]`).
 - `func`: callable evaluated with arguments matching `argument_signatures`.
 """
@@ -121,7 +121,7 @@ struct QEnsembleFunction
     end
 end
 
-function QEnsembleFunction(name::String, group_indexes::Vector{String}, argument_signatures::Vector{String}, func::Function)
+function QEnsembleFunction(name::String, group_indices::Vector{String}, argument_signatures::Vector{String}, func::Function)
     isempty(argument_signatures) && error("QEnsembleFunction requires at least one argument; include e.g. t for time or parameter names.")
     arg_symbols = Symbol.(argument_signatures)
     arg_group_names = Vector{String}(undef, length(argument_signatures))
@@ -132,11 +132,11 @@ function QEnsembleFunction(name::String, group_indexes::Vector{String}, argument
             self_positions[idx] = Int[]
             continue
         end
-        base, tokens = underscore_separate(spec)
+        base, tokens = normalize_underscore_indices(spec)
         arg_group_names[idx] = base
         positions = Vector{Int}(undef, length(tokens))
         for (pos_idx, tok) in enumerate(tokens)
-            pos = findfirst(==(tok), group_indexes)
+            pos = findfirst(==(tok), group_indices)
             pos === nothing &&
                 error("Argument \"$spec\" references index \"$tok\" which is not defined on ensemble function group \"$name\".")
             positions[pos_idx] = pos

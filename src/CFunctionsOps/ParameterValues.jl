@@ -5,10 +5,13 @@ struct SampleIndexMode <: ParameterValuesMode end
 
 using Base: WeakRef
 using ..Sampler: QEnsembleFunction, QDistribution, build_discrete_samples, build_continuous_samples, AbstractEnsembleSample
-using ..ParameterGroups: ParameterGroup, ParameterGroupLike, ParameterGroupKind, AbstractEnsemble,
+using ..ParameterGroups: ParameterGroup, ParameterGroupKind, AbstractEnsemble,
                           ParameterGroupScalar, ParameterGroupTimeScalar, ParameterGroupTimeFunction, ParameterGroupStorageUnion,
                           ParameterGroupDistribution, ParameterGroupEnsembleFunction, ParameterGroupEnsembleTimeFunction,
-                          WhereWhichParamGroup, parameter_group_input_type, parameter_group_value_type, parameter_group_kind_name, parameter_group_storage_target_type
+                          WhereWhichParamGroup, ParameterGroupLike, parameter_group_input_type, parameter_group_value_type, parameter_group_kind_name, parameter_group_storage_target_type
+using ..CFunctions: ParameterInfo
+using ..StringUtils: symbol2formatted, normalize_underscore_indices, format_normalized_indices
+#using ..QSpaces: default_group_signature
 using Base: @propagate_inbounds, checkbounds
 
 export update_t!, resolve_param!, AbstractIndexMode
@@ -17,7 +20,10 @@ include("ParameterValuesOps/ParameterValues_setget.jl") # Fast paths for accessi
 
 # ==================================> Construction <==============================================================
 """
-    ParameterValues(param_info::ParameterInfo; qspace_ref=WeakRef())
+    ParameterValues(param_info::ParameterInfo;
+                    mode::ParameterValuesMode=SampleIndexMode(),
+                    max_t_ind::Int=0,
+                    ensemble_distribution_groups::Vector{Vector{Int}}=Vector{Vector{Int}}())
 
 Concrete storage for the realised values of every parameter group across all
 time slots and sample index combinations. The structure is intentionally thin –
@@ -32,23 +38,25 @@ with index-aware accessors.
 mutable struct ParameterValues{Mode<:ParameterValuesMode}
     where_which::WhereWhichParamGroup
     groups::Vector{ParameterGroupLike}
+    param_info::ParameterInfo
     group_values::Vector{GroupValsAny}
     group_definition_initialized::BitVector
     group_initialized::BitVector
     group_times_initialized::BitVector
     got_all_definitions::Bool
     time_group::Int
-    how_many_times::Int
+    max_t_ind::Int
     group_dependencies::Vector{Vector{Int}}
     group_update_waves::Vector{Vector{Int}}
     ensemble_distribution_groups::Vector{Vector{Int}}
     locked::Bool
 end
-function ParameterValues(groups::AbstractVector{ParameterGroupLike}; mode::ParameterValuesMode=SampleIndexMode(), ensemble_distribution_groups::Vector{Vector{Int}}=Vector{Vector{Int}}())
-    return ParameterValues{typeof(mode)}(groups, ensemble_distribution_groups)
+
+function ParameterValues(param_info::ParameterInfo; mode::ParameterValuesMode=SampleIndexMode(), max_t_ind::Int=0, ensemble_distribution_groups::Vector{Vector{Int}}=Vector{Vector{Int}}())
+    return ParameterValues{typeof(mode)}(param_info.param_groups, param_info, ensemble_distribution_groups, max_t_ind)
 end
 
-function ParameterValues{Mode}(groups::AbstractVector{ParameterGroupLike}, ensemble_distribution_groups::Vector{Vector{Int}}=Vector{Vector{Int}}()) where {Mode<:ParameterValuesMode}
+function ParameterValues{Mode}(groups::Vector{ParameterGroupLike}, param_info::ParameterInfo, ensemble_distribution_groups::Vector{Vector{Int}}=Vector{Vector{Int}}(), max_t_ind::Int=0) where {Mode<:ParameterValuesMode}
     where_which = WhereWhichParamGroup(groups)
     group_count = length(groups)
 
@@ -56,9 +64,13 @@ function ParameterValues{Mode}(groups::AbstractVector{ParameterGroupLike}, ensem
     group_definition_initialized = falses(group_count)
     group_initialized = falses(group_count)
 
+    requested_len = max(max_t_ind, 0) + 1
+
     @inbounds for (g, group) in enumerate(groups)
-        val = construct_emtpy_arrays(Mode, group)
-        group_values[g] = GroupVals(val, group.of_t)
+        has_time_axis = group.is_time_group || _needs_time_axis(group)
+        time_capacity = has_time_axis ? _initial_time_capacity(group, requested_len) : 0
+        val = construct_emtpy_arrays(Mode, group, time_capacity)
+        group_values[g] = GroupVals(val, has_time_axis)
         if !isnothing(group.payload) || group.is_time_group
             group_definition_initialized[g] = true
             if group.is_time_group 
@@ -69,9 +81,13 @@ function ParameterValues{Mode}(groups::AbstractVector{ParameterGroupLike}, ensem
     got_all_definitions = all(group_definition_initialized)
 
     time_group = where_which.time_group
-    time_slot_count = (0 < time_group <= group_count) ? max(groups[time_group].time_count, 1) : 0
-    group_times_initialized = time_slot_count == 0 ? BitVector() : falses(time_slot_count)
-    how_many_times = groups[time_group].time_count
+    if time_group == 0
+        max_t_ind_init = -1
+        group_times_initialized = BitVector()
+    else
+        max_t_ind_init = max(max_t_ind, -1)
+        group_times_initialized = max_t_ind_init >= 0 ? falses(max_t_ind_init + 1) : BitVector()
+    end
 
     update_order = _compute_update_order(Mode, groups, time_group)
     group_dependencies = _compute_group_dependencies(groups, time_group)
@@ -80,14 +96,18 @@ function ParameterValues{Mode}(groups::AbstractVector{ParameterGroupLike}, ensem
     if Mode !== SampleIndexMode
         for (idx, group) in enumerate(groups)
             idx == time_group && continue
-            group.payload !== nothing || error("AbstractIndexMode requires payload for group $(group.name); set it before constructing ParameterValues.")
+            group.payload !== nothing || error("AbstractIndexMode requires payload for group $(group.param_symbol); set it before constructing ParameterValues.")
         end
     end
 
     map_copy = Mode === SampleIndexMode ? Vector{Vector{Int}}() : [copy(v) for v in ensemble_distribution_groups]
-    pv = ParameterValues{Mode}(where_which, groups, group_values, group_definition_initialized, group_initialized,
-                         group_times_initialized, got_all_definitions, time_group, how_many_times, 
+    pv = ParameterValues{Mode}(where_which, groups, param_info, group_values, group_definition_initialized, group_initialized,
+                         group_times_initialized, got_all_definitions, time_group, max_t_ind_init,
                          group_dependencies, group_update_waves, map_copy, false)
+
+    if max_t_ind_init >= 0
+        ensure_time_capacity!(pv, max_t_ind_init + 1)
+    end
 
     if time_group != 0 && groups[time_group].payload !== nothing
         possible_times = findall(pv.group_times_initialized).-1
@@ -107,25 +127,25 @@ function ParameterValues{Mode}(groups::AbstractVector{ParameterGroupLike}, ensem
     return pv
 end
 
-function array_scaling(::Type{SampleIndexMode}, group::ParameterGroup)::Vector{Int}
+function array_scaling(::Type{SampleIndexMode}, group::ParameterGroup, time_len::Int)::Vector{Int}
     index_sizes = isempty(group.sample_sizes) ? zeros(Int, length(group.index_sizes)) : copy(group.sample_sizes)
-    return group.of_t ? vcat(group.time_count, index_sizes) : index_sizes
+    return _needs_time_axis(group) ? vcat(time_len, index_sizes) : index_sizes
 end 
 
-function construct_emtpy_arrays(::Type{SampleIndexMode}, group::ParameterGroup{T}) where {T}
-    return construct_emtpy_arrays(SampleIndexMode, group, array_scaling(SampleIndexMode, group))
+function construct_emtpy_arrays(::Type{SampleIndexMode}, group::ParameterGroup, time_len::Int)
+    return construct_emtpy_arrays(SampleIndexMode, group, array_scaling(SampleIndexMode, group, time_len))
 end
-function construct_emtpy_arrays(::Type{SampleIndexMode}, group::ParameterGroup{T}, array_dims::Vector{Int}) where {T}
+function construct_emtpy_arrays(::Type{SampleIndexMode}, group::ParameterGroup, array_dims::Vector{Int})
     correct_type = parameter_group_value_type(group.kind)
     if correct_type <: Vector{Float64}
-        @assert length(array_dims) == 1 "Vector type (as used by $(parameter_group_kind_name(group.kind)) - $(group.name)) requires exactly one dimension, got $(length(array_dims))"
+        @assert length(array_dims) == 1 "Vector type (as used by $(parameter_group_kind_name(group.kind)) - $(group.param_symbol)) requires exactly one dimension, got $(length(array_dims))"
         if group.kind == ParameterGroupTimeScalar
             return fill(NaN, array_dims[1])
         else
             return Vector{Float64}(undef,array_dims[1])
         end
     elseif correct_type == Array{Float64}
-        @assert length(array_dims) > 0 "Parameter group $(group.name) of kind $(parameter_group_kind_name(group.kind)) requires arguments, either time or other parameters."
+        @assert length(array_dims) > 0 "Parameter group $(group.param_symbol) of kind $(parameter_group_kind_name(group.kind)) requires arguments, either time or other parameters."
         return Array{Float64}(undef, array_dims...)
     elseif correct_type == Float64
         return NaN # Float64
@@ -134,7 +154,7 @@ function construct_emtpy_arrays(::Type{SampleIndexMode}, group::ParameterGroup{T
     end
 end
 
-function _compute_update_order(::Type{SampleIndexMode}, groups::AbstractVector{ParameterGroupLike}, time_group::Int)
+function _compute_update_order(::Type{SampleIndexMode}, groups::Vector{ParameterGroupLike}, time_group::Int)
     function_groups = Int[]
     ensemble_groups = Int[]
     @inbounds for (idx, group) in enumerate(groups)
@@ -147,7 +167,7 @@ function _compute_update_order(::Type{SampleIndexMode}, groups::AbstractVector{P
     end
     return vcat(function_groups, ensemble_groups)
 end
-function _compute_group_dependencies(groups::AbstractVector{ParameterGroupLike}, time_group::Int)
+function _compute_group_dependencies(groups::Vector{ParameterGroupLike}, time_group::Int)
     group_count = length(groups)
     deps = Vector{Vector{Int}}(undef, group_count)
     @inbounds for group_idx in 1:group_count
@@ -211,6 +231,32 @@ function _compute_group_update_waves(::Type{SampleIndexMode}, group_dependencies
 end
 
 # ==================================> Display <==============================================================
+@inline function _format_group_argument(arg::String)::String
+    arg == "t" && return "t"
+    base, idxs = normalize_underscore_indices(arg)
+    base_str = symbol2formatted(base)[1]
+    return base_str * format_normalized_indices(idxs; do_latex=false)
+end
+
+function _format_group_signature(group::ParameterGroupLike)::String
+    base_str = symbol2formatted(group.param_raw)[1]
+    if !isempty(group.indices)
+        base_str *= format_normalized_indices(group.indices; do_latex=false)
+    end
+    args = String[]
+    if !isempty(group.function_args)
+        for arg in group.function_args
+            push!(args, _format_group_argument(arg))
+        end
+    elseif group.of_t && group.param_symbol != :t
+        push!(args, "t")
+    end
+    if !isempty(args)
+        base_str *= "(" * join(args, ",") * ")"
+    end
+    return base_str
+end
+
 function Base.show(io::IO, pv::ParameterValues)
     group_count = length(pv.groups)
     time_group = pv.time_group
@@ -223,7 +269,8 @@ function Base.show(io::IO, pv::ParameterValues)
     for idx in 1:group_count
         group = pv.groups[idx]
         pdf_hint = group.kind == ParameterGroupDistribution ? " (pdf)" : ""
-        labels[idx] = group.display_signature * pdf_hint
+        signature = _format_group_signature(group)
+        labels[idx] = signature * pdf_hint
         storage = pv.group_values[idx]
         sizes[idx] = storage.value isa Float64 ? "1" :
              (storage.value isa Vector{Float64} ? string(length(storage.value)) :
@@ -258,7 +305,7 @@ end
 # ==================================> Compute Values <===========================================================
 
 # Conditions for computing values are met - needs a time_index and time_index free variant. 
-# for a time dependent groups need to check which time_indexes are defined and give donitions for them. 
+# for a time dependent groups need to check which time_indices are defined and give donitions for them. 
 # use got_all_definitions (as the outer most check, since it gets rid of all checks except for time checks) 
 # and the individual group_initialized, for a condition to be met, the values group_definition_initialized needs to be initialized. 
 @inline function conditions_met_for_computing_values(pv::ParameterValues, group_index::Int)::Bool
@@ -320,10 +367,10 @@ function conditional_t_update!(pv::ParameterValues, g::Int, time_index::Int=0)::
     return nothing 
 end
 
-function conditional_payload2update_of_time!(pv::ParameterValues, g::Int, time_indexes::Vector{Int})::Nothing
+function conditional_payload2update_of_time!(pv::ParameterValues, g::Int, time_indices::Vector{Int})::Nothing
     if conditions_met_for_computing_values(pv, g)
         kind = pv.groups[g].kind
-        for time_index in time_indexes
+        for time_index in time_indices
             payload2values!(Val(kind), pv, g, time_index)
         end
         pv.group_initialized[g] = true
@@ -345,8 +392,12 @@ function conditional_payload2update!(pv::ParameterValues{SampleIndexMode}, g::In
 end
 function conditional_payload2update_distribution!(pv::ParameterValues{SampleIndexMode}, group_index::Int)::Nothing
     group = pv.groups[group_index]
-    subspaces = group.ensemble_subspaces
-    ens = subspaces[1].ensemble
+    subspace_info = pv.param_info.subspace_info
+    ensemble_indices = group.unique_ensemble_indices
+    isempty(ensemble_indices) && return nothing
+    outer = ensemble_indices[1]
+    ens = subspace_info.subspaces[outer].ensemble
+    ens === nothing && return nothing
     dist_idxs = ens.distribution_group_indices # check if they are ready 
     if any([isnothing(pv.groups[dist_id].payload) for dist_id in dist_idxs])
         return nothing
@@ -366,8 +417,8 @@ function update_ensemble_sample_sizes!(pv::ParameterValues{SampleIndexMode}, g::
     return nothing
 end
 function _build_ensemble_samples(ensemble, dist_idxs::Vector{Int}, groups::Vector{ParameterGroupLike})::AbstractEnsembleSample
-    group_symbols = Symbol[groups[idx].name for idx in dist_idxs]
-    group_names = String.(group_symbols)
+    group_symbols = Symbol[groups[idx].param_symbol for idx in dist_idxs]
+    group_names = [groups[idx].param_raw for idx in dist_idxs]
     dists = QDistribution[groups[idx].payload for idx in dist_idxs]
     method = ensemble.sample_method === :default ? (ensemble.as_continuum ? :chebychev : :random) : ensemble.sample_method
     if ensemble.as_continuum
@@ -402,20 +453,43 @@ end
 
 
 # ==================================> Update the Payloads and recompute conditionally <=====================================================================
-function update_t!(pv::ParameterValues, value::Float64; slot::Int=0)::Nothing
-    @assert slot >= 0 && slot < pv.how_many_times
+function update_t!(pv::ParameterValues, value::Float64; slot::Int=0)::ParameterValues
+    slot >= 0 || throw(ArgumentError("time slot must be non-negative, got $(slot)"))
     time_group = pv.time_group
+    time_group != 0 || error("No explicit time group registered in ParameterValues.")
+
+    required_len = slot + 1
+    ensure_time_capacity!(pv, required_len)
+
+    old_len = length(pv.group_times_initialized)
+    if required_len > old_len
+        resize!(pv.group_times_initialized, required_len)
+        @inbounds for idx in (old_len+1):required_len
+            pv.group_times_initialized[idx] = false
+        end
+    end
+
     time_index = slot+1
-    pv.group_values[time_group].value[time_index] = value 
+    vals = pv.group_values[time_group].value
+    vals[time_index] = value 
+    tg_payload = pv.groups[time_group].payload
+    if tg_payload isa Vector{Float64}
+        tg_payload[time_index] = value
+    end
     pv.group_times_initialized[time_index] = true 
+
+    if slot > pv.max_t_ind
+        pv.max_t_ind = slot
+    end
+
     # update wave 
     for update_index in pv.group_update_waves[time_group] 
         conditional_t_update!(pv, update_index, slot)
     end
-    return nothing
+    return pv
 end
 
-function resolve_param!(pv::ParameterValues{SampleIndexMode}, g::Int, payload::Union{Number, Function, QDistribution, QEnsembleFunction})::Nothing
+function resolve_param!(pv::ParameterValues{SampleIndexMode}, g::Int, payload::Union{Number, Function, QDistribution, QEnsembleFunction})::ParameterValues{SampleIndexMode}
     group = pv.groups[g]
     kind = group.kind
     correct_type = parameter_group_input_type(kind)
@@ -425,10 +499,10 @@ function resolve_param!(pv::ParameterValues{SampleIndexMode}, g::Int, payload::U
     end
 
     if kind ∈ [ParameterGroupEnsembleFunction, ParameterGroupEnsembleTimeFunction] && isa(payload, Function)
-        payload = QEnsembleFunction(String(group.name), copy(group.indexes), copy(group.function_args), payload)
+        payload = QEnsembleFunction(group.param_raw, copy(group.indices), copy(group.function_args), payload)
     end
 
-    @assert typeof(payload) <: correct_type "The parameter group $(group.name) is a $(parameter_group_kind_name(kind)) and expects payload $(correct_type), got $(typeof(payload))."
+    @assert typeof(payload) <: correct_type "The parameter group $(group.param_symbol) is a $(parameter_group_kind_name(kind)) and expects payload $(correct_type), got $(typeof(payload))."
     @assert kind != ParameterGroupTimeScalar "Don't set the time via resolve_param, use update_t!"
     group.payload = payload
     pv.group_definition_initialized[g] = true
@@ -452,7 +526,7 @@ function resolve_param!(pv::ParameterValues{SampleIndexMode}, g::Int, payload::U
         end
     end
     pv.got_all_definitions = all(pv.group_definition_initialized)
-    return nothing
+    return pv
 end
 
 initialize_group_payload!(::Type{SampleIndexMode}, pv::ParameterValues{SampleIndexMode}, g::Int, payload) = resolve_param!(pv, g, payload)
@@ -461,4 +535,68 @@ include("ParameterValuesOps/ParameterValues_abstract.jl")
 
 function resolve_distribution_values!(::ParameterValues{SampleIndexMode}, ::Int, ::Vector{Int}, ::Vector{Float64})
     throw(ArgumentError("resolve_distribution_values! is only available for AbstractIndexMode parameter values."))
+end
+@inline function _needs_time_axis(group::ParameterGroupLike)::Bool
+    kind = group.kind
+    return kind === ParameterGroupTimeScalar ||
+           kind === ParameterGroupTimeFunction ||
+           kind === ParameterGroupEnsembleTimeFunction
+end
+
+@inline function _initial_time_capacity(group::ParameterGroupLike, requested_len::Int)::Int
+    _needs_time_axis(group) || return 0
+    base = max(requested_len, 1)
+    if group.kind === ParameterGroupTimeScalar
+        payload = group.payload
+        if payload isa Vector{Float64}
+            return max(length(payload), base)
+        end
+    end
+    return base
+end
+
+function _grow_time_storage!(gv::GroupVals{Vector{Float64}, true}, new_len::Int)
+    old_len = length(gv.value)
+    old_len >= new_len && return gv
+    resize!(gv.value, new_len)
+    @inbounds for idx in (old_len+1):new_len
+        gv.value[idx] = NaN
+    end
+    return gv
+end
+function _grow_time_storage!(gv::GroupVals{Array{Float64}, true}, new_len::Int)
+    arr = gv.value
+    old_len = size(arr, 1)
+    old_len >= new_len && return gv
+    new_dims = (new_len, size(arr)[2:end]...)
+    new_arr = fill(Float64(NaN), new_dims...)
+    if old_len > 0
+        nd = ndims(arr)
+        tail = ntuple(_ -> Colon(), nd - 1)
+        new_arr[1:old_len, tail...] = arr
+    end
+    gv.value = new_arr
+    return gv
+end
+_grow_time_storage!(gv::GroupValsAny, ::Int) = gv
+
+function ensure_time_capacity!(pv::ParameterValues, required_len::Int)
+    required_len <= 0 && return nothing
+    0 < required_len || return nothing
+    for (idx, group) in enumerate(pv.groups)
+        (_needs_time_axis(group) || group.is_time_group) || continue
+        pv.group_values[idx] = _grow_time_storage!(pv.group_values[idx], required_len)
+        if group.kind == ParameterGroupTimeScalar
+            payload = group.payload
+            if payload isa Vector{Float64} && length(payload) < required_len
+                old_len = length(payload)
+                resize!(payload, required_len)
+                @inbounds for i in (old_len+1):required_len
+                    payload[i] = NaN
+                end
+                group.payload = payload
+            end
+        end
+    end
+    return nothing
 end

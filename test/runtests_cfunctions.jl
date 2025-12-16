@@ -54,11 +54,11 @@ VARS = ["x", "y"]
         for ex in all_ex
             @test_succeeds evaluate(ex, xv)      "evaluate($ex, xv) failed"
             pv = ParameterValues(ex.param_info)
-            indexes = ConcreteIndexes(ex.param_info)
+            indices = ConcreteIndexes(ex.param_info)
             for (idx, _) in enumerate(ex.param_info.params)
                 QAlgebra.CFunctions._store_value!(pv, idx, xv[(idx-1) % length(xv) + 1])
             end
-            @test_succeeds evaluate(ex, pv, indexes)   "evaluate($ex, pv) failed"
+            @test_succeeds evaluate(ex, pv, indices)   "evaluate($ex, pv) failed"
         end
     end
     #line("Testing expand modes")
@@ -92,7 +92,7 @@ end
     @test !isnothing(gamma_idx)
     alpha_idx = alpha_idx::Int
     gamma_idx = gamma_idx::Int
-    group_syms = pinfo.outer_labels_symbols
+    group_syms = pinfo.params_symbols
     alpha_group_idx = findfirst(==(Symbol(:alpha)), group_syms)::Int
     gamma_group_idx = findfirst(==(Symbol(:gamma)), group_syms)::Int
     sampler = qspace.ensembles[1].sampler
@@ -112,18 +112,18 @@ end
     atom_gamma = CAtom(pinfo, exps_gamma)
     @test_throws ErrorException evaluate(atom_gamma, ones(pinfo.dims))
 
-    default_indexes = ConcreteIndexes(pinfo)
+    default_indices = ConcreteIndexes(pinfo)
     concrete = ConcreteIndexes(pinfo)
-    concrete.indexes[1] = [2, 1]
+    concrete.indices[1] = [2, 1]
     atom_gamma_indexed = CAtomIndexed(atom_gamma, concrete)
 
     alpha_param_idx = get_parameter_index(pv, :alpha)
     QAlgebra.CFunctions._store_value!(pv, alpha_param_idx, 1.0)
     set_time!(pv, 0.0)
 
-    @test evaluate(atom_alpha, pv, default_indexes) == 1.0
+    @test evaluate(atom_alpha, pv, default_indices) == 1.0
 
-    gamma_group = findfirst(==(Symbol("gamma")), pinfo.outer_labels_symbols)
+    gamma_group = findfirst(==(Symbol("gamma")), pinfo.params_symbols)
     gamma_params = param_groups[gamma_group].parameter_indices
     gamma_values = [5.0, 6.0, 7.0]
     for (val_idx, param_idx) in enumerate(gamma_params)
@@ -133,28 +133,28 @@ end
     @test get_parameter_index(pv, :gamma_2) == gamma_params[2]
     @test get_parameter_index(pv, :gamma_i) == gamma_params[1]
     @test get_parameter_index(pv, :gamma_j) == gamma_params[2]
-    gamma_group_idx = findfirst(==(Symbol("gamma")), pinfo.outer_labels_symbols)::Int
+    gamma_group_idx = findfirst(==(Symbol("gamma")), pinfo.params_symbols)::Int
     @test value(pv, gamma_group_idx, -1, [1]) == 5.0
     @test value(pv, gamma_group_idx, -1, [2]) == 6.0
-    time_group_idx = findfirst(==(Symbol("t")), pinfo.outer_labels_symbols)::Int
+    time_group_idx = findfirst(==(Symbol("t")), pinfo.params_symbols)::Int
     @test value(pv, time_group_idx, 0, Int[]) == 0.0
     set_time!(pv, 1.5)
     @test value(pv, time_group_idx, 0, Int[]) == 1.5
     @test value(pv, gamma_idx, concrete) == 6.0
     @test_throws ErrorException value(pv, gamma_idx, ConcreteIndexes(pinfo))
-    @test evaluate(atom_gamma_indexed, pv, default_indexes) == 6.0
+    @test evaluate(atom_gamma_indexed, pv, default_indices) == 6.0
     @test evaluate(atom_gamma, pv, concrete) == 6.0
 
     indexed_sum = Indexed(CSum(pinfo, [atom_alpha, atom_gamma]), concrete)
     @test indexed_sum isa CSum
     @test all(term -> term isa CAtomIndexed, indexed_sum.expr)
-    @test evaluate(indexed_sum, pv, default_indexes) isa Float64
+    @test evaluate(indexed_sum, pv, default_indices) isa Float64
 
     prod_expr = CProd(pinfo, ComplexRational(1, 0, 1), [atom_alpha, atom_gamma], Val(:nosimp))
     indexed_prod = Indexed(prod_expr, concrete)
     @test indexed_prod isa CProd
     @test all(term -> term isa CAtomIndexed, indexed_prod.expr)
-    @test evaluate(indexed_prod, pv, default_indexes) isa Float64
+    @test evaluate(indexed_prod, pv, default_indices) isa Float64
 
     vec_expr = CVector(pinfo, [atom_alpha, atom_gamma])
     indexed_vec = Indexed(vec_expr, concrete)
@@ -163,7 +163,7 @@ end
 
     indexed_again = Indexed(atom_gamma_indexed, concrete)
     @test indexed_again isa CAtomIndexed
-    @test indexed_again.indexes === atom_gamma_indexed.indexes
+    @test indexed_again.indices === atom_gamma_indexed.indices
 
     @test_throws ArgumentError Indexed(atom_alpha, [[1, 2]])
 end

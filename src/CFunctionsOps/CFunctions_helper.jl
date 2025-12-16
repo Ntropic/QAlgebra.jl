@@ -97,18 +97,18 @@ import ..QAlgebra: unique_sorted!
 Returns a Vector with unique and sorted CAbstracts present in the expression tree. 
 """
 function contains_which_abstracts(f::CFunction)::Vector{CAbstractDefinition}
-    indexes = contains_which_abstract_indexes(f)
-    return [f.param_info.abstract_definitions[i] for i in indexes]
+    indices = contains_which_abstract_indices(f)
+    return [f.param_info.abstract_definitions[i] for i in indices]
 end
-function contains_which_abstract_indexes(f::CFunction)::Vector{Int}
-    all_indexes::Vector{Int} = []
+function contains_which_abstract_indices(f::CFunction)::Vector{Int}
+    all_indices::Vector{Int} = []
     for leaf in leaf_iter(f) 
         if isa(leaf, CAbstract)
-            push!(all_indexes, leaf.index)
+            push!(all_indices, leaf.index)
         end
     end
-    unique_sorted!(all_indexes)
-    return all_indexes
+    unique_sorted!(all_indices)
+    return all_indices
 end
 function abstract_from_abstractdef(defs::CAbstractDefinition)::CAbstract
     return CAbstract(defs.param_info, ComplexRational(1,0,1), defs.index)
@@ -157,7 +157,7 @@ end
 """ 
     which_ensemble_acting(f::CFunction)::Vector{BitVector}
 
-Returns a vector of vectors of booleans. Each inner vector specifies which of its subsystem indexes are acted upon by the QObj. 
+Returns a vector of vectors of booleans. Each inner vector specifies which of its subsystem indices are acted upon by the QObj. 
 This includes actions from CFunctions. Th function should only be applied after substituting all QAbstract terms. 
 Their present can be checked via `contains_abstract(q)`.
 """
@@ -232,26 +232,13 @@ function where_acting!(f::CAtomIndexed, acting::BitVector)::BitVector
 end
 
 # Returns index strings, and time strings
-function where_acting_to_index_strings(param_indexes::ParameterIndexes, acting::BitVector; do_latex::Bool=false)::Tuple{Vector{String}, Vector{String}}
-    current_indexes::Vector{String} = []
-    for (str, inds) in zip(param_indexes.labels, param_indexes.label_parameter_indexes)
-        if any(acting[inds])
-            push!(current_indexes, str)
-        end
-    end
-    current_t_indexes::Vector{String} = []
-    t_str_elements = do_latex ? param_indexes.t_labels_latex : param_indexes.t_labels 
-    for (str, inds) in zip(t_str_elements, param_indexes.label_parameter_t_indexes)
-        if any(acting[inds])
-            push!(current_t_indexes, str)
-        end
-    end
-    return current_indexes , current_t_indexes
+function where_acting_to_index_strings(::ParameterIndexes, ::BitVector; do_latex::Bool=false)::Tuple{Vector{String}, Vector{String}}
+    error("Parameter index labelling has been removed; update call sites to derive strings from SubSpace metadata.")
 end
-where_acting_to_index_strings(f::CFunction; do_latex::Bool=false)::Tuple{Vector{String}, Vector{String}} = where_acting_to_index_strings(f.param_info.param_indexes, where_acting(f), do_latex=do_latex)
+where_acting_to_index_strings(f::CFunction; do_latex::Bool=false)::Tuple{Vector{String}, Vector{String}} = where_acting_to_index_strings(f.param_info.param_indices, where_acting(f), do_latex=do_latex)
 
-has_indexes(param_indexes::ParameterIndexes, acting::BitVector)::Bool = any(acting[param_indexes.all_indexes])
-has_indexes(f::CFunction) = contains_c_indexes(f, f.param_info.param_indexes.all_indexes)
+has_indices(::ParameterIndexes, ::BitVector)::Bool = error("Parameter index labelling has been removed; update call sites to derive strings from SubSpace metadata.")
+has_indices(f::CFunction) = contains_c_indices(f, f.param_info.param_indices.all_indices)
 
 
 """
@@ -408,11 +395,11 @@ function min_exponents(f::CFunction)
 end
 
 """
-    contains_c_indexes(f::CFunction, idxs::Vector{Int})
+    contains_c_indices(f::CFunction, idxs::Vector{Int})
 
 True if any exponent at positions `idxs` is nonzero.
 """
-function contains_c_indexes(f::CFunction, idxs::Vector{Int})
+function contains_c_indices(f::CFunction, idxs::Vector{Int})
     for exps in var_exponents_iter(f)
         @inbounds for i in idxs
             if exps[i] != 0
@@ -555,7 +542,7 @@ function separate_CSum(f::CSum)::Tuple{Bool, Union{CAtom,Nothing}, CSum}
             for (i, (m, v, term)) in enumerate(zip(multiples, vs, f.expr))
                 if term isa CAtomIndexed
                     indexed_term = term::CAtomIndexed
-                    new_terms[i] = CAtomIndexed(f.param_info, m, v .- offset, indexed_term.indexes)
+                    new_terms[i] = CAtomIndexed(f.param_info, m, v .- offset, indexed_term.indices)
                 else
                     new_terms[i] = CAtom(f.param_info, m, v .- offset)
                 end
@@ -614,10 +601,10 @@ end
 # group inputs into buckets of pairwise-combinable terms
 function simple_combinable_Fs(ts::AbstractVector{<:CFunction})
     groups  = Vector{Vector{CFunction}}()
-    indexes = Vector{Vector{Int}}()
+    indices = Vector{Vector{Int}}()
     for (i, t) in enumerate(ts)
         placed = false
-        for (inds, grp) in zip(indexes, groups)
+        for (inds, grp) in zip(indices, groups)
             ok, _ = simple_combinable_F(grp[1], t)
             if ok
                 push!(grp, t)
@@ -628,10 +615,10 @@ function simple_combinable_Fs(ts::AbstractVector{<:CFunction})
         end
         if !placed
             push!(groups, [t])
-            push!(indexes, [i])
+            push!(indices, [i])
         end
     end
-    return groups, indexes
+    return groups, indices
 end
 
 
@@ -688,7 +675,7 @@ end
 
 Returns:
   - `groups_as_functions::Vector{Union{CFunction, Tuple{CFunction, Vector{CFunction}}}}`
-  - `indexes::Vector{Vector{Int}}` (original positions per group)
+  - `indices::Vector{Vector{Int}}` (original positions per group)
 """
 function how_to_combine_Fs(ts::Vector{CFunction})
     if isempty(ts)
@@ -696,17 +683,17 @@ function how_to_combine_Fs(ts::Vector{CFunction})
     elseif length(ts) == 1
         return [ts[1]], [[1]]
     else
-        groups, indexes = simple_combinable_Fs(ts)
-        return [group_Fs(grp) for grp in groups], indexes
+        groups, indices = simple_combinable_Fs(ts)
+        return [group_Fs(grp) for grp in groups], indices
     end
 end
 
-# --- make two indexes equal (variable reindexing/merging) ---------------------
+# --- make two indices equal (variable reindexing/merging) ---------------------
 
 # Moves exponent from j -> i for each pair (i,j) in coeff_ind_order.
 # Returns (changed_any::Bool, transformed_expression)
 
-function term_equal_indexes(atom::CAtom, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CAtom}
+function term_equal_indices(atom::CAtom, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CAtom}
     new_exponents = copy(atom.var_exponents)
     changed_any = false
     @inbounds for (i, j) in coeff_ind_order
@@ -718,67 +705,67 @@ function term_equal_indexes(atom::CAtom, coeff_ind_order::Vector{Tuple{Int, Int}
     return changed_any, CAtom(atom.param_info, atom.coeff, new_exponents)
 end
 
-function term_equal_indexes(fsum::CSum, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CSum}
+function term_equal_indices(fsum::CSum, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CSum}
     changed_any = false
     new_terms = Vector{CFunction}(undef, length(fsum.expr))
     @inbounds for k in eachindex(fsum.expr)
-        changed, new_term = term_equal_indexes(fsum.expr[k], coeff_ind_order)
+        changed, new_term = term_equal_indices(fsum.expr[k], coeff_ind_order)
         changed_any |= changed
         new_terms[k] = new_term
     end
     return changed_any, _CSum(fsum.param_info, new_terms)
 end
 
-function term_equal_indexes(fractional::CRational, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CRational}
-    changed_num, new_num = term_equal_indexes(fractional.numer, coeff_ind_order)
-    changed_den, new_den = term_equal_indexes(fractional.denom, coeff_ind_order)
+function term_equal_indices(fractional::CRational, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CRational}
+    changed_num, new_num = term_equal_indices(fractional.numer, coeff_ind_order)
+    changed_den, new_den = term_equal_indices(fractional.denom, coeff_ind_order)
     return (changed_num || changed_den), CRational(fractional.param_info, new_num, new_den, Val(:nosimp))
 end
 
 # NEW
-function term_equal_indexes(fprod::CProd, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CFunction}
+function term_equal_indices(fprod::CProd, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CFunction}
     changed_any = false
     new_terms = Vector{CFunction}(undef, length(fprod.expr))
     @inbounds for k in eachindex(fprod.expr)
-        changed, new_term = term_equal_indexes(fprod.expr[k], coeff_ind_order)
+        changed, new_term = term_equal_indices(fprod.expr[k], coeff_ind_order)
         changed_any |= changed
         new_terms[k] = new_term
     end
     return changed_any, CProd(fprod.param_info, fprod.coeff, new_terms, Val(:nosimp))
 end
 
-function term_equal_indexes(fexp::CExp, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CFunction}
-    changed, nx = term_equal_indexes(fexp.expr, coeff_ind_order)
+function term_equal_indices(fexp::CExp, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CFunction}
+    changed, nx = term_equal_indices(fexp.expr, coeff_ind_order)
     return changed, CExp(fexp.param_info, fexp.coeff, nx, Val(:nosimp))
 end
 
-function term_equal_indexes(flog::CLog, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CFunction}
-    changed, nx = term_equal_indexes(flog.expr, coeff_ind_order)
+function term_equal_indices(flog::CLog, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CFunction}
+    changed, nx = term_equal_indices(flog.expr, coeff_ind_order)
     return changed, CLog(flog.param_info, flog.coeff, nx, Val(:nosimp))
 end
 
-function term_equal_indexes(fpwr::CPower, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CFunction}
-    changed, nx = term_equal_indexes(fpwr.expr, coeff_ind_order)
+function term_equal_indices(fpwr::CPower, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CFunction}
+    changed, nx = term_equal_indices(fpwr.expr, coeff_ind_order)
     return changed, CPower(fpwr.param_info, fpwr.coeff, nx, fpwr.exponent, Val(:nosimp))
 end
 
-function term_equal_indexes(v::CVector, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CVector}
+function term_equal_indices(v::CVector, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CVector}
     changed_any = false
     new_entries = Vector{CFunction}(undef, length(v.expr))
     @inbounds for k in eachindex(v.expr)
-        changed, e = term_equal_indexes(v.expr[k], coeff_ind_order)
+        changed, e = term_equal_indices(v.expr[k], coeff_ind_order)
         changed_any |= changed
         new_entries[k] = e
     end
     return changed_any, CVector(v.param_info, v.coeff, new_entries; row=v.row)
 end
 
-function term_equal_indexes(M::CMatrix, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CMatrix}
+function term_equal_indices(M::CMatrix, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CMatrix}
     changed_any = false
     flat = M.expr[:]
     new_flat = Vector{CFunction}(undef, length(flat))
     @inbounds for k in eachindex(flat)
-        changed, e = term_equal_indexes(flat[k], coeff_ind_order)
+        changed, e = term_equal_indices(flat[k], coeff_ind_order)
         changed_any |= changed
         new_flat[k] = e
     end
@@ -786,15 +773,15 @@ function term_equal_indexes(M::CMatrix, coeff_ind_order::Vector{Tuple{Int, Int}}
     return changed_any, CMatrix(M.param_info, M.coeff, new_mat)
 end
 
-function term_equal_indexes(A::CAbstract, coeff_ind_order::Vector{Tuple{Int, Int}}) 
-    error("Cannot substitute indexes in Abstract expressions. ")
+function term_equal_indices(A::CAbstract, coeff_ind_order::Vector{Tuple{Int, Int}}) 
+    error("Cannot substitute indices in Abstract expressions. ")
 end
 
-function term_equal_indexes(C::CCustomType, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CCustomType}
+function term_equal_indices(C::CCustomType, coeff_ind_order::Vector{Tuple{Int, Int}})::Tuple{Bool, CCustomType}
     changed_any = false
     new_parameters::Vector{CFunction} = []
     for x in C.expr
-        c, new_x = term_equal_indexes(x, var_tuples)
+        c, new_x = term_equal_indices(x, var_tuples)
         push!(new_parameters, new_x)
         changed_any |= c
     end
