@@ -6,6 +6,8 @@ export ParameterGroupKind, ParameterGroup, ParameterGroupLike, ParameterGroupSca
        WhereWhichParamGroup, AbstractEnsemble, AbstractSubSpaceInfo
 
 using ..Sampler: QDistribution, QEnsembleFunction
+using ..StringUtils: symbol2formatted, normalize_underscore_indices, format_normalized_indices
+import Base: show
 
 """
     ParameterGroupKind
@@ -88,19 +90,7 @@ const ParameterGroupStorageUnion = Union{PARAMETER_GROUP_PAYLOAD_TYPES...}
     ParameterGroup{T}
 
 Shared metadata for a parameter group.  Skeleton instances are created during
-`ParameterDefinitions` and finalised inside `ParameterDefinitions2Parameters`.
-Once assembled they are referenced by `ParameterInfo`, `ParameterValues`, and
-each `Ensemble`.  The mutable `payload` field stores the
-user-provided definition (distribution, function, literal value, …) and may be
-updated after `QSpace` construction via `resolve_param!`.  The type parameter
-`T` records the storage type for `payload` (e.g. `Union{Nothing,Number}` for
-scalar groups or `Union{Nothing,QEnsembleFunction}` for ensemble functions),
-allowing the compiler to reason precisely about group contents.
-
-Fields capture the group's declarative signature (`name`, `indices`,
-`function_args`), dependency tracking (`dependency_names`/`dependency_indices`),
-ensemble affiliation (`ensemble_indices`), and derived shape information
-(`index_sizes`).
+calls so `ParameterDefinitions` and completed upon calls to QSpace.
 """
 mutable struct ParameterGroup{T}
     param_symbol::Symbol
@@ -116,6 +106,8 @@ mutable struct ParameterGroup{T}
     ensemble_indices::Vector{Int}
     unique_ensemble_indices::Vector{Int}
     subspace_indices::Vector{Int}
+    index_symbol_pairs::Vector{Tuple{Symbol,Symbol}}
+    index_string_pairs::Vector{Tuple{String,String}}
     index_sizes::Vector{Int}
     sample_sizes::Vector{Int}
     is_time_group::Bool
@@ -133,6 +125,8 @@ mutable struct ParameterGroup{T}
                             ensemble_indices::Vector{Int},
                             unique_ensemble_indices::Vector{Int},
                             subspace_indices::Vector{Int},
+                            index_symbol_pairs::Vector{Tuple{Symbol,Symbol}},
+                            index_string_pairs::Vector{Tuple{String,String}},
                             index_sizes::Vector{Int},
                             sample_sizes::Vector{Int},
                             is_time_group::Bool,
@@ -152,6 +146,8 @@ mutable struct ParameterGroup{T}
                                  ensemble_indices,
                                  unique_ensemble_indices,
                                  subspace_indices,
+                                 index_symbol_pairs,
+                                 index_string_pairs,
                                  index_sizes,
                                  sample_sizes,
                                  is_time_group,
@@ -161,6 +157,89 @@ end
 
 const _PARAMETER_GROUP_TYPES = ntuple(i -> ParameterGroup{PARAMETER_GROUP_PAYLOAD_TYPES[i]}, length(PARAMETER_GROUP_PAYLOAD_TYPES))
 const ParameterGroupLike = Union{_PARAMETER_GROUP_TYPES...}
+
+function _format_index_pairs(pairs::Vector{Tuple{String,String}})::String
+    isempty(pairs) && return "[]"
+    formatted = String[]
+    for (non_str, sum_str) in pairs
+        if isempty(sum_str)
+            push!(formatted, "(" * non_str * ")")
+        else
+            push!(formatted, "(" * non_str * "," * sum_str * ")")
+        end
+    end
+    return "[" * join(formatted, ", ") * "]"
+end
+
+@inline function _payload_type(group::ParameterGroup)
+    payload = group.payload
+    payload === nothing && return "unset"
+    return String(nameof(typeof(payload)))
+end
+
+@inline function _format_group_argument(arg::String)::String
+    arg == "t" && return "t"
+    base, idxs = normalize_underscore_indices(arg)
+    base_str = symbol2formatted(base)[1]
+    return base_str * format_normalized_indices(idxs; do_latex=false)
+end
+
+function _format_group_signature(group::ParameterGroupLike)::String
+    base_str = symbol2formatted(group.param_raw)[1]
+    if !isempty(group.indices)
+        base_str *= format_normalized_indices(group.indices; do_latex=false)
+    end
+    args = String[]
+    if !isempty(group.function_args)
+        for arg in group.function_args
+            push!(args, _format_group_argument(arg))
+        end
+    elseif group.of_t && group.param_symbol != :t
+        push!(args, "t")
+    end
+    if !isempty(args)
+        base_str *= "(" * join(args, ",") * ")"
+    end
+    return base_str
+end
+
+function _single_line_summary(group::ParameterGroupLike)::String
+    entries = String[]
+    push!(entries, "indices=" * _format_index_pairs(group.index_string_pairs))
+    push!(entries, "deps=" * "[" * join(group.dependency_names, ", ") * "]")
+    push!(entries, "payload=" * _payload_type(group))
+    if group.is_time_group && group.param_symbol != :t
+        push!(entries, "time-group")
+    end
+    return string(parameter_group_kind_name(group.kind), ": ", _format_group_signature(group), " (", join(entries, ", "), ")")
+end
+
+function show(io::IO, group::ParameterGroup{T}) where {T}
+    signature = _format_group_signature(group)
+    if get(io, :compact, false)
+        print(io, signature)
+        return
+    end
+    print(io, "ParameterGroup(", parameter_group_kind_name(group.kind), "): ", signature)
+    entries = Pair{String,String}[]
+    push!(entries, "indices" => _format_index_pairs(group.index_string_pairs))
+    push!(entries, "deps" => "[" * join(group.dependency_names, ", ") * "]")
+    payload_str = _payload_type(group)
+    push!(entries, "payload" => payload_str)
+    if group.is_time_group && group.param_symbol != :t
+        push!(entries, "time-group" => "true")
+    end
+    for (key, value) in entries
+        print(io, "\n  ", key, "=", value)
+    end
+end
+
+function show(io::IO, ::MIME"text/plain", groups::Vector{<:ParameterGroupLike})
+    print(io, "ParameterGroups(", length(groups), ")")
+    for group in groups
+        print(io, "\n  ", _single_line_summary(group))
+    end
+end
 
 struct WhereWhichParamGroup
     scalar_groups::Vector{Int}

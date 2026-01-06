@@ -4,24 +4,41 @@ import Base: isless, sort, sort!
 # Small helpers (boolean style)
 # -------------------------------
 
-@inline function less_vec_int(a::Vector{Vector{Int}}, b::Vector{Vector{Int}})
-    na = length(a)
-    nb = length(b)
-    n = min(na, nb)
-    @inbounds for offset in 0:n-1
-        ai = a[na - offset]
-        bi = b[nb - offset]
+@inline function less_vec_int(a::AbstractVector{<:Int}, b::AbstractVector{<:Int})
+    n = min(length(a), length(b))
+    @inbounds for i in 1:n
+        ai = a[i]
+        bi = b[i]
         if ai != bi
             return ai < bi
         end
     end
-    return na < nb
+    return length(a) < length(b)
 end
 
 @inline function compare_isless(x, y)
     isless(x, y) && return true
     isless(y, x) && return false
     return false  # equal
+end
+
+# -------------------------------
+# Particle comparisons
+# -------------------------------
+
+@inline function Base.isequal(a::QParticle, b::QParticle)
+    return a.operator == b.operator && isequal(a.index, b.index)
+end
+
+@inline function Base.:(==)(a::QParticle, b::QParticle)
+    return a.operator == b.operator && a.index == b.index
+end
+
+@inline function Base.isless(a::QParticle, b::QParticle)
+    if a.operator != b.operator
+        return less_vec_int(a.operator, b.operator)
+    end
+    return isless(a.index, b.index)
 end
 
 # -------------------------------
@@ -47,10 +64,20 @@ qatom_tag(::QAbstract) = 1
 # -------------------------------
 # Atom-level isless
 # -------------------------------
-# QTerm: compare op_indices lexicographically
+# QTerm: time index first, then length, then particles lexicographically
 function isless(a::QTerm, b::QTerm)::Bool
     a.time_index == b.time_index || return a.time_index < b.time_index
-    return less_vec_int(a.op_indices, b.op_indices)
+    la = length(a.op_indices)
+    lb = length(b.op_indices)
+    la != lb && return la < lb
+    @inbounds for i in 1:la
+        ai = a.op_indices[i]
+        bi = b.op_indices[i]
+        if !isequal(ai, bi)
+            return isless(ai, bi)
+        end
+    end
+    return false
 end
 
 # QAbstract: compare (key_index, sub_index, exponent, dag)

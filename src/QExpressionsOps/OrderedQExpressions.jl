@@ -1,5 +1,7 @@
 export QAtomOrdered, QAtomIndexed, QNeutral, OrderbyOperator, OrderedQAtomProduct, OrderedQExpr, OrderedDiffQEq, decompose_sorted_blocks
 
+import ..QIndexes: TimeIndex
+
 # ===============> Sorting op_indices by subspaces, and returning the ensemble permutations 
 """
     decompose_sorted_blocks(op_indices::Vector{Is}, qspace::QSpace)
@@ -116,12 +118,12 @@ struct QAtomOrdered <: QComposite
     coeff_fun::CFunction
     op_indices::Vector{Vector{Is}}
     ensemble_indices::Vector{Vector{Int}}
-    time_index::Int
+    time_index::TimeIndex
 end
 struct QNeutral <: QComposite 
     qspace::QSpace
     coeff_fun::CFunction 
-    time_index::Int 
+    time_index::TimeIndex 
 end
 
 """

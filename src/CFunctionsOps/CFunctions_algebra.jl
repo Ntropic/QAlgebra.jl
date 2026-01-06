@@ -450,7 +450,7 @@ conj(A::CMatrix)      = CMatrix(pinfo(A), conj(A.coeff), adjoint.(A.expr))
 ==(a::S, b::T) where {S<:CFunction, T<:CFunction} = false
 ==(a::S, b::S) where {S<:CFunction} = error("Equality not implemented for type $S")
 
-==(a::CAtom, b::CAtom)           = (a.coeff == b.coeff && a.var_exponents == b.var_exponents)
+==(a::CAtom, b::CAtom)           = (a.coeff == b.coeff && a.particles == b.particles)
 ==(a::CAbstract, b::CAbstract)   = (a.index == b.index && a.dag == b.dag && a.exponent == b.exponent && a.coeff == b.coeff)
 ==(a::CIntegral, b::CIntegral)   = (a.index == b.index && a.coeff == b.coeff)
 ==(a::CSum, b::CSum)             = (length(a) == length(b) && a.expr == b.expr)

@@ -329,7 +329,7 @@ import Base: isnumeric
 
 True if all exponents in all terms are zero.
 """
-isnumeric(f::CAtom) = iszero(f.coeff) || all(==(0), f.var_exponents)
+isnumeric(f::CAtom) = iszero(f.coeff) || all(p -> p.exponent == 0, f.particles)
 isnumeric(f::CAtomIndexed) = iszero(f.coeff) || all(==(0), f.var_exponents)
 isnumeric(::CEval) = true
 isnumeric(f::CAbstract) = false

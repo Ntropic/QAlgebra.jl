@@ -1,4 +1,5 @@
 import ..ConcreteIndexes
+import ..QIndexes: TimeIndex
 import ..CFunctions: CFunction, CAtomIndexed, to_stringer
 import ..StringUtils: indices2str
 import ..CFunctions: Indexed
@@ -16,13 +17,17 @@ struct QAtomIndexed <: QComposite
     op_indices::Vector{Vector{Is}}
     ensemble_indices::Vector{Vector{Int}}
     concrete_indices::ConcreteIndexes
-    time_index::Int
+    time_index::TimeIndex
     function QAtomIndexed(qspace::QSpace, coeff_fun::CFunction, op_indices::Vector{Vector{Is}},
-                          ensemble_indices::Vector{Vector{Int}}, concrete_indices::ConcreteIndexes, time_index::Int)
+                          ensemble_indices::Vector{Vector{Int}}, concrete_indices::ConcreteIndexes, time_index::TimeIndex)
         param_info = qspace.param_info
         concrete_indices.expected_lengths == param_info.how_many_by_ensemble ||
             error("Concrete indices do not match the ensemble sizes of the provided QSpace.")
         return new(qspace, coeff_fun, op_indices, ensemble_indices, concrete_indices, time_index)
+    end
+    function QAtomIndexed(qspace::QSpace, coeff_fun::CFunction, op_indices::Vector{Vector{Is}},
+                          ensemble_indices::Vector{Vector{Int}}, concrete_indices::ConcreteIndexes, time_index::Integer)
+        return QAtomIndexed(qspace, coeff_fun, op_indices, ensemble_indices, concrete_indices, TimeIndex(time_index))
     end
 end
 

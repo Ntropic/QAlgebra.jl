@@ -199,7 +199,7 @@ end
 @inline _zero_expr(qspace::QSpace)::QExpr = QExpr(qspace, QComposite[])
 
 @inline function _one_expr(qspace::QSpace)::QExpr
-    one_term = QAtomProduct(qspace, qspace.c_one, QAtom[QTerm(qspace.I_op)])
+    one_term = QAtomProduct(qspace, qspace.c_one, QAtom[QTerm(qspace.I_op, default_time_index(qspace))])
     return QExpr(qspace, QComposite[one_term])
 end
 

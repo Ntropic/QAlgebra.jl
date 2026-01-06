@@ -2,38 +2,6 @@ Base.copy(p::CParticle{T}) where {T<:QIndex} = CParticle{T}(p.group_index, p.exp
 
 @inline _with_exponent(p::CParticle{T}, exponent::Int) where {T<:QIndex} = CParticle{T}(p.group_index, exponent, p.abstract_indices, p.time_index)
 
-@inline function Base.isequal(a::CParticle{T}, b::CParticle{T}) where {T<:QIndex}
-    a.group_index == b.group_index &&
-    isequal(a.time_index, b.time_index) &&
-    isequal(a.abstract_indices, b.abstract_indices)
-end
-
-# strict lexicographic order on vectors of QIndex
-@inline function _lexcmp_idxs(a::Vector{<:QIndex}, b::Vector{<:QIndex})
-    na = length(a); nb = length(b)
-    n = ifelse(na < nb, na, nb)
-    @inbounds for i in 1:n
-        ai = a[i]; bi = b[i]
-        if !isequal(ai, bi)
-            return isless(ai, bi) ? -1 : 1
-        end
-    end
-    return na == nb ? 0 : (na < nb ? -1 : 1)
-end
-
-@inline function Base.isless(a::CParticle{T}, b::CParticle{T}) where {T<:QIndex}
-    # 1) primary: group_index
-    a.group_index != b.group_index && return a.group_index < b.group_index
-
-    # 2) secondary: abstract_indices (lexicographic)
-    c = _lexcmp_idxs(a.abstract_indices, b.abstract_indices)
-    c != 0 && return c < 0
-
-    # 3) tertiary: time_index
-    return isless(a.time_index, b.time_index)
-end
-
-
 function append(p::Vector{CParticle{T}}, q::Vector{CParticle{T}}) where {T<:QIndex}
     nd, ns = length(p), length(q)
     nd == 0 && return [copy(b) for b in q if b.exponent != 0]

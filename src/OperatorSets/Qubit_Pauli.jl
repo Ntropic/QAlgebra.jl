@@ -36,35 +36,35 @@ function QubitPauli(symbol::String="")::OperatorSet
     function pauli_dag(op::Vector{Int})::Vector{Tuple{ComplexRational,Vector{Int}}}
         return [(ComplexRational(1,0,1), op)]
     end
-    function pauli2str(inds::Vector{Int}, sym::String=""; formatted::Bool=true)::String
+    function pauli2str(inds::Vector{Int}, sym::String=""; formatted::Bool=true, add_index::Bool=true)::String
         # create underscored string representation of sym using subscript_indices
         ind = inds[1]
         if do_symbol
             if formatted
-                return symbol_str * str2sup(ops[ind-1]) * str2sub(sym) 
+                return symbol_str * str2sup(ops[ind-1]) * (add_index ? str2sub(sym) : "")
             else
-                return symbol_str * "_" * sym 
+                return symbol_str * (add_index ? "_" * sym : "")
             end
         else
             if formatted
-                return ops[ind-1] * str2sub(sym) 
+                return ops[ind-1] * (add_index ? str2sub(sym) : "")
             else
-                return ops[ind-1] * "_" * sym
+                return ops[ind-1] * (add_index ? "_" * sym : "")
             end
         end
     end
-    function pauli2latex(inds::Vector{Int}, sym::String)::String
+    function pauli2latex(inds::Vector{Int}, sym::String; add_index::Bool=true)::String
         # create underscored string representation of sym using subscript_indices
         ind = inds[1]
         curr_str::String = raw""
         if do_symbol
             curr_str *= raw"{"*symbol_latex*raw"}^{" * ops[ind-1] * "}"
-            if length(sym) > 0
+            if add_index && length(sym) > 0
                 curr_str *= raw"_{" * sym * raw"}"
             end
         else
             curr_str *= raw"\hat{" * ops[ind-1] * "}"
-            if length(sym) > 0 
+            if add_index && length(sym) > 0 
                 curr_str *= raw"_{" * sym * "}"
             end
         end

@@ -11,8 +11,10 @@ using ..Sampler: AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 using ..ParameterGroups: ParameterGroup, ParameterGroupKind, ParameterGroupDistribution, ParameterGroupEnsembleFunction, ParameterGroupEnsembleTimeFunction, WhereWhichParamGroup
 using Base: WeakRef, GC
 using SparseArrays
+using ..QAlgebra: PRINT_NON_ENSEMBLE_INDEXES
 
 export OperatorSet, operator_magnitude, max_operator_magnitude, SubSpaceDicts, AbstractOperatorDicts
+export CR_ZERO, CR_ONE
 export Ensemble, SubSpace, SubSpaceDefinitions, SubSpaceInfo, SubSpaceIndex, EnsembleIndex, outer, inner, expanded, Index2Symbol, Index2String, Index2Ensemble, Index2Ensemble_and_Summation, SummationIndex2SubSpaceIndex, SubSpaceIndex2EnsembleIndex, pushindex!
 export AbstractEnsembleSample, DiscreteSamples, ContinuousSamples
 export OperatorType, OperatorTypeInfo, OperatorDefinitions
@@ -133,8 +135,9 @@ end
 #function OperatorSet
 function Base.show(io::IO, os::OperatorSet)
     op_strs = String[]
+    add_index = PRINT_NON_ENSEMBLE_INDEXES
     for curr_ind in os.base_ops
-        push!(op_strs, os.op2str(curr_ind, "p"))
+        push!(op_strs, os.op2str(curr_ind, "p"; add_index=add_index))
     end
     print(io, os.name, " (", os.particle_type, "):  " * join(op_strs, ","))
 end
@@ -170,6 +173,7 @@ mutable struct QSpace
     subspaces::Vector{SubSpace}
     subspace_info::SubSpaceInfo    # Info object containing references to all the indexing of outer and inner subspaces
     ensembles::Vector{Ensemble}
+    of_time::Bool
 
     # Abstract operators
     operatortypes::Vector{OperatorType}
@@ -187,13 +191,13 @@ mutable struct QSpace
     c_zero::CAtom                           # zerolike function in CFunctions 
     cumulant_cache::ReducedCumulantList
 
-    function QSpace(subspace_def::SubSpaceDefinitions, op_def::OperatorDefinitions, param_def::ParameterDefinitions)
+    function QSpace(subspace_def::SubSpaceDefinitions, op_def::OperatorDefinitions, param_def::ParameterDefinitions; of_time::Bool=false)
         subspace_def = deepcopy(subspace_def)
         op_def = deepcopy(op_def)
         param_def = deepcopy(param_def)
         # ==========> 1st Subspaces <==========
         subspaces = subspace_def.subspaces
-        subspace_info = SubSpaceInfo(subspaces)
+        subspace_info = SubSpaceInfo(subspaces; of_time=of_time)
         used_symbols = subspace_def.used_symbols
 
 
@@ -209,12 +213,12 @@ mutable struct QSpace
         operator_dicts = build_operator_dicts(operatortypes)
 
         # Generate the string representations
-        c_one = CAtom(param_info, CR_ZERO, CParticle{AbstractIndex}[])
-        c_zero = CAtom(param_info, CR_ONE, CParticle{AbstractIndex}[])
+        c_zero = CAtom(param_info, CR_ZERO, CParticle{AbstractIndex}[])
+        c_one = CAtom(param_info, CR_ONE, CParticle{AbstractIndex}[])
         cumulant_cache = ReducedCumulantList(1)
         ensembles = Ensemble[ss.ensemble for ss in subspaces if ss.ensemble !== nothing]
 
-        qss = new(subspaces, subspace_info, ensembles,                           # Subspaces 
+        qss = new(subspaces, subspace_info, ensembles, of_time,                  # Subspaces 
                 operatortypes, operatortype_info,                                 # Abstract Operators 
                 param_info, where_which, sample_index_param_values, parameter_dicts, subspace_dicts, operator_dicts,
                 c_one, c_zero, cumulant_cache)    # Precomputed operator blueprints 

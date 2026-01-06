@@ -1,6 +1,7 @@
 using Combinatorics
 using SparseArrays
 using ..CFunctions: ParameterInfo, ParameterValues
+import ..CFunctions: param2string
 using ..StringUtils: symbol2formatted, str2sub, t_suffix, normalize_underscore_indices, format_normalized_indices, split_index, var_unsubstitution, reverse_var_substitution
 using ..SparsePermutationTools: SparsePermutation, denseperm
 using ..Sampler: QDistribution, QEnsembleFunction, AbstractEnsembleSample
@@ -34,7 +35,7 @@ function _build_group_template(name::String, of_t::Bool, indices::Vector{String}
     param_symbol = Symbol(name)
     param_raw = String(name)
     return ParameterGroup(param_symbol, param_raw, base_str, base_latex, kind, of_t, copy(indices), copy(function_args),
-                          String[], Int[], Int[], Int[], Int[], Int[], Int[], name == "t", nothing)
+                          String[], Int[], Int[], Int[], Int[], Tuple{Symbol,Symbol}[], Tuple{String,String}[], Int[], Int[], name == "t", nothing)
 end
 
 function _assign_group_definition!(group::ParameterGroup, payload)
@@ -389,6 +390,8 @@ function resolve_ensemble_metadata!(group::ParameterGroupLike, subspace_info::Su
         group.ensemble_indices = Int[]
         group.unique_ensemble_indices = Int[]
         group.subspace_indices = Int[]
+        group.index_symbol_pairs = Tuple{Symbol,Symbol}[]
+        group.index_string_pairs = Tuple{String,String}[]
         group.index_sizes = Int[]
         group.sample_sizes = Int[]
         return
@@ -402,8 +405,10 @@ function resolve_ensemble_metadata!(group::ParameterGroupLike, subspace_info::Su
     end
 
     group.subspace_indices = outer_indices
-    group.ensemble_indices = outer_indices
-    group.unique_ensemble_indices = unique(outer_indices)
+    group.ensemble_indices = subspace_info.ensemble_index_by_subspace_index[outer_indices]
+    group.unique_ensemble_indices = unique(group.ensemble_indices)
+    group.index_symbol_pairs = _build_index_symbol_pairs(outer_indices, subspace_info.subspaces)
+    group.index_string_pairs = _build_index_string_pairs(outer_indices, subspace_info.subspaces)
     group.index_sizes = fill(1, length(indexes))
     group.sample_sizes = Int[]
 end
@@ -415,12 +420,35 @@ function _find_ensemble_outer(subspace_info::SubSpaceInfo, token::String)
         if sub.is_ensemble_ss
             if sub.key == base || sub.key_symbol == token_sym
                 return outer
-            elseif !isempty(sub.key_summation) && (sub.key_summation == base || sub.key_symbol_summation == token_sym)
-                return outer
+            end
+            if has_summation(sub)
+                if secondary_label(sub) == base || secondary_symbol(sub) == token_sym
+                    return outer
+                end
             end
         end
     end
     return nothing
+end
+
+function _build_index_symbol_pairs(outer_indices::Vector{Int}, subspaces::Vector{SubSpace})
+    count = length(outer_indices)
+    pairs = Vector{Tuple{Symbol,Symbol}}(undef, count)
+    for idx in 1:count
+        sub = subspaces[outer_indices[idx]]
+        pairs[idx] = (sub.key_symbol, secondary_symbol(sub))
+    end
+    return pairs
+end
+
+function _build_index_string_pairs(outer_indices::Vector{Int}, subspaces::Vector{SubSpace})
+    count = length(outer_indices)
+    pairs = Vector{Tuple{String,String}}(undef, count)
+    for idx in 1:count
+        sub = subspaces[outer_indices[idx]]
+        pairs[idx] = (sub.key, secondary_label(sub))
+    end
+    return pairs
 end
 
 function register_group_with_subspaces!(group::ParameterGroupLike, subspaces::Vector{SubSpace})
@@ -598,53 +626,6 @@ end
 
 # Return parameter mapping vector for switching from t_index2 to t_index1.
 map_by_tindex(t_index1::Int, t_index2::Int, pinfo::ParameterInfo) = denseperm(pinfo.t_index_transform[t_index1+1, t_index2+1])
-
-function param2string(group::ParameterGroupLike,
-                      indices::Vector{AbstractIndex},
-                      time_index::TimeIndex,
-                      subspace_info::SubSpaceInfo;
-                      do_latex::Bool=false)::String
-    base_plain = group.param_str
-    base_latex = group.param_latex
-
-    if !isempty(indices)
-        plain_parts = Vector{String}(undef, length(indices))
-        latex_parts = Vector{String}(undef, length(indices))
-        @inbounds for (pos, idx) in enumerate(indices)
-            plain_label = AbstractIndex2string(subspace_info, idx, do_latex=false)
-            latex_label = AbstractIndex2string(subspace_info, idx, do_latex=true)
-            plain_parts[pos] = plain_label * str2sub(string(idx.slot))
-            latex_parts[pos] = latex_label * "_{" * string(idx.slot) * "}"
-        end
-        base_plain *= join(plain_parts, "")
-        base_latex *= "_{" * join(latex_parts, ",") * "}"
-    end
-
-    if !isempty(group.function_args)
-        arg_strings_plain = Vector{String}(undef, length(group.function_args))
-        arg_strings_latex = Vector{String}(undef, length(group.function_args))
-        @inbounds for (pos, arg) in enumerate(group.function_args)
-            if arg == "t"
-                arg_strings_plain[pos] = t_suffix(time_index.order; do_latex=false)
-                arg_strings_latex[pos] = t_suffix(time_index.order; do_latex=true)
-            else
-                base, idxs = normalize_underscore_indices(arg)
-                arg_base_plain, arg_base_latex = symbol2formatted(base)
-                suffix_plain = format_normalized_indices(idxs; do_latex=false)
-                suffix_latex = format_normalized_indices(idxs; do_latex=true)
-                arg_strings_plain[pos] = arg_base_plain * suffix_plain
-                arg_strings_latex[pos] = arg_base_latex * suffix_latex
-            end
-        end
-        base_plain *= "(" * join(arg_strings_plain, ",") * ")"
-        base_latex *= "(" * join(arg_strings_latex, ",") * ")"
-    elseif group.of_t && group.param_symbol != :t
-        base_plain *= "(" * t_suffix(time_index.order; do_latex=false) * ")"
-        base_latex *= "(" * t_suffix(time_index.order; do_latex=true) * ")"
-    end
-
-    return do_latex ? base_latex : base_plain
-end
 
 function default_group_signature(group::ParameterGroupLike,
                                  subspace_info::SubSpaceInfo;

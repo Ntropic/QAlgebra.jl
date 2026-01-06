@@ -223,14 +223,14 @@ function _build_blocks(qspace::QSpace, indices::Vector{SubSpaceIndex}, constrain
 end
 
 # Find which indices have neq conditions, (and find the conditions) and which can be equal
-function eq_counter_and_neq_indices_by_block(block::ConstrainedIndexBlock, where_acting_block::BitVector, subspace_info::SubSpaceInfo)::Tuple{Int, Vector{NeqConstraint{SubSpaceIndex}}}
+function eq_counter_and_neq_indices_by_block(block::ConstrainedIndexBlock, where_acting_block::BitSet, subspace_info::SubSpaceInfo)::Tuple{Int, Vector{NeqConstraint{SubSpaceIndex}}}
     non_sum = block.how_many_non_sum
     neq_constraints::Vector{NeqConstraint{SubSpaceIndex}} = Vector{NeqConstraint{SubSpaceIndex}}()
     eq_counter = 0
     for (ind, constraint) in zip(block.indices, block.constraints)
         curr_inner = ind.inner
-        for i in vcat(1:non_sum, curr_inner+1:length(where_acting_block))
-            if where_acting_block[i] 
+        for i in vcat(1:non_sum, curr_inner+1:block.ensemble_size)
+            if i in where_acting_block 
                 if !constraint[i]
                     push!(neq_constraints, neq(ind, SubSpaceIndex(ind.outer, i, subspace_info)))
                 else
@@ -241,7 +241,7 @@ function eq_counter_and_neq_indices_by_block(block::ConstrainedIndexBlock, where
     end
     return (eq_counter, neq_constraints)
 end
-function eq_counter_and_neq_indices(blocks::Vector{ConstrainedIndexBlock}, where_acting::Vector{BitVector}, subspace_info::SubSpaceInfo)::Tuple{Int, Vector{NeqConstraint{SubSpaceIndex}}}
+function eq_counter_and_neq_indices(blocks::Vector{ConstrainedIndexBlock}, where_acting::Vector{BitSet}, subspace_info::SubSpaceInfo)::Tuple{Int, Vector{NeqConstraint{SubSpaceIndex}}}
     eq_counter = 0
     neq_constraints::Vector{NeqConstraint{SubSpaceIndex}} = Vector{NeqConstraint{SubSpaceIndex}}()
     for (block, where_acting_block) in zip(blocks, where_acting)
@@ -253,27 +253,25 @@ function eq_counter_and_neq_indices(blocks::Vector{ConstrainedIndexBlock}, where
 end
 
 """ 
-    are_all_neq(block::ConstrainedIndexBlock, where_acting_block::BitVector, subspace_info::SubSpaceInfo) -> Bool 
-    are_all_neq(blocks::Vector{ConstrainedIndexBlock}, where_acting_blocks::Vector{BitVector}, subspace_info::SubSpaceInfo -> Bool
-    are_all_neq(q::AbstractQSum{A}, where_acting_blocks::Vector{BitVector}) -> Bool
+    are_all_neq(block::ConstrainedIndexBlock, where_acting_block::BitSet, subspace_info::SubSpaceInfo) -> Bool 
+    are_all_neq(blocks::Vector{ConstrainedIndexBlock}, where_acting_blocks::Vector{BitSet}, subspace_info::SubSpaceInfo -> Bool
+    are_all_neq(q::AbstractQSum{A}, where_acting_blocks::Vector{BitSet}) -> Bool
 
 Are all conditions neq in ConstrainedIndexBlock or Vector of ConstrainedIndexBlocks or AbstractQSum (such as QSum and QInt).
 """
-function are_all_neq(block::ConstrainedIndexBlock, where_acting_block::BitVector, subspace_info::SubSpaceInfo)::Bool
+function are_all_neq(block::ConstrainedIndexBlock, where_acting_block::BitSet, subspace_info::SubSpaceInfo)::Bool
     non_sum = block.how_many_non_sum
     for (ind, constraint) in zip(block.indices, block.constraints)
         curr_inner = ind.inner
-        for i in vcat(1:non_sum, curr_inner+1:length(where_acting_block))
-            if where_acting_block[i] 
-                if constraint[i]
-                    return false
-                end
+        for i in vcat(1:non_sum, curr_inner+1:block.ensemble_size)
+            if (i in where_acting_block) && constraint[i]
+                return false
             end
         end
     end
-    return true
+    return true 
 end
-function are_all_neq(blocks::Vector{ConstrainedIndexBlock}, where_acting_blocks::Vector{BitVector}, subspace_info::SubSpaceInfo)::Bool
+function are_all_neq(blocks::Vector{ConstrainedIndexBlock}, where_acting_blocks::Vector{BitSet}, subspace_info::SubSpaceInfo)::Bool
     return all(are_all_neq(block, where_acting_block, subspace_info) for (block, where_acting_block) in zip(blocks, where_acting_blocks))
 end
 

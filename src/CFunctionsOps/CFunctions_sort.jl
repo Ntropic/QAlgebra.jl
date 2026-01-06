@@ -35,6 +35,24 @@ function less_vec(a::AbstractVector, b::AbstractVector)
     return length(a) < length(b)
 end
 
+# -------------------------------
+# Particle comparisons
+# -------------------------------
+
+@inline function Base.isequal(a::CParticle{T}, b::CParticle{T}) where {T<:QIndex}
+    a.group_index == b.group_index &&
+    isequal(a.time_index, b.time_index) &&
+    isequal(a.abstract_indices, b.abstract_indices)
+end
+
+@inline function Base.isless(a::CParticle{T}, b::CParticle{T}) where {T<:QIndex}
+    if !isequal(a.time_index, b.time_index)
+        return isless(a.time_index, b.time_index)
+    end
+    a.group_index != b.group_index && return a.group_index < b.group_index
+    return less_vec(a.abstract_indices, b.abstract_indices)
+end
+
 # Tuples (elements may be heterogenous but should have isless)
 function less_tuple(a::Tuple, b::Tuple)
     n = min(length(a), length(b))
@@ -67,8 +85,20 @@ cf_tag(c::CCustomType) = c.ctype_def.sortkey
 # Same-kind comparisons (boolean)
 # -------------------------------
 
-# CAtom: compare var_exponents lexicographically
-isless_same(a::CAtom, b::CAtom) = less_vec(a.var_exponents, b.var_exponents)
+# CAtom: length, then particles lexicographically
+function isless_same(a::CAtom, b::CAtom)
+    la = length(a.particles)
+    lb = length(b.particles)
+    la != lb && return la < lb
+    @inbounds for i in 1:la
+        ai = a.particles[i]
+        bi = b.particles[i]
+        if !isequal(ai, bi)
+            return isless(ai, bi)
+        end
+    end
+    return false
+end
 
 # CSum: length first, then terms pairwise
 function isless_same(a::T, b::T) where T <: CMultiComposite

@@ -123,7 +123,7 @@ indices2subspaceindices(qspace::QSpace, idx::SumIndexInput)::Vector{SubSpaceInde
 indices2subspaceindices(qspace::QSpace, idxs::AbstractVector{<:SumIndexInput})::Vector{SubSpaceIndex} = SubSpaceIndex[_to_subspace_index(qspace, idx) for idx in idxs]
 
 # extens definition in ConstrainedIndexes.jl
-function are_all_neq(q::AbstractQSum{A}, where_acting_blocks::Vector{BitVector})::Bool where {A}
+function are_all_neq(q::AbstractQSum{A}, where_acting_blocks::Vector{BitSet})::Bool where {A}
     return are_all_neq(q.blocks, where_acting_blocks, q.qspace.subspace_info )
 end
 

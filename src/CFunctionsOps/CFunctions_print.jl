@@ -1,7 +1,8 @@
 using LaTeXStrings
-using ..StringUtils: indices2str
+using ..StringUtils: indices2str, symbol2formatted, normalize_underscore_indices, format_normalized_indices, str2sub, t_suffix, split_index
 using ..CFunctions
-export stringer, to_stringer, to_string
+using ..QAlgebra: PRINT_NON_TIME_FUNCTION_ARGUMENTS
+export stringer, to_stringer, to_string, param2string
 
 # --- Small, inlined helpers used everywhere ---
 @inline connector(do_latex::Bool) = do_latex ? " " : ""
@@ -23,9 +24,9 @@ end
 end
 
 @inline function indexed_parameter_label(param_info::ParameterInfo, param_index::Int, indices::ConcreteIndexes, do_latex::Bool)
-    param = param_info.params[param_index]
-    base_str = do_latex ? param.param_latex : param.param_str
-    ens_indices = param.ensemble_indices
+    group = param_info.param_groups[param_index]
+    base_str = do_latex ? group.param_latex : group.param_str
+    ens_indices = group.ensemble_indices
     isempty(ens_indices) && return base_str
     values = String[]
     for ens_idx in ens_indices
@@ -40,11 +41,11 @@ end
 end
 
 @inline function indexed_parameter_names(atom::CAtomIndexed, do_latex::Bool)::Vector{String}
-    params = atom.param_info.params
-    defaults = do_latex ? [p.param_latex for p in params] : [p.param_str for p in params]
+    groups = atom.param_info.param_groups
+    defaults = do_latex ? [g.param_latex for g in groups] : [g.param_str for g in groups]
     isempty(atom.indices.indices) && return defaults
     for idx in eachindex(defaults)
-        isempty(params[idx].ensemble_indices) && continue
+        isempty(groups[idx].ensemble_indices) && continue
         defaults[idx] = indexed_parameter_label(atom.param_info, idx, atom.indices, do_latex)
     end
     return defaults
@@ -59,6 +60,91 @@ end
         end
     end
     return indices2str(flat; do_latex=do_latex)
+end
+
+@inline function _abstract_index2string(subspace_info, index::AbstractIndex; do_latex::Bool=false, as_index::Bool=true)::String
+    ensemble_labels = subspace_info.ensemble_labels[index.ensemble]
+    index_symbol = ensemble_labels[1 + index.summation]
+    subindex = index.slot == 0 ? "" : string(index.slot)
+    if do_latex
+        if as_index
+            return "_{" * index_symbol * "_{" * subindex * "}}"
+        else
+            return index_symbol * "_{" * subindex * "}"
+        end
+    else
+        if as_index
+            return str2sub(index_symbol * subindex)
+        else
+            return index_symbol * str2sub(subindex)
+        end
+    end
+end
+
+@inline function param2string(group::ParameterGroupLike,
+                              indices::Vector{AbstractIndex},
+                              time_index::TimeIndex,
+                              subspace_info;
+                              do_latex::Bool=false)::String
+    base_plain = group.param_str
+    base_latex = group.param_latex
+
+    if !isempty(indices)
+        plain_parts = Vector{String}(undef, length(indices))
+        latex_parts = Vector{String}(undef, length(indices))
+        @inbounds for (pos, idx) in enumerate(indices)
+            plain_parts[pos] = _abstract_index2string(subspace_info, idx, do_latex=false, as_index=false)
+            latex_parts[pos] = _abstract_index2string(subspace_info, idx, do_latex=true, as_index=false)
+        end
+        base_plain *= str2sub(join(plain_parts, ""))
+        base_latex *= "_{" * join(latex_parts, ",") * "}"
+    end
+
+    if !isempty(group.function_args)
+        args = PRINT_NON_TIME_FUNCTION_ARGUMENTS ? group.function_args : [arg for arg in group.function_args if arg == "t"]
+        arg_strings_plain = Vector{String}(undef, length(args))
+        arg_strings_latex = Vector{String}(undef, length(args))
+        @inbounds for (pos, arg) in enumerate(args)
+            if arg == "t"
+                arg_strings_plain[pos] = t_suffix(time_index.order; do_latex=false)
+                arg_strings_latex[pos] = t_suffix(time_index.order; do_latex=true)
+                continue
+            end
+
+            base, idxs = normalize_underscore_indices(arg)
+            if length(idxs) == 1
+                # Try to parse the single token as an indexed ensemble label (e.g., i1 -> base i, slot 1)
+                token = idxs[1]
+                tok_base, tok_num = split_index(token)
+                ensemble = findfirst(labels -> tok_base in labels, subspace_info.ensemble_labels)
+                if ensemble !== nothing && tok_num != 0
+                    outer = subspace_info.where_ensembles[ensemble]
+                    idx = AbstractIndex(outer, ensemble, tok_num, false)
+                    arg_base_plain, arg_base_latex = symbol2formatted(base)
+                    idx_plain = _abstract_index2string(subspace_info, idx, do_latex=false, as_index=false)
+                    idx_latex = _abstract_index2string(subspace_info, idx, do_latex=true, as_index=false)
+                    arg_strings_plain[pos] = arg_base_plain * str2sub(idx_plain)
+                    arg_strings_latex[pos] = arg_base_latex * "_{" * idx_latex * "}"
+                    continue
+                end
+            end
+
+            arg_base_plain, arg_base_latex = symbol2formatted(base)
+            suffix_plain = format_normalized_indices(idxs; do_latex=false)
+            suffix_latex = format_normalized_indices(idxs; do_latex=true)
+            arg_strings_plain[pos] = arg_base_plain * suffix_plain
+            arg_strings_latex[pos] = arg_base_latex * suffix_latex
+        end
+        if !isempty(args)
+            base_plain *= "(" * join(arg_strings_plain, ",") * ")"
+            base_latex *= "(" * join(arg_strings_latex, ",") * ")"
+        end
+    elseif group.of_t && group.param_symbol != :t
+        base_plain *= "(" * t_suffix(time_index.order; do_latex=false) * ")"
+        base_latex *= "(" * t_suffix(time_index.order; do_latex=true) * ")"
+    end
+
+    return do_latex ? base_latex : base_plain
 end
 
 function sign_string(c::ComplexRational, do_latex::Bool=false)::Tuple{Bool, String}
@@ -93,8 +179,13 @@ _pow_sup_int(n::Int; do_latex::Bool=false) = do_latex ? "^{$n}" : str2sup(string
 _pow_sup_frac(p::Int, q::Int; do_latex::Bool=false) = do_latex ? "^\\{\\frac{$p}{$q}\\}" : "^(" * string(p) * "/" * string(q) * ")"
 
 @inline function get_params(a::CFunction; do_latex::Bool=false)::Vector{String}
-    params = a.param_info.params
-    return do_latex ? [p.param_latex for p in params] : [p.param_str for p in params]
+    groups = a.param_info.param_groups
+    return do_latex ? [g.param_latex for g in groups] : [g.param_str for g in groups]
+end
+
+@inline function particle_label(param_info::ParameterInfo, particle::CParticle{AbstractIndex}; do_latex::Bool)
+    group = param_info.param_groups[particle.group_index]
+    return param2string(group, particle.abstract_indices, particle.time_index, param_info.subspace_info; do_latex=do_latex)
 end
 
 
@@ -111,23 +202,20 @@ function stringer(f::CFunction; do_latex::Bool=false, do_frac::Bool=true, braced
     error("No stringer method for type $(typeof(f)) with variable names")
 end
 
-function _stringer_atom(coeff::ComplexRational, exps::SparseVector{Int,Int}, params::Vector{String};
-                        do_latex::Bool, do_frac::Bool, is_numeric::Bool)
+function _stringer_terms(coeff::ComplexRational, terms::Vector{Tuple{String, Int}};
+                         do_latex::Bool, do_frac::Bool, is_numeric::Bool)
     if is_numeric
         return sign_string(coeff, do_latex)
     end
 
     if !do_frac
-        param_str = join((int_exponent2str(b, x; do_latex=do_latex) for (b, x) in zip(params, exps)), "")
+        param_str = join((int_exponent2str(base, exp; do_latex=do_latex) for (base, exp) in terms if exp != 0), "")
         return with_coeff(coeff, param_str; do_latex=do_latex)
     else
-        pos_inds = findall(>(0), exps)
-        neg_inds = findall(<(0), exps)
+        pos_str = join((int_exponent2str(base, exp; do_latex=do_latex) for (base, exp) in terms if exp > 0), "")
+        neg_str = join((int_exponent2str(base, -exp; do_latex=do_latex) for (base, exp) in terms if exp < 0), "")
 
-        pos_str = join((int_exponent2str(b, x; do_latex=do_latex) for (b, x) in zip(params[pos_inds], exps[pos_inds])), "")
-        neg_str = join((int_exponent2str(b, abs(x); do_latex=do_latex) for (b, x) in zip(params[neg_inds], exps[neg_inds])), "")
-
-        if isempty(neg_inds)
+        if isempty(neg_str)
             return with_coeff(coeff, pos_str; do_latex=do_latex)
         else
             c_num = ComplexRational(coeff.a, coeff.b, 1)
@@ -136,7 +224,7 @@ function _stringer_atom(coeff::ComplexRational, exps::SparseVector{Int,Int}, par
             _, c_pos = sign_string(c_num, do_latex)
             _, c_neg = sign_string(c_den, do_latex)
 
-            if !is_abs_one(c_num) || isempty(pos_inds)
+            if !is_abs_one(c_num) || isempty(pos_str)
                 c_pos *= connector(do_latex)
             else
                 c_pos = ""
@@ -158,17 +246,19 @@ function _stringer_atom(coeff::ComplexRational, exps::SparseVector{Int,Int}, par
 end
 
 function stringer(a::CAtom; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=true)
-    params = get_params(a, do_latex=do_latex)
-    exps = a.var_exponents
-    @assert length(params) == length(exps) "Number of symbols must match number of variables"
-    return _stringer_atom(a.coeff, exps, params; do_latex=do_latex, do_frac=do_frac, is_numeric=isnumeric(a))
+    terms = Tuple{String, Int}[]
+    for particle in a.particles
+        push!(terms, (particle_label(a.param_info, particle; do_latex=do_latex), particle.exponent))
+    end
+    return _stringer_terms(a.coeff, terms; do_latex=do_latex, do_frac=do_frac, is_numeric=isnumeric(a))
 end
 
 function stringer(a::CAtomIndexed; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=true)
     params = indexed_parameter_names(a, do_latex)
     exps = a.var_exponents
     @assert length(params) == length(exps) "Number of symbols must match number of variables"
-    return _stringer_atom(a.coeff, exps, params; do_latex=do_latex, do_frac=do_frac, is_numeric=isnumeric(a))
+    terms = Tuple{String, Int}[(params[i], exps[i]) for i in eachindex(params)]
+    return _stringer_terms(a.coeff, terms; do_latex=do_latex, do_frac=do_frac, is_numeric=isnumeric(a))
 end
 
 function stringer(c::CEval; do_latex::Bool=false, do_frac::Bool=true, braced::Bool=true)

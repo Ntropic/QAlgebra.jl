@@ -120,8 +120,6 @@ objects through [`SubSpaceDefinitions`](@ref).
 struct SubSpace <: AbstractSubSpace
     key_symbol::Symbol
     key::String
-    key_symbol_summation::Symbol
-    key_summation::String
     is_ensemble_ss::Bool
     ensemble_size::Int
     as_continuum::Bool
@@ -134,8 +132,8 @@ struct SubSpace <: AbstractSubSpace
 end
 
 function Base.show(io::IO, sub::SubSpace)
-    if sub.is_ensemble_ss && !isempty(sub.key_summation)
-        print(io, "SubSpace: ", sub.key, " ∑ ", sub.key_summation, " (", sub.op_set.name, ")")
+    if has_summation(sub)
+        print(io, "SubSpace: ", sub.key, " ∑ ", secondary_label(sub), " (", sub.op_set.name, ")")
     else
         print(io, "SubSpace: ", sub.key, " (", sub.op_set.name, ")")
     end
@@ -182,11 +180,25 @@ function _next_available_symbol(base::Symbol, used::Set{Symbol})
     return sym, str
 end
 
-@inline has_summation(sub::SubSpace) = sub.is_ensemble_ss && !isempty(sub.key_summation)
+@inline function _ensemble(sub::SubSpace)::Union{Nothing,Ensemble}
+    return sub.ensemble
+end
+
+@inline function _ensemble_sum_symbol(sub::SubSpace)::Symbol
+    ens = _ensemble(sub)
+    return (ens === nothing || isempty(ens.sum_string)) ? Symbol("") : ens.sum_symbol
+end
+
+@inline function _ensemble_sum_label(sub::SubSpace)::String
+    ens = _ensemble(sub)
+    return (ens === nothing || isempty(ens.sum_string)) ? "" : ens.sum_string
+end
+
+@inline has_summation(sub::SubSpace) = sub.is_ensemble_ss && !isempty(_ensemble_sum_label(sub))
 @inline primary_symbol(sub::SubSpace) = sub.key_symbol
-@inline secondary_symbol(sub::SubSpace) = sub.key_symbol_summation
+@inline secondary_symbol(sub::SubSpace) = _ensemble_sum_symbol(sub)
 @inline primary_label(sub::SubSpace) = sub.key
-@inline secondary_label(sub::SubSpace) = sub.key_summation
+@inline secondary_label(sub::SubSpace) = _ensemble_sum_label(sub)
 
 function subspace_symbols(sub::SubSpace)
     if has_summation(sub)
@@ -272,7 +284,7 @@ struct SubSpaceDefinitions
                 max_operator_magnitude(op_set)
             end
 
-            push!(subspaces, SubSpace(non_sym, non_str, sum_sym, sum_str, is_ensemble_ss, ensemble_size,
+            push!(subspaces, SubSpace(non_sym, non_str, is_ensemble_ss, ensemble_size,
                                       as_continuum, op_set.particle_type, op_set, ensemble_cfg,
                                       copy(op_set.min_ints), copy(op_set.max_ints), max_op_mag))
         end

@@ -4,18 +4,6 @@ export Dag, Commutator
 const _CHK   = Val(true)
 const _NOCHK = Val(false)
 
-@inline function lookup_operation_error(op::Symbol, ql::QExprLookup)
-    combos = join(_available_lookup_combos(ql), ", ")
-    error("Pick a key before `$op`: choose from $(combos).")
-end
-
-# Guard algebra ops on lookups so users provide explicit arguments
-for op in (:+, :-, :*, :^)
-    @eval begin
-        Base.$op(ql::QExprLookup, other) = lookup_operation_error($(QuoteNode(op)), ql)
-        Base.$op(other, ql::QExprLookup) = lookup_operation_error($(QuoteNode(op)), ql)
-    end
-end
 # Default-to-checked helper entry points
 @inline _add(a, b) = _add(a, b, _CHK)
 @inline _sub(a, b) = _sub(a, b, _CHK)
@@ -58,7 +46,7 @@ end
 end
 # Number interactions: no check
 @inline function _add(Q1::QExpr, N::Number, ::Val{C})::QExpr where {C}
-    new_terms = vcat(Q1.terms, QAtomProduct(Q1.qspace, Q1.qspace.c_one * N, QTerm(Q1.qspace.I_op)))
+    new_terms = vcat(Q1.terms, QAtomProduct(Q1.qspace, Q1.qspace.c_one * N, QTerm(Q1.qspace.I_op, default_time_index(Q1.qspace))))
     return QExpr(Q1.qspace, new_terms)
 end
 @inline _add(N::Number, Q1::QExpr, ::Val{C}) where {C} = _add(Q1, N, _NOCHK)
@@ -90,7 +78,7 @@ function multiply_qterm(t1::Vector{Vector{Int}}, t2::Vector{Vector{Int}}, ss::QS
 end
 function multiply_qterm(t1::QTerm, t2::QTerm, ss::QSpace)
     new_inds, new_coeffs = multiply_qterm(t1.op_indices, t2.op_indices, ss)
-    return QTerm[QTerm(inds) for inds in new_inds], new_coeffs
+    return QTerm[QTerm(inds, t1.time_index) for inds in new_inds], new_coeffs
 end
 function *(t1::QTerm, t2::QTerm, qspace::QSpace)  # not user-facing
     return multiply_qterm(t1, t2, qspace)
@@ -497,16 +485,16 @@ end
 # Identity helpers
 # ==============================
 function Identity(qspace::QSpace)::QExpr
-    return QExpr(qspace, QAtomProduct(qspace, qspace.c_one, QAtom[QTerm(qspace.I_op)]))
+    return QExpr(qspace, QAtomProduct(qspace, qspace.c_one, QAtom[QTerm(qspace.I_op, default_time_index(qspace))]))
 end
 function Identity(qspace::QSpace, coeff_fun::CFunction)::QExpr
-    return QExpr(qspace, QAtomProduct(qspace, coeff_fun, QAtom[QTerm(qspace.I_op)]))
+    return QExpr(qspace, QAtomProduct(qspace, coeff_fun, QAtom[QTerm(qspace.I_op, default_time_index(qspace))]))
 end
 function IdentityQAtomProduct(qspace::QSpace)::QAtomProduct
-    return QAtomProduct(qspace, qspace.c_one, QAtom[QTerm(qspace.I_op)])
+    return QAtomProduct(qspace, qspace.c_one, QAtom[QTerm(qspace.I_op, default_time_index(qspace))])
 end
 function IdentityQAtomProduct(qspace::QSpace, coeff_fun::CFunction)::QAtomProduct
-    return QAtomProduct(qspace, coeff_fun, QAtom[QTerm(qspace.I_op)])
+    return QAtomProduct(qspace, coeff_fun, QAtom[QTerm(qspace.I_op, default_time_index(qspace))])
 end
 
 # ==============================
@@ -539,7 +527,7 @@ function Dag(qspace::QSpace, t::QTerm)::Vector{Tuple{QTerm,ComplexRational}}
             curr_coeff *= combo[i][1]
             push!(curr_inds, combo[i][2])
         end
-        push!(terms, QTerm(curr_inds))
+        push!(terms, QTerm(curr_inds, t.time_index))
         push!(coeffs, curr_coeff)
     end
     return collect(zip(terms, coeffs))
@@ -552,8 +540,6 @@ function Dag(qspace::QSpace, t::QAbstract)::Vector{Tuple{QAbstract,ComplexRation
     new_t = dag_copy(t)
     return Tuple{QAbstract,ComplexRational}[(new_t, one(ComplexRational))]
 end
-
-Dag(ql::QExprLookup) = lookup_operation_error(:Dag, ql)
 
 function Dag(p::QAtomProduct)::Vector{QAtomProduct}
     terms::Vector{Vector{Tuple{QAtom,ComplexRational}}} = []

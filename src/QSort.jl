@@ -141,7 +141,7 @@ and `weight` is the accumulated product of branch weights along that path.
 """
 function sorted_push_unify_branches(dest::Vector{T}, x::T;
                                     lt=isless, first_n::Int=1, unify) where {T}
-    initial = _BranchState(ComplexRational(1), copy(dest), first_n)
+    initial = _BranchState(ComplexRational(1, 0, 1), copy(dest), first_n)
     states = _branch_insert([initial], x, lt, unify)
     return _branch_results(states)
 end
@@ -157,7 +157,7 @@ the same `(weight, vector)` collection as [`sorted_push_unify_branches`](@ref).
 """
 function sorted_append_unify_branches(dest::Vector{T}, src::AbstractVector{<:T};
                                       lt=isless, first_n::Int=1, unify) where {T}
-    states = [_BranchState(ComplexRational(1), copy(dest), first_n)]
+    states = [_BranchState(ComplexRational(1, 0, 1), copy(dest), first_n)]
     for x in src
         states = _branch_insert(states, x, lt, unify)
         isempty(states) && break

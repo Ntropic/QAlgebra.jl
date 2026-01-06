@@ -241,7 +241,7 @@ function decollision_QSum(q::QTerm, decollision::QSumDecollisionInds, qspace::QS
         @assert isnumeric(q, new_ind, qspace) "Cannot decollision QTerm, because new summation index is already in use, albeit undefined!"
         op_indices[old_ind], op_indices[new_ind] = op_indices[new_ind], op_indices[old_ind]
     end
-    return QTerm(op_indices)
+    return QTerm(op_indices, q.time_index)
 end
 function decollision_QSum(q::QAbstract, decollision::QSumDecollisionInds, qspace::QSpace)::QAbstract
     return add_to_index_map(q, decollision.index_pairs)

@@ -1,7 +1,7 @@
 export Substitution, Substitution_t, Substitution_index, -->
 
 import ..CFunctions: substitute
-using ..QSpaces: map_by_subspace, map_by_tindex
+using ..QSpaces: map_by_tindex
 
 
 
@@ -138,7 +138,7 @@ end
 end
 
 @inline _coeff_pairs(sp::Substitution_t, qspace::QSpace) = _changed_pairs(map_by_tindex(sp.from, sp.to, qspace.param_info))
-@inline _coeff_pairs(sp::_ResolvedIndexSubstitution, qspace::QSpace) = _changed_pairs(map_by_subspace(sp.from, sp.to, qspace.param_info))
+# @inline _coeff_pairs(sp::_ResolvedIndexSubstitution, qspace::QSpace) = _changed_pairs(map_by_subspace(sp.from, sp.to, qspace.param_info)) # WARNING: map_by_subspace removed; needs replacement before enabling.
 
 @inline function _reindex_coeff(coeff::CFunctions.CFunction, pairs::Vector{Tuple{Int,Int}})
     isempty(pairs) && return (false, coeff)
@@ -396,8 +396,8 @@ function _substitute(target::diffQEq, ctx::TimeSubContext)::diffQEq
 end
 
 function _substitute(term::QTerm, ctx::TimeSubContext)::QTerm
-    term.time_index == ctx.from || return term
-    ctx.checks && term.time_index == -1 && error("Cannot change time index of a time-independent QTerm.")
+    term.time_index.order == ctx.from || return term
+    ctx.checks && term.time_index.order == -1 && error("Cannot change time index of a time-independent QTerm.")
     return modify_time_index(term, ctx.to)
 end
 

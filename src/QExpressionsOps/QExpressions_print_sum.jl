@@ -80,7 +80,7 @@ end
 
 
 
-function sum_symbol_str(term::AbstractQSum, where_acting::Vector{BitVector}; do_latex::Bool=false)
+function sum_symbol_str(term::AbstractQSum, where_acting::EnsembleBits; do_latex::Bool=false)
     subspace_info = term.qspace.subspace_info
     indices = all_indices(term)
     base = _sum_index_subscript(term, indices, subspace_info; do_latex=do_latex)

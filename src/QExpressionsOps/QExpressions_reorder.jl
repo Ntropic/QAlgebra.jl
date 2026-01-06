@@ -1,4 +1,4 @@
-import ..CFunctions: repartition, which_ensemble_acting
+import ..CFunctions: repartition
 using ..QSpaces: map_by_tindex
 using ..SparsePermutationTools
 export reorder, reorder_full, reorder_time
@@ -352,7 +352,7 @@ end
 end
 
 function _reorder_time(q::QTerm, ctx::TimeReorderContext)
-    ti = q.time_index
+    ti = q.time_index.order
     ti < 0 && return q
     ti + 1 > length(ctx.time_map) && return q
     new_ti = ctx.time_map[ti + 1]

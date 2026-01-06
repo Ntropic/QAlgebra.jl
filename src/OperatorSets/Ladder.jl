@@ -38,7 +38,7 @@ end
 Creates the OperatorSet for a bosonic mode using creation and annihilation operators (Ladder operators: ``a^\dagger``, ``a``).
 Provide `max_magnitude` to cap the highest occupation per index; the operator set records both that bound and the induced maximum magnitude. Pass `-1` (default) for unbounded.
 """
-function Ladder(; max_magnitude::Int=-1)
+function Ladder(symbol::String=""; max_magnitude::Int=-1)
     ops = [""]  # (Creation, Annihilation) -> removed annihilation
     base_ladder = [[0, 1]]
     max_vec = max_magnitude < 0 ? Int[-1, -1] : Int[max_magnitude, max_magnitude]
@@ -61,30 +61,33 @@ function Ladder(; max_magnitude::Int=-1)
     function ladder_dag(op::Vector{Int})::Vector{Tuple{ComplexRational,Vector{Int}}}
         return [(ComplexRational(1,0,1), [op[2], op[1]])]
     end
-    function ladder2str(a::Vector{Int}, sym::String; formatted::Bool=true)::String
+    symbol_str, symbol_latex = symbol2formatted(symbol, do_hat=true)
+    do_symbol::Bool = length(symbol) > 0
+    function ladder2str(a::Vector{Int}, sym::String; formatted::Bool=true, add_index::Bool=true)::String
+        base_sym = do_symbol ? symbol_str : sym
         curr_str = ""
         if formatted
             if a[1] > 0
-                curr_str *= sym * "†"
+                curr_str *= base_sym * "†"
                 if a[1] > 1
                     curr_str *= str2sup(string(a[1]))
                 end
             end
             if a[2] > 0
-                curr_str *= sym
+                curr_str *= base_sym
                 if a[2] > 1
                     curr_str *= str2sup(string(a[2]))
                 end
             end
         else
             if a[1] > 0
-                curr_str *= sym * "'"
+                curr_str *= base_sym * "'"
                 if a[1] > 1
                     curr_str *= "^"* string(a[1])
                 end
             end
             if a[2] > 0
-                curr_str *= sym
+                curr_str *= base_sym
                 if a[2] > 1
                     curr_str *= "^"* str2supstring(a[2])
                 end
@@ -92,17 +95,18 @@ function Ladder(; max_magnitude::Int=-1)
         end
         return curr_str
     end
-    function ladder2latex(a::Vector{Int}, sym::String)::String
+    function ladder2latex(a::Vector{Int}, sym::String; add_index::Bool=true)::String
+        base_sym = do_symbol ? symbol_latex : sym
         curr_str = ""
         if a[1] > 0
             if a[1] > 1
-                curr_str *= raw"\hat{" * sym * raw"}^{\dagger " * string(a[1]) * "}"
+                curr_str *=  base_sym * raw"^{\dagger " * string(a[1]) * "}"
             else
-                curr_str *= raw"\hat{" * sym * raw"}^\dagger"
+                curr_str *= base_sym * raw"^\dagger"
             end
         end
         if a[2] > 0
-            curr_str *= raw"\hat{" * sym * "}"
+            curr_str *= base_sym 
             if a[2] > 1
                 curr_str *= "^" * string(a[2]) * " "
             end

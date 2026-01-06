@@ -6,6 +6,8 @@ const DEFAULT_COEFF_PREFS = Dict(
     :FLIP_IF_FIRST_TERM_NEGATIVE  => true,
     :DO_BRACED => true,
     :EXPAND_CUMULANTS => false,
+    :PRINT_NON_ENSEMBLE_INDEXES => false,
+    :PRINT_NON_TIME_FUNCTION_ARGUMENTS => false,
     :QUADGK_ATOL => 1e-9,
     :QUADGK_RTOL => 1e-7,
     :SAMPLE_ATOL => 1e-9,
@@ -31,6 +33,8 @@ end
 FLIP_IF_FIRST_TERM_NEGATIVE  = get_default(:FLIP_IF_FIRST_TERM_NEGATIVE )
 DO_BRACED = get_default(:DO_BRACED)
 EXPAND_CUMULANTS = get_default(:EXPAND_CUMULANTS)
+PRINT_NON_ENSEMBLE_INDEXES = get_default(:PRINT_NON_ENSEMBLE_INDEXES)
+PRINT_NON_TIME_FUNCTION_ARGUMENTS = get_default(:PRINT_NON_TIME_FUNCTION_ARGUMENTS)
 QUADGK_ATOL = get_default(:QUADGK_ATOL)
 QUADGK_RTOL = get_default(:QUADGK_RTOL)
 SAMPLE_ATOL = get_default(:SAMPLE_ATOL)
@@ -74,6 +78,42 @@ function set_expand_cumulants(mode::Bool)
 end
 
 """
+    set_print_non_ensemble_indexes(mode::Bool)
+
+Toggle whether operator labels include indices for non-ensemble subspaces.
+"""
+function set_print_non_ensemble_indexes(mode::Bool)
+    _update_pref!(:PRINT_NON_ENSEMBLE_INDEXES, mode)
+end
+
+"""
+    set_print_non_time_function_arguments(mode::Bool)
+
+Toggle whether to print non-time function arguments for parameter groups.
+"""
+function set_print_non_time_function_arguments(mode::Bool)
+    _update_pref!(:PRINT_NON_TIME_FUNCTION_ARGUMENTS, mode)
+end
+
+"""
+    set_print_compact(compact::Bool=true)
+
+Toggle compact/extended printing.
+- `true`  -> compact: suppress non-ensemble indices and non-time function arguments.
+- `false` -> extended: show non-ensemble indices and non-time function arguments.
+"""
+function set_print_compact(compact::Bool=true)::Nothing
+    if compact
+        set_print_non_ensemble_indexes(false)
+        set_print_non_time_function_arguments(false)
+    else
+        set_print_non_ensemble_indexes(true)
+        set_print_non_time_function_arguments(true)
+    end
+    return nothing
+end
+
+"""
     set_quadgk_atol(value)
 
 Persist the absolute tolerance used by default when evaluating quadrature integrals.
@@ -112,8 +152,11 @@ end
 
 
 export get_default, set_flip_if_first_term_negative, set_do_braced, set_expand_cumulants,
+       set_print_non_ensemble_indexes,
+       set_print_non_time_function_arguments,
+       set_print_compact,
        set_quadgk_atol, set_quadgk_rtol, set_sample_atol, set_sample_rtol,
-       FLIP_IF_FIRST_TERM_NEGATIVE , DO_BRACED, EXPAND_CUMULANTS,
+       FLIP_IF_FIRST_TERM_NEGATIVE , DO_BRACED, EXPAND_CUMULANTS, PRINT_NON_ENSEMBLE_INDEXES, PRINT_NON_TIME_FUNCTION_ARGUMENTS,
        QUADGK_ATOL, QUADGK_RTOL, SAMPLE_ATOL, SAMPLE_RTOL, pushindex!
 
 include("Helper.jl")
@@ -182,7 +225,7 @@ export QCommutator, QExp, QLog, QPower, power, QRoot, root, Expectation
 export Dag, Commutator, same_qspace
 export is_t_var, is_local, contains_non_simple_QObj, contains_non_simple, contains_abstract, contains_time, max_order_of_terms, contains_which_t_indices, iter_QAtomProducts, iter_QInts
 export is_unitary, is_hermitian, substitution_properties_fulfilled
-export base_operators, get_parameter, get_operator, get_abstract, QExprLookup 
+export base_operators, get_parameter, get_operator, get_operators, get_abstract 
 export string, latex_string
 export term
 export @define, @define_basics, QExpr2CFunction, Cumulant, cumulant_string

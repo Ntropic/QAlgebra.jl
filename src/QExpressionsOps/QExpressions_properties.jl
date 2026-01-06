@@ -7,14 +7,24 @@ import ..QAlgebra: sorted_push_unique!
 
 Returns true either if it is zero or it has only neutral elements for operators.
 """
-function isnumeric(op_indices::Vector{Vector{Int}}, qspace::QSpace)::Bool
-    return qspace.I_op == op_indices
+function isnumeric(op_indices::Vector{QParticle}, qspace::QSpace)::Bool
+    isempty(op_indices) && return true
+    subspaces = qspace.subspaces
+    @inbounds for particle in op_indices
+        sub_idx = particle.index.subspace
+        neutral = subspaces[sub_idx].op_set.neutral_element
+        particle.operator == neutral || return false
+    end
+    return true
 end
 function isnumeric(t::QTerm, qspace::QSpace)::Bool
-    return qspace.I_op == t.op_indices
+    return isnumeric(t.op_indices, qspace)
 end
 function isnumeric(t::QTerm, index::Int, qspace::QSpace)::Bool
-    return qspace.I_op[index] == t.op_indices[index]
+    @boundscheck 1 <= index <= length(t.op_indices) || return false
+    particle = t.op_indices[index]
+    neutral = qspace.subspaces[particle.index.subspace].op_set.neutral_element
+    return particle.operator == neutral
 end
 function isnumeric(t::QAbstract, qspace::QSpace)::Bool
     return false
@@ -225,9 +235,9 @@ contains_t_indices(q::QExpr, indices::Vector{Int}, which_t::Int=-1)::Bool = any(
 contains_t_indices(q::QAtom, indices::Vector{Int}) = error("Cannot be applied to QAtom")
 function contains_t_indices(q::QAtomProduct, indices::Vector{Int}, which_t::Int=-1)::Bool 
     if which_t == -1
-        return contains_c_indices(q.coeff_fun, indices) || any(x -> x.time_index != -1, q.expr)
+        return contains_c_indices(q.coeff_fun, indices) || any(x -> x.time_index.order != -1, q.expr)
     else
-        return contains_c_indices(q.coeff_fun, indices) || any(x -> x.time_index == which_t, q.expr)
+        return contains_c_indices(q.coeff_fun, indices) || any(x -> x.time_index.order == which_t, q.expr)
     end
 
 end
@@ -330,34 +340,34 @@ iszero(q::T) where T<:QMultiComposite = iszero(q.coeff_fun) || any(iszero, q.exp
 """
     where_acting(q::QObj)
 
-Return a `BitVector` marking the operator slots of the expanded SubSpace elements where the
-object acts non-trivially (expanded meaning we distinguish between different ensemble indices=). 
-The mask is always expressed in the operator basis of `q.qspace`, 
-so coefficient functions are intentionally ignored — their
-
-parameter-support lives in `CFunctionsOps.where_acting` and must be queried
-separately when required.
+Return a `BitVector` marking the operator slots of `q` that are non-neutral.
+Coefficient functions are ignored; use `CFunctionsOps.where_acting` for parameter support.
 """
-function where_acting(q::T)::BitVector where T<:QObj 
-    out = falses(length(op_indices))
-    return where_acting!(q, out)
-end
-
-@inline function where_acting!(op_indices::Vector{Is}, I_op::Vector{Is}, out::BitVector)::BitVector
-    @inbounds @simd for i in 1:n
-        out[i] |= op_indices[i] != I_op[i]
+function where_acting(q::QTerm, qspace::QSpace)::BitVector
+    n = length(q.op_indices)
+    out = falses(n)
+    @inbounds for (i, particle) in enumerate(q.op_indices)
+        neutral = qspace.subspaces[particle.index.subspace].op_set.neutral_element
+        out[i] = particle.operator != neutral
     end
     return out
 end
-
+function where_acting(q::QTerm)::BitVector
+    error("where_acting(QTerm) requires qspace; call where_acting(term, qspace).")
+end
 function where_acting!(q::QTerm, qspace::QSpace, out::BitVector)::BitVector
-    return where_acting(q.op_indices, qspace.I_op, out)
+    n = length(q.op_indices)
+    length(out) >= n || resize!(out, n)
+    @inbounds for (i, particle) in enumerate(q.op_indices)
+        neutral = qspace.subspaces[particle.index.subspace].op_set.neutral_element
+        out[i] |= particle.operator != neutral
+    end
+    return out
 end
 function where_acting!(q::QAbstract, qspace::QSpace, out::BitVector)::BitVector
     return out .|= !q.operator_type.ss_acting  # should never be modified! copy would be safer, but slower
 end
 function where_acting!(q::QAtomProduct, out::BitVector)::BitVector
-    # combine the action of all of its constituents via OR
     qspace = q.qspace 
     for x in q.expr
         where_acting!(x, qspace, out)
@@ -418,7 +428,7 @@ end
 
 # Add the mixed method once:
 function commutes_QAtom(qt::QTerm, qa::QAbstract, qspace::QSpace)::Bool
-    if qt.time_index != qa.time_index
+    if qt.time_index.order != qa.time_index
         return false 
     end
     a_t = where_acting(qt, qspace)
@@ -571,7 +581,7 @@ end
 
 ########## Orders >=============================================================
 function where_acting_index(q::QTerm, qspace::QSpace)::Vector{Int}
-    return [i for (i, op) in enumerate(q.op_indices) if op != qspace.I_op[i]]
+    return [i for (i, op) in enumerate(q.op_indices) if op.operator != qspace.subspaces[op.index.subspace].op_set.neutral_element]
 end
 order(q::QTerm, qspace::QSpace)::Int = length(where_acting_index(q, qspace))
 

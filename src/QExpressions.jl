@@ -2,16 +2,17 @@ module QExpressions
 using ..QSpaces
 using ..QSpaces: SubSpaceIndex
 import ..QSpaces: subspace_symbols
-using ..QIndexes: AbstractIndex
+using ..QIndexes: AbstractIndex, TimeIndex
 using ..CFunctions
 import ..CFunctions: expand
 using ..StringUtils
 using ComplexRationals
 using SparseArrays
+using ..ParameterGroups: ParameterGroup, ParameterGroupLike
 import Base: show, adjoint, conj, iterate, getindex, length, eltype, +, -, sort, *, /, ^, product, iszero, copy
-using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED, EXPAND_CUMULANTS, vecvec_or, vecvec_or!, findfirstfreeafterbefore, sorted_push!, sorted_push_unique!, sorted_append!, sorted_append_unique!
+using ..QAlgebra: FLIP_IF_FIRST_TERM_NEGATIVE, DO_BRACED, EXPAND_CUMULANTS, PRINT_NON_ENSEMBLE_INDEXES, vecvec_or, vecvec_or!, findfirstfreeafterbefore, sorted_push!, sorted_push_unique!, sorted_append!, sorted_append_unique!
 using ..CFunctions: isnumeric
-export QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, QExpr, QCumulant, diffQEq, diffQEqOrdered, Expectation, base_operators, get_parameter, get_operator, get_abstract, d_dt
+export QObj, QAtom, QAbstract, QComposite, QCompositeN, QMultiComposite, QTerm, I_op, QExpr, QCumulant, diffQEq, diffQEqOrdered, Expectation, base_operators, get_parameter, get_operator, get_operators, get_abstract, d_dt
 
 export @define, @define_basics, QExpr2CFunction
 
@@ -76,22 +77,42 @@ A `QTerm` represents a single term in a quantum expression. It contains:
     - `op_indices`: A vector of indices representing the operators in the term, which are also defined in a QSpace.
 """
 struct QTerm <: QAtom
-    op_indices::Vector{Is}
-    time_index::Int 
-    function QTerm(op_indices::Vector{Is}, time_index::Int=-1)
-        return new(copy.(op_indices), time_index)
+    op_indices::Vector{QParticle}
+    time_index::TimeIndex 
+    function QTerm(op_indices::Vector{QParticle}, time_index::TimeIndex=TimeIndex(-1))
+        return new(op_indices, time_index)
+    end
+    function QTerm(op_indices::Vector{QParticle}, time_index::Int)
+        return new(op_indices, TimeIndex(time_index))
     end
 end 
 @inline function Base.getindex(qterm::QTerm, i::Int)
     return qterm.op_indices[i]
 end
 modify_expr(q::QTerm, new_op_indices::Vector{Is}) = QTerm(new_op_indices, q.time_index)
-function modify_time_index(q::QTerm, new_time_index::Int)::QTerm
-    @assert q.time_index != -1 "Cannot change time_index of non time dependent QTerm."
-    QTerm(q.op_indices, new_time_index)
+function modify_time_index(q::QTerm, new_time_index::TimeIndex)::QTerm
+    @assert q.time_index.order != -1 "Cannot change time_index of non time dependent QTerm."
+    return QTerm(q.op_indices, new_time_index)
 end
-of_time(q::QTerm) = q.time_index != -1
+function modify_time_index(q::QTerm, new_time_index::Int)::QTerm
+    return modify_time_index(q, TimeIndex(new_time_index))
+end
+of_time(q::QTerm) = q.time_index.order != -1
+function I_op(time_index::TimeIndex=TimeIndex(-1))
+    return QTerm(QParticle[], time_index)
+end
+function I_op(time_index::Int)
+    return I_op(TimeIndex(time_index))
+end
 
+@inline default_time_index(qspace::QSpace)::TimeIndex = qspace.of_time ? TimeIndex(0) : TimeIndex(-1)
+@inline function resolve_time_index(qspace::QSpace, provided::Union{Nothing, Int})::TimeIndex
+    if qspace.of_time
+        return TimeIndex(provided === nothing ? 0 : provided)
+    end
+    provided === nothing || error("QSpace is not time dependent, but a time index was provided.")
+    return TimeIndex(-1)
+end
 
 """
     QAbstract(indices::Vector{Int})
@@ -167,7 +188,6 @@ each_coeff(q::QExpr)::Vector{CFunction} = flatmap_to(each_coeff, each_term(q), C
 multiply_coeff(q::QExpr, coeff::CFunction) = QExpr(q.qspace, [multiply_coeff(s, coeff) for s in q.terms])
 
 include("QExpressionsOps/QExpressions_composites.jl")
-include("QExpressionsOps/QExpressions_helper.jl") 
 include("QExpressionsOps/QExpressions_expand.jl")
 include("QExpressionsOps/QExpressions_cumulants.jl")
 
@@ -296,7 +316,21 @@ function getindex(q::T, i::Int) where T <: QComposite
 end
 
 
-include("QExpressionsOps/QExpressions_base_operators.jl")
+"""
+    flatmap_to(f, xs, ::Type{T}) where T
+
+Apply `f` to each element of `xs` (where each result is a `Vector{T}`),
+and return all results concatenated into a single `Vector{T}`.
+"""
+function flatmap_to(f, xs, ::Type{T})::Vector{T} where T
+    out = Vector{T}()
+    for x in xs
+        append!(out, f(x))
+    end
+    return out
+end
+
+include("QExpressionsOps/QExpressions_base_elements.jl")
 include("QExpressionsOps/QExpressions_sort.jl")
 include("QExpressionsOps/QExpressions_simplify.jl")
 

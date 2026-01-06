@@ -2,7 +2,7 @@ module StringUtils
 
 export str2sub, str2sup, indices2str, symbol2formatted, var_unsubstitution, t_suffix
 export brace, braket, brace_separate, normalize_underscore_indices, format_normalized_indices, split_index
-export int_exponent2str, exponentdag2str, normalize_label, reverse_var_substitution
+export int_exponent2str, exponentdag2str, normalize_label, reverse_var_substitution, parse_time_brace, stringparse4base_operators
 
 const SUBSCRIPT_INDEXES = Dict('a' => "ₐ", 'h' => "ₕ", 'i' => "ᵢ", 'j' => "ⱼ", 'k' => "ₖ", 'l' => "ₗ", 'm' => "ₘ", 'n' => "ₙ", 
     'o' => "ₒ", 'p' => "ₚ", 'ρ' => "ᵨ", '1' => "₁", '2' => "₂", '3' => "₃", '4' => "₄", '5' => "₅", '6' => "₆", '7' => "₇", '8' => "₈", 
@@ -204,6 +204,44 @@ function braket(x::String; do_latex::Bool=true)::String
     end
 end
 
+function _split_outside_braces(content::AbstractString)::Vector{String}
+    parts = String[]
+    buf = IOBuffer()
+    depth_round = 0
+    depth_curly = 0
+    depth_square = 0
+    i = firstindex(content)
+    while i <= lastindex(content)
+        c = content[i]
+        if c == '('
+            depth_round += 1
+        elseif c == ')'
+            depth_round -= 1
+            depth_round < 0 && error("Unmatched closing parenthesis in argument list: $content")
+        elseif c == '{'
+            depth_curly += 1
+        elseif c == '}'
+            depth_curly -= 1
+            depth_curly < 0 && error("Unmatched closing brace in argument list: $content")
+        elseif c == '['
+            depth_square += 1
+        elseif c == ']'
+            depth_square -= 1
+            depth_square < 0 && error("Unmatched closing bracket in argument list: $content")
+        end
+        if c == ',' && depth_round == 0 && depth_curly == 0 && depth_square == 0
+            push!(parts, strip(String(take!(buf))))
+        else
+            write(buf, c)
+        end
+        i = nextind(content, i)
+    end
+    (depth_round == 0 && depth_curly == 0 && depth_square == 0) ||
+        error("Mismatched braces in argument list: $content")
+    push!(parts, strip(String(take!(buf))))
+    return parts
+end
+
 # Separates strings and the komme separated elements in their braces, so that 
 #    "A(B,C)" -> ("A", ["B","C"])
 #    "A" -> ("A", [])
@@ -229,8 +267,7 @@ function brace_separate(s::String; braces::Tuple{String, String} = ("(",")") )::
         end
         pref = s[1:brace_ind-1]
         content = s[brace_ind+1:brace_ind2-1]
-        # split by comma 
-        elements = strip.(split(content, ","))
+        elements = _split_outside_braces(content)
         return pref, elements 
     else 
         return s, String[]
@@ -300,6 +337,6 @@ function exponentdag2str(base::String, exponent::Union{Int, Rational{Int}}, dag:
     end
 end                
 
-include("StringUtilsOps/StringUntils_Indexes.jl")
+include("StringUtilsOps/StringUtils_Indexes.jl")
 
 end

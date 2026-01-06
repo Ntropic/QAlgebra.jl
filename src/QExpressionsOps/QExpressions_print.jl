@@ -1,8 +1,11 @@
 using Printf
 using LaTeXStrings
 import Base: string
+using ..QSpaces: AbstractIndex2string
 
 export string, latex_string, cumulant_string
+
+const EnsembleBits = Vector{BitSet}
 
 include("QExpressions_print_sum.jl")
 
@@ -47,25 +50,34 @@ function qAtom2string(q::QTerm, qspace::QSpace; do_latex::Bool=false)::String
     op_indices = q.op_indices
     op_str::String = ""
     subspaces = qspace.subspaces
-    not_neutral = false
-    i = 0
-    for subspace in subspaces
+    for particle in op_indices
+        idx = particle.index
+        subspace = subspaces[idx.subspace]
         op_set = subspace.op_set
-        for (ind, key, key_latex) in zip(subspace.ss_inner_ind, subspace.keys, subspace.keys_latex)
-            i += 1
-            curr_op_ind = op_indices[i]
-            if op_set.neutral_element != curr_op_ind
-                not_neutral = true
-                if do_latex
-                    op_str *= op_set.op2latex(curr_op_ind, key_latex)
-                else
-                    op_str *= op_set.op2str(curr_op_ind, key)
-                end
+        particle.operator == op_set.neutral_element && continue
+        add_index = idx.ensemble != 0 || PRINT_NON_ENSEMBLE_INDEXES
+        if add_index
+            if idx.ensemble == 0
+                label = subspace.key
+            elseif do_latex
+                label = AbstractIndex2string(qspace.subspace_info, idx; do_latex=true, as_index=false)
+            else
+                ensemble = subspace.ensemble
+                index_symbol = idx.summation ? ensemble.sum_string : ensemble.non_sum_string
+                subindex = idx.slot == 0 ? "" : string(idx.slot)
+                label = index_symbol * subindex
             end
+        else
+            label = ""
+        end
+        if do_latex
+            op_str *= op_set.op2latex(particle.operator, label; add_index=add_index)
+        else
+            op_str *= op_set.op2str(particle.operator, label; add_index=add_index)
         end
     end
-    if q.time_index != -1
-        op_str *= "("*t_suffix(q.time_index, do_latex=do_latex)*")"
+    if q.time_index.order != -1
+        op_str *= "("*t_suffix(q.time_index.order, do_latex=do_latex)*")"
     end
     return op_str 
 end
@@ -107,7 +119,7 @@ end
 
 
 # braced not used here as an argument use, it in other QComposites that contain QExpr to determine groupings!
-function QComposite2string(q::QAtomProduct, ::Vector{BitVector}; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+function QComposite2string(q::QAtomProduct, ::EnsembleBits; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     if isnumeric(q)
         curr_sign, curr_str = to_stringer(q.coeff_fun, braced=false, do_frac=do_frac, do_latex=do_latex)
         if return_if_braced
@@ -136,7 +148,7 @@ function QComposite2string(q::QAtomProduct, ::Vector{BitVector}; do_latex::Bool=
     end
 end
 
-function QComposite2string(q::QAtomIndexed, where_acting::Vector{BitVector}; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)
+function QComposite2string(q::QAtomIndexed, where_acting::EnsembleBits; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)
     coeff_sign, coeff_str = to_stringer(q.coeff_fun; braced=true, do_frac=do_frac, has_op=true, do_latex=do_latex)
     full_indices = recompose_op_indices(q.op_indices, q.ensemble_indices, q.qspace)
     term = QTerm(full_indices, q.time_index)
@@ -155,7 +167,7 @@ function QComposite2string(q::QAtomIndexed, where_acting::Vector{BitVector}; do_
         return coeff_sign, total
     end
 end
-function QComposite2string(term::AbstractQSum, where_acting::Vector{BitVector}; do_latex::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+function QComposite2string(term::AbstractQSum, where_acting::EnsembleBits; do_latex::Bool=false, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     sum_str, measure = sum_symbol_str(term, where_acting; do_latex=do_latex)
     first_sign, total_string, single_group = QExpr2string(term.expr, where_acting; do_latex=do_latex, braced=braced, do_frac=do_frac, return_grouping=true, do_braket=do_braket)
     measure_str = measure
@@ -173,7 +185,7 @@ function QComposite2string(term::AbstractQSum, where_acting::Vector{BitVector}; 
         end
     end
 end
-function QComposite2string(q::QCompositeProduct, where_acting::Vector{BitVector}; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+function QComposite2string(q::QCompositeProduct, where_acting::EnsembleBits; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     parts = String[]
     total_sign, coeff_str = to_stringer(q.coeff_fun; braced=true, do_frac=do_frac, has_op=true, do_latex=do_latex)
     if !isempty(coeff_str)
@@ -195,7 +207,7 @@ function QComposite2string(q::QCompositeProduct, where_acting::Vector{BitVector}
         return total_sign, total_string
     end
 end
-function QComposite2string(q::QCommutator, where_acting::Vector{BitVector}; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+function QComposite2string(q::QCommutator, where_acting::EnsembleBits; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     all_strings::Vector{String} = []
     total_sign, coeff_str = to_stringer(q.coeff_fun; braced=true, do_frac=do_frac, has_op=true, do_latex=do_latex)
     for expr in q.expr
@@ -210,7 +222,7 @@ function QComposite2string(q::QCommutator, where_acting::Vector{BitVector}; do_l
     end
 end
 
-function QComposite2string(q::QCumulant, ::Vector{BitVector}; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)
+function QComposite2string(q::QCumulant, ::EnsembleBits; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)
     if EXPAND_CUMULANTS
         body = _expanded_cumulant_string(q; do_latex=do_latex)
         if return_if_braced
@@ -246,7 +258,7 @@ end
 @inline _ret(sign::Bool, s::String, return_if_braced::Bool; grouped::Bool) = return_if_braced ? (sign, s, grouped) : (sign, s)
 
 
-function QComposite2string(q::T, where_acting::Vector{BitVector}; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)::Union{Tuple{Bool,String},Tuple{Bool,String,Bool}} where T <: QComposite
+function QComposite2string(q::T, where_acting::EnsembleBits; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_if_braced::Bool=false, do_braket::Bool=false)::Union{Tuple{Bool,String},Tuple{Bool,String,Bool}} where T <: QComposite
     # First: coefficient
     coeff_sign, coeff_str = to_stringer(q.coeff_fun; braced=true, do_frac=do_frac, has_op=true, do_latex=do_latex)
 
@@ -262,7 +274,7 @@ function QComposite2string(q::T, where_acting::Vector{BitVector}; do_latex::Bool
 end
 
 
-function QComposites2string(terms::AbstractVector{<: QComposite}, where_acting::Vector{BitVector}; do_latex::Bool=false, braced::Bool=true, do_frac::Bool=true, separate_sign::Bool=false, do_braket::Bool=false)::String
+function QComposites2string(terms::AbstractVector{<: QComposite}, where_acting::EnsembleBits; do_latex::Bool=false, braced::Bool=true, do_frac::Bool=true, separate_sign::Bool=false, do_braket::Bool=false)::String
     substrings::Vector{Tuple{Bool, String}} = [QComposite2string(t, where_acting; do_latex=do_latex, braced=braced, do_frac=do_frac, do_braket=do_braket) for t in terms]
     # connect substrings  
     if separate_sign
@@ -300,11 +312,11 @@ function group_qAtomProducts(qs::Vector{QAtomProduct})::Vector{Union{QAtomProduc
     return new_qs 
 end 
 
-function qAtomProduct_group2string(qs::QAtomProduct, where_acting::Vector{BitVector}; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, do_braket::Bool=false)::Tuple{Bool, String, String}
+function qAtomProduct_group2string(qs::QAtomProduct, where_acting::EnsembleBits; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, do_braket::Bool=false)::Tuple{Bool, String, String}
     curr_sign, operator_str = QComposite2string(qs, where_acting; do_latex=do_latex, braced=braced, do_frac=do_frac, do_braket=do_braket)
     return curr_sign, "", operator_str
 end
-function qAtomProduct_group2string(qs::Tuple{Union{CAtom, CSum}, Vector{QAtomProduct}}, where_acting::Vector{BitVector}; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, do_braket::Bool=false)::Tuple{Bool, String, String}
+function qAtomProduct_group2string(qs::Tuple{Union{CAtom, CSum}, Vector{QAtomProduct}}, where_acting::EnsembleBits; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, do_braket::Bool=false)::Tuple{Bool, String, String}
     # assume the qs can be simple grouped (see the functions: simple_combinable_Fs, group_Fs)
     F = qs[1]
     qs = qs[2]
@@ -320,7 +332,7 @@ end
 function allnegative(x::Vector{Tuple{Bool, String}})::Bool
     return all(allnegative, x)
 end
-function QExpr2string(q::QExpr, where_acting::Vector{BitVector}; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_grouping::Bool=false, do_braket::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
+function QExpr2string(q::QExpr, where_acting::EnsembleBits; do_latex::Bool=true, braced::Bool=true, do_frac::Bool=true, return_grouping::Bool=false, do_braket::Bool=false)::Union{Tuple{Bool, String}, Tuple{Bool, String, Bool}}
     # outputs sign, string, {optional return_grouping:} single_group::Bool   => return grouping implies that the expression will be braced if it isn't already! , hence the outputted sign is handled differently 
     sort!(q)  # sorts by term
     if !braced # outside (not inside of a QComposite)
