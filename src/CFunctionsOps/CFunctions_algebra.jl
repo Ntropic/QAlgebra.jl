@@ -6,6 +6,7 @@ using ..CFunctions: CFunction, CAtomic, CComposite, CMultiComposite,
                     CVector, CMatrix, _CSum, coeff, length, modify_expr, modify_exprs
 using ComplexRationals: ComplexRational, crationalize
 using ..CFunctions: CR_ZERO, CR_ONE
+using ..QAlgebra: sorted_append_unify!
 
 # -------- helpers -----------------------------------------------------------
 @inline pinfo(f::CFunction) = f.param_info
@@ -29,6 +30,32 @@ _terms(s::CSum)      = s.expr
 
 # convenience
 const _ScalarLike = Union{CAtom, CAbstract, CIntegral, CSum, CRational, CCustomType}
+
+@inline _sum_particle_exponents(existing::CParticle, new::CParticle) =
+    _with_exponent(existing, existing.exponent + new.exponent)
+
+@inline _diff_particle_exponents(existing::CParticle, new::CParticle) =
+    _with_exponent(existing, existing.exponent - new.exponent)
+
+@inline function _scale_particles(particles::Vector{CParticle{T}}, n::Int) where {T<:QIndex}
+    out = similar(particles)
+    @inbounds for i in eachindex(particles)
+        p = particles[i]
+        out[i] = _with_exponent(p, p.exponent * n)
+    end
+    return out
+end
+
+@inline function _scale_particles(particles::Vector{CParticle{T}}, n::Rational{Int}) where {T<:QIndex}
+    num = numerator(n)
+    den = denominator(n)
+    out = similar(particles)
+    @inbounds for i in eachindex(particles)
+        p = particles[i]
+        out[i] = _with_exponent(p, (p.exponent * num) ÷ den)
+    end
+    return out
+end
 
 # -------- addition ----------------------------------------------------------
 +(a::T) where {T<:CFunction} = a
@@ -98,7 +125,20 @@ end
 # atom-level ×
 function *(a::CAtom, b::CAtom)
     #_ensure_same_param_info(a, b)
-    CAtom(pinfo(a), crationalize(a.coeff*b.coeff), a.var_exponents .+ b.var_exponents)
+    coeff = crationalize(a.coeff * b.coeff)
+    iszero(coeff) && return CAtom(pinfo(a), coeff, similar(a.particles, 0))
+
+    particles = copy(a.particles)
+    sort!(particles)
+
+    if !isempty(b.particles)
+        rhs = copy(b.particles)
+        sort!(rhs)
+        sorted_append_unify!(particles, rhs; unify=_sum_particle_exponents)
+    end
+
+    filter!(p -> p.exponent != 0, particles)
+    return CAtom(pinfo(a), coeff, particles)
 end
 function *(a::CAtom, b::Tb) where {Tb<:CFunction}
     #_ensure_same_param_info(a, b)
@@ -286,7 +326,7 @@ Base.Broadcast.broadcasted(::typeof(*), A::CMatrix, s::CFunction) = CMatrix(pinf
 Base.Broadcast.broadcasted(::typeof(*), s::CFunction, A::CMatrix) = CMatrix(pinfo(A), A.coeff, [ s * x for x in A.expr ])
 
 # -------- division ----------------------------------------------------------
-/(a::CAtom,     b::Number) = CAtom(pinfo(a), a.coeff/b, a.var_exponents)
+/(a::CAtom,     b::Number) = CAtom(pinfo(a), a.coeff/b, a.particles)
 (/)(a::CAbstract, b::Number) = CAbstract(a.param_info, a.coeff/b, a.index, a.exponent, a.dag)
 (/)(i::CIntegral, b::Number) = CIntegral(i.param_info, i.coeff/b, i.index)
 (/)(f::CCustomType, b::Number) = CCustomType(f.param_info, f.coeff/b, f.expr, f.ctype_def)
@@ -308,7 +348,20 @@ end
 
 /(a::CAtom, b::CAtom) = begin
     #_ensure_same_param_info(a, b)
-    CAtom(pinfo(a), a.coeff/b.coeff, a.var_exponents .- b.var_exponents)
+    coeff = a.coeff / b.coeff
+    iszero(coeff) && return CAtom(pinfo(a), coeff, similar(a.particles, 0))
+
+    particles = copy(a.particles)
+    sort!(particles)
+
+    if !isempty(b.particles)
+        rhs = copy(b.particles)
+        sort!(rhs)
+        sorted_append_unify!(particles, rhs; unify=_diff_particle_exponents)
+    end
+
+    filter!(p -> p.exponent != 0, particles)
+    return CAtom(pinfo(a), coeff, particles)
 end
 
 /(r::CRational, a::CAtom)     = CRational(pinfo(r), r.numer, r.denom*a)
@@ -368,7 +421,23 @@ end
 ^(x::CFunction, q::Rational{Int}) = CPower(pinfo(x), x, q)
 ^(x::CFunction, n::Int)           = CPower(pinfo(x), x, n//1)
 
-^(A::CAtom, n::Int)     = CAtom(pinfo(A), A.coeff^n, A.var_exponents .* n)
+function ^(A::CAtom, q::Rational{Int})
+    den = denominator(q)
+    num = numerator(q)
+    den == 1 && return A^num
+
+    if all(p -> (p.exponent * num) % den == 0, A.particles)
+        if den == 2
+            root = principal_sqrt(A.coeff)
+            if root !== nothing
+                return CAtom(pinfo(A), root^num, _scale_particles(A.particles, q))
+            end
+        end
+    end
+    return CPower(pinfo(A), A, q)
+end
+
+^(A::CAtom, n::Int)     = CAtom(pinfo(A), A.coeff^n, _scale_particles(A.particles, n))
 ^(a::CAbstract, n::Int) = CAbstract(a.param_info, a.coeff^n, a.index, a.exponent*n, a.dag)
 ^(a::CRational, n::Int) = CRational(pinfo(a), a.numer^n, a.denom^n)
 ^(a::CProd, n::Int)     = CProd(pinfo(a), a.coeff^n, [ x^n for x in a.expr ])
@@ -405,11 +474,7 @@ expand_prod(a::CFunction, b::CSum) = _CSum(pinfo(b), [ a*y for y in b.expr ])
 include("ComplexRationals_sqrt.jl")
 sqrt(x::CFunction) = CPower(pinfo(x), x, 1//2)
 function sqrt(x::CAtom)
-    if has_rational_sqrt(x.coeff) && all(e -> e % 2 == 0, x.var_exponents)
-        return CAtom(pinfo(x), principal_sqrt(x.coeff), x.var_exponents .÷ 2)
-    else
-        return CPower(pinfo(x), x, 1//2)
-    end
+    return x^(1//2)
 end
 
 # -------- inverses & adjoints ----------------------------------------------
